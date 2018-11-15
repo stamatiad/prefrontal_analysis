@@ -145,8 +145,8 @@ class Network:
             raise ValueError("Distance matrix is empty!")
         self._dist_mat = mat
 
-    UPair = namedtuple('UPair', ['a', 'b', 'type', 'distance', 'isconnected'])
-    CPair = namedtuple('CPair', ['a', 'b', 'type_code'])
+    UPair = namedtuple('UPair', ['a', 'b', 'type', 'distance'])
+    CPair = namedtuple('CPair', ['a', 'b', 'type_code', 'prob_f'])
 
     def __init__(self, serial_no, pc_no, pv_no):
         ''' Initialize network class.
@@ -215,7 +215,7 @@ class Network:
                 dist = np.amin(tmp)
                 dist_wrapped_vect[ctr] = dist
                 # Add also neuronal pair to list:
-                self.upairs.append(self.UPair(a=i, b=j, type=get_pair_type(i, j), distance=dist, isconnected=False))
+                self.upairs.append(self.UPair(a=i, b=j, type=get_pair_type(i, j), distance=dist))
                 ctr += 1
             start += 1
 
@@ -255,10 +255,10 @@ class Network:
         # Use ordered dictionary, because the key names are just for the reader:
         connection_functions_d = OrderedDict()
         # PN with PN connectivity:
-        connection_functions_d['PN_PN_total'] = lambda x: np.exp(-0.0052*x)
-        connection_functions_d['PN_PN_reciprocal'] = lambda x: np.exp(-0.0085*x)
-        connection_functions_d['PN_PN_A2B'] = lambda x: np.exp(-0.0052*x) - np.exp(-0.0085*x)
-        connection_functions_d['PN_PN_B2A'] = lambda x: np.exp(-0.0052*x) - np.exp(-0.0085*x)
+        connection_functions_d['PN_PN_total_probability'] = lambda x: np.exp(-0.0052*x) * 0.22
+        connection_functions_d['PN_PN_reciprocal'] = lambda x: np.exp(-0.0085*x) * 0.12
+        connection_functions_d['PN_PN_A2B'] = lambda x: np.exp(-0.0052*x) * 0.22 - np.exp(-0.0085*x) * 0.12
+        connection_functions_d['PN_PN_B2A'] = lambda x: np.exp(-0.0052*x) * 0.22 - np.exp(-0.0085*x) * 0.12
         # PN with PV connectivity:
         connection_functions_d['PN_PV_total'] = lambda x: np.exp(x/-180)
         connection_functions_d['PN_PV_reciprocal'] = lambda x: np.exp(x/-180) * 0.154 * pv_factor
@@ -298,7 +298,7 @@ class Network:
             tmp = np.nonzero(np.histogram(myrnd, bins=cumulative_probabilities)[0])[0][0]
             # the default connection is none (if non existent in the connection_types dictionary):
             conn_type = connection_types.get(tmp, 'none')
-            return self.CPair(a=upair.a, b=upair.b, type_code=conn_type)
+            return self.CPair(a=upair.a, b=upair.b, type_code=conn_type, prob_f=cumulative_probabilities)
 
         def cpairs2mat(cpair_list):
             '''
@@ -324,27 +324,30 @@ class Network:
                 if cpair.type_code == 'reciprocal':
                     mat[cpair.a, cpair.b] = True
                     mat[cpair.b, cpair.a] = True
-                if cpair.type_code == 'A2B':
+                elif cpair.type_code == 'A2B':
                     mat[cpair.a, cpair.b] = True
-                if cpair.type_code == 'B2A':
+                elif cpair.type_code == 'B2A':
                     mat[cpair.b, cpair.a] = True
-
+                elif cpair.type_code == 'none':
+                    pass # this needs some ironing.
+                elif cpair.type_code == 'total':
+                    # Custom connectivity rules, need custom implementation. Lets leave it here for now:
+                    # Total probability rule means that we return connection probability, rather than connectivity:
+                    pass
+                else:
+                    raise ValueError('Connectivity rule not implemented for this type of connections!')
             return mat
 
 
-
-
-        # Aliases for easier reading:
-        npc = self.pc_no
-        npv = self.pv_no
-
         # use a dict to instruct what connections you need:
-        connection_type = {}
-        connection_type[0] = 'reciprocal'
-        connection_type[1] = 'A2B'
-        connection_type[2] = 'B2A'
+        # This is the distance dependent connection types from Perin et al., 2011:
+        connection_type_distance = {}
+        connection_type_distance[0] = 'reciprocal'
+        connection_type_distance[1] = 'A2B'
+        connection_type_distance[2] = 'B2A'
         # Get the connectivity matrix:
-        self.configuration_str = cpairs2mat([connect_pair(upair, connection_type) for upair in self.upairs])
+        self.configuration_str = cpairs2mat([connect_pair(upair, connection_type_distance) for upair in self.upairs])
+        plot_reciprocal_across_distance(self.configuration_str[:self.pc_no, :self.pc_no], self.dist_mat[:self.pc_no, :self.pc_no])
 
         # Plot if you want:
         fig, ax = plt.subplots()
@@ -356,12 +359,49 @@ class Network:
         # Filter out non PN cell pairs:
         pn_upairs = [x for x in self.upairs if x.type.startswith('PN_PN')]
         # use a dict to instruct what connections you need:
-        connection_type = {}
-        connection_type[0] = 'total'
-        # Get the connectivity matrix:
-        Pd = cpairs2mat([connect_pair(upair, connection_type) for upair in pn_upairs])
+        # This is the overall (total) connection probability, also distance dependend (perin et al., 2011):
+        connection_type_total = {}
+        connection_type_total[0] = 'total'
+        # Get probabilities instead of the connectivity matrix:
+        Pd_pairs = [connect_pair(upair, connection_type_total) for upair in pn_upairs]
+        prob_f_list = [cpair.prob_f[1] for cpair in Pd_pairs]
+        Pd = np.asmatrix(distance.squareform(prob_f_list))
 
-        #E = self.cpairs2mat([connect_pair(upair) for upair in pn_upairs])
+        E = cpairs2mat([connect_pair(upair, connection_type_distance) for upair in pn_upairs])
+
+        # run iterative rearrangement:
+        iters = 1000
+        f_prob = np.zeros((self.pc_no, self.pc_no, iters))
+        cn_prob = np.zeros((self.pc_no, self.pc_no, iters))
+
+        sumPd = Pd.sum()
+        for t in range(1, iters):
+            # compute common neighbors for each pair:
+            ncn = self.common_neighbors(E)
+            cn_prob = ncn / ncn.max()
+            # Scale the probabilities of connection by the common neighbor bias:
+            f_prob = np.multiply(cn_prob, Pd)
+            f_prob = f_prob * (sumPd / f_prob.sum())
+            # To allocate connections based on their relative type (unidirectional, reciprocals), compute a distance
+            # estimate and use it with the existing probability functions, to get the connectivity:
+            x = (np.log(0.22) - np.log(f_prob)) / 0.0052
+            x[x < 0] = 0
+            x = self.zero_diagonal(x)
+            # Pass the distance estimates to upairs named tuple:
+            dist_estimate_upairs = list()
+            start = 1
+            for i in range(self.pc_no):
+                for j in range(start, self.pc_no):
+                    dist_estimate_upairs.append(self.UPair(a=i, b=j, type='PN_PN', distance=x[i, j]))
+                start += 1
+
+            # Now you can use this 'distance' to reallocate the connections to unidirectional and reciprocal:
+            nextE = cpairs2mat([connect_pair(upair, connection_type_distance) for upair in dist_estimate_upairs])
+            E = nextE
+
+        # Save connectivity to the network:
+        self.configuration_str[:self.pc_no, :self.pc_no] = E
+
         print("A OK!")
 
 
@@ -417,6 +457,76 @@ class Network:
             subgroup['structured'] = self.configuration_str
             pass
 
-def reciprocal_number(mat):
-    total = mat.size
+def get_reciprocal_number(mat):
+    '''
+    Return number of reciprocally connected pairs in connectivity matrix mat.
+    :param mat:
+    :return:
+    '''
+    if mat.shape[0] != mat.shape[1]:
+        raise ValueError('Matrix must be square!')
+    logical_mat = np.asmatrix(mat, dtype=bool)
+    return np.logical_and(logical_mat,  logical_mat.getT()).sum() / 2
+
+def get_unidirectional_number(mat):
+    '''
+    Return number of unidirectional connected pairs in connectivity matrix mat.
+    :param mat:
+    :return:
+    '''
+    if mat.shape[0] != mat.shape[1]:
+        raise ValueError('Matrix must be square!')
+    logical_mat = np.asmatrix(mat, dtype=bool)
+    return np.logical_xor(logical_mat,  logical_mat.getT()).sum() / 2
+
+def get_reciprocal_percentage(mat):
+    '''
+    Return percentage of reciprocally connected pairs in connectivity matrix mat.
+    :param mat:
+    :return:
+    '''
+    if mat.shape[0] != mat.shape[1]:
+        raise ValueError('Matrix must be square!')
+    n = mat.shape[0]
+    return get_reciprocal_number(mat) / (n*(n-1)/2)
+
+def get_unidirectional_percentage(mat):
+    '''
+    Return percentage of unidirectionaly connected pairs in connectivity matrix mat.
+    :param mat:
+    :return:
+    '''
+    if mat.shape[0] != mat.shape[1]:
+        raise ValueError('Matrix must be square!')
+    n = mat.shape[0]
+    return get_unidirectional_number(mat) / (n*(n-1)/2)
+
+def plot_reciprocal_across_distance(mat, distance_mat):
+    '''
+    Plots a histogram with the relative frequency of reciprocal connections as a function of distance.
+    :param mat:
+    :return:
+    '''
+    if mat.shape[0] != mat.shape[1]:
+        raise ValueError('Matrix must be square!')
+    if distance_mat.shape[0] != distance_mat.shape[1]:
+        raise ValueError('Matrix must be square!')
+    if mat.shape[0] != distance_mat.shape[0]:
+        raise ValueError('Matrices must be of same size!')
+
+    n = mat.shape[0]
+    # get only upper triangular part:
+    logical_mat = np.asmatrix(mat, dtype=bool)
+    mat_recip = np.logical_and(logical_mat,  logical_mat.getT())
+    conn_vector = mat_recip[np.asmatrix(np.triu(np.ones((n, n)), 1), dtype=bool)]
+    dist_vector = distance_mat[np.asmatrix(np.triu(np.ones((n, n)), 1), dtype=bool)]
+
+    histo_bins = np.arange(0, 600, 10)
+    histo_dist, bin_edges = np.histogram(dist_vector, bins=histo_bins)
+    histo, bin_edges = np.histogram(dist_vector[np.asarray(conn_vector)[0]], bins=histo_bins)
+    # Plot
+    fig, ax = plt.subplots()
+    cax = ax.plot(np.divide(histo, histo_dist))
+    ax.set_title('configuration str')
+    plt.show()
 

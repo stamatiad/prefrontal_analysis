@@ -11,7 +11,7 @@ from network_tools import Network
 from collections import namedtuple
 
 # Create a network configuration with given seed (for reproducability)
-net = Network(serial_no=1, pc_no=6, pv_no=round(6*25/75))
+net = Network(serial_no=1, pc_no=250, pv_no=round(250*25/75))
 np.random.seed(net.serial_no)
 
 #Number of neurons
