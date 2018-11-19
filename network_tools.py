@@ -327,15 +327,14 @@ class Network:
             '''
             # Unfortunatelly python's function call overhead is huge, so we need to become more array friendly:
             # Unfortunatelly this affects the readability of the code:
-            tic = time.perf_counter()
             cpairs = [None]*len(upairs)
             #conn_cum_prob = [None] * (len(connection_types)+2)
-
             prev_i = 0
             tic = time.perf_counter()
-            query_pair_types = set(x.type for x in self.upairs)
+            query_pair_types = set(x.type for x in upairs)
             for pair_type in query_pair_types:
-                matching_upairs = [x for x in self.upairs if x.type == pair_type]
+                matching_upairs = [x for x in upairs if x.type == pair_type]
+                #print('Connecting: {}. Found {} pairs'.format(pair_type, len(matching_upairs)))
                 upairs_dist = np.asarray([p.distance for p in matching_upairs])
                 prob_arr = np.full((len(connection_types)+1,len(matching_upairs)), 0.0)
                 for i, conn_type in enumerate(connection_types.values(), 1):
@@ -348,7 +347,7 @@ class Network:
                 rnd_arr_flat = np.add(np.random.rand(1, len(matching_upairs)), np.arange(len(matching_upairs)))
                 blah = np.histogram(rnd_arr_flat, bins=prob_arr_flat)[0]
                 blah2 = np.nonzero(blah)[0]
-                blah3 = np.arange(0, prob_arr_flat.size, 4)
+                blah3 = np.arange(0, prob_arr_flat.size, len(connection_types)+1)
                 conn_code_arr = np.subtract(blah2, blah3[:-1])
                 #conn_type_arr = [connection_types.get(x, 'none') for x in conn_code_arr]
                 for i, (upair, conn_code) in enumerate(zip(matching_upairs, conn_code_arr), prev_i):
@@ -358,9 +357,8 @@ class Network:
                     else:
                         cpairs[i] = self.CPair(a=upair.a, b=upair.b, type_code=connection_types.get(conn_code, 'none'),
                                                  prob_f=0)
-                prev_i = len(matching_upairs)
-            toc = time.perf_counter()
-            print('cpair time {}'.format(toc-tic))
+                #print('For pair type: {}, populated from {} to {}'.format(pair_type, prev_i, len(matching_upairs)))
+                prev_i += len(matching_upairs)
             return cpairs
 
         def cpairs2mat(cpair_list):
@@ -369,7 +367,6 @@ class Network:
             :param upair_list:
             :return:
             '''
-            tic = time.perf_counter()
             # check first that the length is proper for a condenced matrix:
             s = len(cpair_list)
             # Grab the closest value to the square root of the number
@@ -400,8 +397,6 @@ class Network:
                     pass
                 else:
                     raise ValueError('Connectivity rule not implemented for this type of connections!')
-            toc = time.perf_counter()
-            print('cpair time {}'.format(toc-tic))
             return mat
 
 
@@ -414,32 +409,32 @@ class Network:
         # Get the connectivity matrix:
         #self.configuration_str = cpairs2mat([connect_pair(upair, connection_type_distance) for upair in self.upairs])
         # Connect more efficiently:
-        connect_all_pairs(self.upairs, connection_type_distance)
-        '''
+        self.configuration_str = cpairs2mat(connect_all_pairs(self.upairs, connection_type_distance))
+
         # Plot to see the validated results of the connectivity routines:
         plt.ion()
         plot_reciprocal_across_distance(self.configuration_str[:self.pc_no, :self.pc_no],
                                         self.dist_mat[:self.pc_no, :self.pc_no],
-                                        connection_functions_d['PN_PN_reciprocal'],
+                                        connection_functions_d['PN_PN']['reciprocal'],
                                         plot=True)
         plot_unidirectional_across_distance(self.configuration_str[:self.pc_no, :self.pc_no],
                                         self.dist_mat[:self.pc_no, :self.pc_no],
-                                        connection_functions_d['PN_PN_unidirectional'],
+                                        connection_functions_d['PN_PN']['unidirectional'],
                                             plot=True)
         plot_pn2pv_unidirectional_across_distance(mat_pn_pv=self.configuration_str[:self.pc_no, self.pc_no:],
                                                   mat_pv_pn=self.configuration_str[self.pc_no:, :self.pc_no],
                                                   dist_mat=self.dist_mat[:self.pc_no, self.pc_no:],
-                                                  ground_truth=connection_functions_d['PN_PV_A2B'],
+                                                  ground_truth=connection_functions_d['PN_PV']['A2B'],
                                                   plot=True)
         plot_pv2pn_unidirectional_across_distance(mat_pn_pv=self.configuration_str[:self.pc_no, self.pc_no:],
                                                   mat_pv_pn=self.configuration_str[self.pc_no:, :self.pc_no],
                                                   dist_mat=self.dist_mat[:self.pc_no, self.pc_no:],
-                                                  ground_truth=connection_functions_d['PN_PV_B2A'],
+                                                  ground_truth=connection_functions_d['PN_PV']['B2A'],
                                                   plot=True)
         plot_pn_pv_reciprocal_across_distance(self.configuration_str[:self.pc_no, self.pc_no:],
                                                   self.configuration_str[self.pc_no:, :self.pc_no],
                                             self.dist_mat[:self.pc_no, self.pc_no:],
-                                            connection_functions_d['PN_PV_reciprocal'])
+                                            connection_functions_d['PN_PV']['reciprocal'])
         
         # Plot if you want:
         fig, ax = plt.subplots()
@@ -455,14 +450,15 @@ class Network:
         connection_type_total = {}
         connection_type_total[0] = 'total'
         # Get probabilities instead of the connectivity matrix:
-        Pd_pairs = [connect_pair(upair, connection_type_total) for upair in pn_upairs]
+        #Pd_pairs = [connect_pair(upair, connection_type_total) for upair in pn_upairs]
+        Pd_pairs = connect_all_pairs(pn_upairs, connection_type_total, export_probabilities=True)
         prob_f_list = [cpair.prob_f[1] for cpair in Pd_pairs]
         Pd = np.asmatrix(distance.squareform(prob_f_list))
 
-        E = cpairs2mat([connect_pair(upair, connection_type_distance) for upair in pn_upairs])
+        E = cpairs2mat(connect_all_pairs(pn_upairs, connection_type_distance))
 
         # run iterative rearrangement:
-        iters = 1
+        iters = 500
         f_prob = np.zeros((self.pc_no, self.pc_no, iters))
         cn_prob = np.zeros((self.pc_no, self.pc_no, iters))
         cc = np.zeros((1,iters))
@@ -472,12 +468,8 @@ class Network:
             print(t)
             # giati to C bgainei olo mhden??
             pass
-            tic = time.perf_counter()
             _, cc[0,t], _ = clust_coeff(E)
-            toc = time.perf_counter()
-            print('clustcoef time {}'.format(toc-tic))
             # compute common neighbors for each pair:
-            tic = time.perf_counter()
             ncn = self.common_neighbors(E)
             cn_prob = ncn / ncn.max()
             # Scale the probabilities of connection by the common neighbor bias:
@@ -488,24 +480,16 @@ class Network:
             x = (np.log(0.22) - np.log(f_prob)) / 0.0052
             x[x < 0] = 0
             x = self.zero_diagonal(x)
-            toc = time.perf_counter()
-            print('matrix time {}'.format(toc-tic))
             # Pass the distance estimates to upairs named tuple:
-            tic = time.perf_counter()
             dist_estimate_upairs = list()
             start = 1
             for i in range(self.pc_no):
                 for j in range(start, self.pc_no):
                     dist_estimate_upairs.append(self.UPair(a=i, b=j, type='PN_PN', distance=x[i, j]))
                 start += 1
-            toc = time.perf_counter()
-            print('pair for loop time {}'.format(toc-tic))
 
             # Now you can use this 'distance' to reallocate the connections to unidirectional and reciprocal:
-            tic = time.perf_counter()
-            nextE = cpairs2mat([connect_pair(upair, connection_type_distance) for upair in dist_estimate_upairs])
-            toc = time.perf_counter()
-            print('map time {}'.format(toc-tic))
+            nextE = cpairs2mat(connect_all_pairs(dist_estimate_upairs, connection_type_distance))
             E = nextE
 
         # Save connectivity to the network:
@@ -519,7 +503,7 @@ class Network:
         plt.ylabel('Clustering Coefficient')
         plt.savefig('clustering_coefficient.png')
         plt.show()
-        '''
+
         print("A OK!")
 
 

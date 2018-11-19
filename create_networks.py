@@ -10,6 +10,7 @@ import h5py
 from network_tools import Network
 from collections import namedtuple
 import sys
+import time
 
 # Check that user is running a supported python version:
 py_major = sys.version_info[0]
@@ -30,8 +31,10 @@ np.random.seed(net.serial_no)
 net.populate_network(cube_side_len=180, plot=False)
 
 # Make network connections utilizing the above functions:
+tic = time.perf_counter()
 net.create_connections()
-
+toc = time.perf_counter()
+print('Create Connections time {}'.format(toc-tic))
 
 #net.create_weights()
 
