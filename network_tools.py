@@ -254,23 +254,38 @@ class Network:
         # Neuronal pairs are unordered {A,B}, considering their type. For each  pair we have three distinct, distance dependend connection probability
         # functions: reciprocal, A->B, B->A and of course the overall connection probability, total (their sum).
         pv_factor = 1/(0.154+0.019+0.077)
-        # Use ordered dictionary, because the key names are just for the reader (EDIT does'nt matter any more):
-        connection_functions_d = OrderedDict()
+        # Use array friendly lambdas. It is harder on the eyes, but can save hours (!) of computations:
+        connection_functions_d = {}
         # PN with PN connectivity:
-        connection_functions_d['PN_PN_total'] = lambda x: np.exp(-0.0052*x) * 0.22
-        connection_functions_d['PN_PN_reciprocal'] = lambda x: np.exp(-0.0085*x) * 0.12
-        connection_functions_d['PN_PN_A2B'] = lambda x: (connection_functions_d['PN_PN_total'](x) - connection_functions_d['PN_PN_reciprocal'](x))/2
-        connection_functions_d['PN_PN_B2A'] = lambda x: connection_functions_d['PN_PN_A2B'](x)
-        connection_functions_d['PN_PN_unidirectional'] = lambda x: connection_functions_d['PN_PN_A2B'](x) + connection_functions_d['PN_PN_B2A'](x)
+        connection_functions_d['PN_PN'] = {}
+        connection_functions_d['PN_PN']['total'] \
+            = lambda x: np.multiply(np.exp(np.multiply(-0.0052, x)), 0.22)
+        connection_functions_d['PN_PN']['reciprocal'] \
+            = lambda x: np.multiply(np.exp(np.multiply(-0.0085, x)), 0.12)
+        connection_functions_d['PN_PN']['A2B'] \
+            = lambda x: np.divide(np.subtract(connection_functions_d['PN_PN']['total'](x), connection_functions_d['PN_PN']['reciprocal'](x)), 2)
+        connection_functions_d['PN_PN']['B2A'] \
+            = lambda x: connection_functions_d['PN_PN']['A2B'](x)
+        connection_functions_d['PN_PN']['unidirectional'] \
+            = lambda x: np.add(connection_functions_d['PN_PN']['A2B'](x), connection_functions_d['PN_PN']['B2A'](x))
         # PN with PV connectivity:
-        connection_functions_d['PN_PV_total'] = lambda x: np.exp(x/-180)
-        connection_functions_d['PN_PV_reciprocal'] = lambda x: connection_functions_d['PN_PV_total'](x) * 0.154 * pv_factor
-        connection_functions_d['PN_PV_A2B'] = lambda x: connection_functions_d['PN_PV_total'](x) * 0.019 * pv_factor
-        connection_functions_d['PN_PV_B2A'] = lambda x: connection_functions_d['PN_PV_total'](x) * 0.077 * pv_factor
+        connection_functions_d['PN_PV'] = {}
+        connection_functions_d['PN_PV']['total'] \
+            = lambda x: np.exp(np.divide(x, -180))
+        connection_functions_d['PN_PV']['reciprocal'] \
+            = lambda x: np.multiply(connection_functions_d['PN_PV']['total'](x), 0.154 * pv_factor)
+        connection_functions_d['PN_PV']['A2B'] \
+            = lambda x: np.multiply(connection_functions_d['PN_PV']['total'](x), 0.019 * pv_factor)
+        connection_functions_d['PN_PV']['B2A'] \
+            = lambda x: np.multiply(connection_functions_d['PN_PV']['total'](x), 0.077 * pv_factor)
         # PV with PV connectivity:
-        connection_functions_d['PV_PV_reciprocal'] = lambda x: 0.045
-        connection_functions_d['PV_PV_A2B'] = lambda x: 0.0675
-        connection_functions_d['PV_PV_B2A'] = lambda x: 0.0675
+        connection_functions_d['PV_PV'] = {}
+        connection_functions_d['PV_PV']['reciprocal'] \
+            = lambda x: np.multiply(np.ones(x.shape), 0.045)
+        connection_functions_d['PV_PV']['A2B'] \
+            = lambda x: np.multiply(np.ones(x.shape), 0.0675)
+        connection_functions_d['PV_PV']['B2A'] \
+            = lambda x: np.multiply(np.ones(x.shape), 0.0675)
 
 
 
@@ -288,8 +303,6 @@ class Network:
             # Fetch from dictionary of connection functions the ones for that pair:
             conn_cum_sum = [0]
             for type, probability_function in connection_functions_d.items():
-                #if any(x in type for x in upair.type) and 'total' not in type:
-                #if any(x in type for x in upair.type) and any(x in type for x in connection_types.values()):
                 if type.startswith(upair.type) and any(x in type for x in connection_types.values()):
                     # run the function and get the connection probability given the pair distance:
                     conn_cum_sum.append(probability_function(upair.distance))
@@ -303,7 +316,7 @@ class Network:
             conn_type = connection_types.get(tmp, 'none')
             return self.CPair(a=upair.a, b=upair.b, type_code=conn_type, prob_f=cumulative_probabilities)
 
-        def connect_all_pairs(upairs, connection_types=None):
+        def connect_all_pairs(upairs, connection_types=None, export_probabilities=False):
             '''
             Connect (or not) the given pair, based on connections probabilities.
             Second (optional) argument filters out only specific type of connections.
@@ -312,23 +325,42 @@ class Network:
             :param dist:
             :return:
             '''
-            cpairs = list()
-            for upair in upairs:
-                # Fetch from dictionary of connection functions the ones for that pair:
-                conn_cum_sum = [0]
-                # Since you assume that both the given pair type and connection type are a subset of connection types
-                # dictionary, hashtable search them.
-                for type, probability_function in connection_functions_d.items():
-                    if type.startswith(upair.type) and any(x in type for x in connection_types.values()):
-                        # run the function and get the connection probability given the pair distance:
-                        conn_cum_sum.append(probability_function(upair.distance))
+            # Unfortunatelly python's function call overhead is huge, so we need to become more array friendly:
+            # Unfortunatelly this affects the readability of the code:
+            tic = time.perf_counter()
+            cpairs = [None]*len(upairs)
+            #conn_cum_prob = [None] * (len(connection_types)+2)
 
-                #cumulative_probabilities = np.append(np.cumsum(np.asarray(conn_cum_sum)), [1])
-                ## Sample from the functions:
-                #conn_code = np.nonzero(np.histogram(np.random.rand(1), bins=cumulative_probabilities)[0])[0][0]
-                ## the default connection is none (if non existent in the connection_types dictionary):
-                #conn_type = connection_types.get(conn_code, 'none')
-                #cpairs.append(self.CPair(a=upair.a, b=upair.b, type_code=conn_type, prob_f=cumulative_probabilities))
+            prev_i = 0
+            tic = time.perf_counter()
+            query_pair_types = set(x.type for x in self.upairs)
+            for pair_type in query_pair_types:
+                matching_upairs = [x for x in self.upairs if x.type == pair_type]
+                upairs_dist = np.asarray([p.distance for p in matching_upairs])
+                prob_arr = np.full((len(connection_types)+1,len(matching_upairs)), 0.0)
+                for i, conn_type in enumerate(connection_types.values(), 1):
+                    prob_arr[i, :] = connection_functions_d[pair_type][conn_type](upairs_dist)
+                prob_arr = np.cumsum(prob_arr, axis=0)
+                # prob_arr[len(connection_types)+1,:] = 1
+                # Don't forget to include the (closed) last bin!
+                prob_arr_flat = np.append(np.add(prob_arr, np.tile(np.arange(len(matching_upairs)),
+                                                         (len(connection_types)+1, 1))).flatten('F'), len(matching_upairs))
+                rnd_arr_flat = np.add(np.random.rand(1, len(matching_upairs)), np.arange(len(matching_upairs)))
+                blah = np.histogram(rnd_arr_flat, bins=prob_arr_flat)[0]
+                blah2 = np.nonzero(blah)[0]
+                blah3 = np.arange(0, prob_arr_flat.size, 4)
+                conn_code_arr = np.subtract(blah2, blah3[:-1])
+                #conn_type_arr = [connection_types.get(x, 'none') for x in conn_code_arr]
+                for i, (upair, conn_code) in enumerate(zip(matching_upairs, conn_code_arr), prev_i):
+                    if export_probabilities:
+                        cpairs[i] = self.CPair(a=upair.a, b=upair.b, type_code=connection_types.get(conn_code, 'none'),
+                                               prob_f=np.append(prob_arr[:, i-prev_i], 1))
+                    else:
+                        cpairs[i] = self.CPair(a=upair.a, b=upair.b, type_code=connection_types.get(conn_code, 'none'),
+                                                 prob_f=0)
+                prev_i = len(matching_upairs)
+            toc = time.perf_counter()
+            print('cpair time {}'.format(toc-tic))
             return cpairs
 
         def cpairs2mat(cpair_list):
@@ -380,16 +412,10 @@ class Network:
         connection_type_distance[1] = 'A2B'
         connection_type_distance[2] = 'B2A'
         # Get the connectivity matrix:
-        tic = time.perf_counter()
-        self.configuration_str = cpairs2mat([connect_pair(upair, connection_type_distance) for upair in self.upairs])
-        toc = time.perf_counter()
-        print('OLD connection time {}'.format(toc-tic))
+        #self.configuration_str = cpairs2mat([connect_pair(upair, connection_type_distance) for upair in self.upairs])
         # Connect more efficiently:
-        tic = time.perf_counter()
         connect_all_pairs(self.upairs, connection_type_distance)
-        toc = time.perf_counter()
-        print('NEW connection time {}'.format(toc-tic))
-
+        '''
         # Plot to see the validated results of the connectivity routines:
         plt.ion()
         plot_reciprocal_across_distance(self.configuration_str[:self.pc_no, :self.pc_no],
@@ -414,7 +440,7 @@ class Network:
                                                   self.configuration_str[self.pc_no:, :self.pc_no],
                                             self.dist_mat[:self.pc_no, self.pc_no:],
                                             connection_functions_d['PN_PV_reciprocal'])
-
+        
         # Plot if you want:
         fig, ax = plt.subplots()
         cax = ax.imshow(self.configuration_str, interpolation='nearest', cmap=cm.afmhot)
@@ -493,7 +519,7 @@ class Network:
         plt.ylabel('Clustering Coefficient')
         plt.savefig('clustering_coefficient.png')
         plt.show()
-
+        '''
         print("A OK!")
 
 

@@ -9,6 +9,14 @@ from mpl_toolkits.mplot3d import Axes3D
 import h5py
 from network_tools import Network
 from collections import namedtuple
+import sys
+
+# Check that user is running a supported python version:
+py_major = sys.version_info[0]
+py_minor = sys.version_info[1]
+if py_major < 3 or py_minor < 7:
+    raise Exception('You are running an unsupported python version ({}.{}). Please use 3.7 or newer!' \
+                    .format(py_major, py_minor))
 
 # Create a network configuration with given seed (for reproducability)
 net = Network(serial_no=1, pc_no=250, pv_no=round(250*25/75))
