@@ -14,6 +14,26 @@ from mpl_toolkits.mplot3d import Axes3D
 from collections import OrderedDict, defaultdict, namedtuple
 import h5py
 import time
+import os
+from functools import wraps
+
+def with_reproducible_rng(class_method):
+    '''
+    This is a function wrapper that calls rng.seed before everything else. Therefore user is expected to get the exact
+    same results every time (given that no extra rand() calls are needed).
+    As seed the network serial number is used.
+    A function wrapper is used to dissociate different function calls: e.g. creating stimulus will be the same, even if
+    user changed the number of rand() was called in a previous class function, resulting in the same stimulated cells.
+    :param func:
+    :return:
+    '''
+    @wraps(class_method)
+    def reset_rng(*args, **kwargs):
+        print(class_method.__name__ + " was called")
+        # this translates to self.serial_no ar runtime
+        np.random.seed(args[0].serial_no)
+        return class_method(*args, **kwargs)
+    return reset_rng
 
 class Network:
     @property
@@ -150,6 +170,7 @@ class Network:
     UPair = namedtuple('UPair', ['a', 'b', 'type', 'distance'])
     CPair = namedtuple('CPair', ['a', 'b', 'type_code', 'prob_f'])
 
+    @with_reproducible_rng
     def __init__(self, serial_no, pc_no, pv_no):
         ''' Initialize network class.
         param serial_no Serial Number of the network, to recreate it no matter what.
@@ -169,12 +190,14 @@ class Network:
         self.weights_rnd = np.full((self.cell_no, self.cell_no), 0.0)
         pass
 
+    @with_reproducible_rng
     def populate_network(self, cube_side_len: int, plot=False):
         '''
         Disperses neurons uniformly/randomly in a cube of given side
         @param: cell_no number of network cells
         @param: cube_side_len cube side length in um
         '''
+        np.random.seed(self.serial_no)
         def get_pair_type(i, j):
             a_type = ''
             b_type = ''
@@ -242,11 +265,13 @@ class Network:
         
         return
         
-        
+
+    @with_reproducible_rng
     def create_connections(self):
         '''Connects neuronal pairs with given probability functions, based on their distance
             On PC2PC pairs also applies the common neighbor rule.
         '''
+        np.random.seed(self.serial_no)
         #rnd_draws = np.random.rand(self.cell_no, self.cell_no)
         rnd = lambda: np.random.rand(1)[0]
 
@@ -328,7 +353,6 @@ class Network:
             # Unfortunatelly python's function call overhead is huge, so we need to become more array friendly:
             # Unfortunatelly this affects the readability of the code:
             cpairs = [None]*len(upairs)
-            #conn_cum_prob = [None] * (len(connection_types)+2)
             prev_i = 0
             tic = time.perf_counter()
             query_pair_types = set(x.type for x in upairs)
@@ -506,6 +530,13 @@ class Network:
 
         print("A OK!")
 
+    @with_reproducible_rng
+    def initialize_trials(self, trial_no=0):
+        np.random.seed(self.serial_no)
+        # initialize stimulated cells in each trials:
+        # Since round returns in [0,1), we are ok
+        self.stimulated_cells = np.round(np.multiply(np.random.rand(1,self.trials_no), self.pc_no))
+
 
 
 
@@ -523,7 +554,9 @@ class Network:
             mat[i,i] = 0.0
         return mat
 
+    @with_reproducible_rng
     def make_weights(self):
+        np.random.seed(self.serial_no)
         # Create weight matrices:
         # I create weight distributions based on the fact that (Perin) the greater
         # the number of common neighbors, the more shifted the probability of the
@@ -546,12 +579,58 @@ class Network:
         # Y = lognpdf(X,mu,sigma)
         pass
 
-    def save_data(self, filename_prefix='', filename_postfix=''):
+    def export_network_parameters(self, configuration='', export_path=os.getcwd(), postfix=''):
+        # Export Network Connectivity:
+        # Export STRUCTURED parameter matrices in .hoc file:
+        with open(os.path.join(export_path,
+                'importNetworkParameters{}_SN{}_{}.hoc'.format(conf, self.serial_no, postfix)), 'w') as f:
+            f.write('// This HOC file was generated with MATLAB\n')
+            f.write('nPCcells={}\n'.format(self.pc_no))
+            f.write('nPVcells={}\n'.format(self.pv_no))
+            f.write('nAllCells={}\n'.format(self.cell_no))
+            f.write('// Object decleration:\n')
+            f.write('objref C, W\n')
+            f.write('C = new Matrix(nAllCells, nAllCells)\n')
+            f.write('W = new Matrix(nPCcells, nPCcells)\n')
+            f.write('\n// Import parameters: (long-long text following!)\n')
+            # network connectivity:
+            pairs = [(i,j) for i in range(self.cell_no) for j in range(self.cell_no)]
+            for (i,j) in pairs:
+                f.write('C.x[{}][{}]={}\n'.format(i, j, self.configuration_str[i][j]))
+            for (i,j) in pairs:
+                f.write('W.x[{}][{}]={}\n'.format(i, j, self.weights_str[i][j]))
+            f.write('//EOF\n')
+
+    def export_stimulation_parameters(self, export_path=os.getcwd(), postfix=''):
+        # Export stimulation parameters in .hoc file:
+        with open(os.path.join(export_path,
+                               'importStimulationParameters_SN{}_{}.hoc'.format(self.serial_no, postfix)), 'w') as f:
+            f.write('// This HOC file was generated with MATLAB\n\n')
+            f.write('// Object decleration:\n')
+            f.write('objref PcellStimListSTR[{}]\n'.format(self.trials_no))
+            f.write('objref PcellStimListRND[{}]\n'.format(self.trials_no))
+            f.write('\n\n// Import parameters:\n\n')
+            # Structured network stimulation:
+            for trial in self.trials_no:
+                f.write('PcellStimListSTR[{}]=new Vector({})\n'.format(trial, self.stimulated_cells.shape[0]))
+                for i in range(self.stimulated_cells.shape[0]):
+                    f.write('PcellStimListSTR[{}].x[{}]={}\n'.format(trial, i, self.stimulated_cells[trial][i]))
+            # Random network stimulation:
+            for trial in self.trials_no:
+                f.write('PcellStimListRND[{}]=new Vector({})\n'.format(trial, self.stimulated_cells.shape[0]))
+                for i in range(self.stimulated_cells.shape[0]):
+                    f.write('PcellStimListRND[{}].x[{}]={}\n'.format(trial, i, self.stimulated_cells[trial][i]))
+            f.write('//EOF\n')
+
+
+
+    def save_data(self, export_path=os.getcwd(), filename_prefix='', filename_postfix=''):
         '''
         Store Network data to a HDF5 file
         :return:
         '''
-        with h5py.File('{}Network_{}{}.hdf5'.format(filename_prefix, self.serial_no, filename_postfix), 'w') as f:
+        with h5py.File(os.path.join(export_path,
+                            '{}Network_{}{}.hdf5'.format(filename_prefix, self.serial_no, filename_postfix)), 'w') as f:
             subgroup = f.create_group('configurations')
             subgroup.attrs['serial_no'] = self.serial_no
             subgroup.attrs['pc_no'] = self.pc_no
