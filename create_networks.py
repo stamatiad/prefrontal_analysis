@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import h5py
-from net_structuredwork_tools import Network
+from network_tools import Network
 from collections import namedtuple
 import sys
 import time
@@ -26,51 +26,56 @@ pv_no = round(250*25/75)
 cube_side_length = 180  # um
 trial_no = 100
 
-# Create a net_structuredwork configuration with given serial number (used to seed the RNG for reproducability)
+# Create a network configuration with given serial number (used to seed the RNG for reproducability)
 net_structured = Network(serial_no=1, pc_no=pn_no, pv_no=pv_no)
 
 # A cube of side 180 um, has about 60000 cells.
-net_structured.populate_net_structuredwork(cube_side_len=cube_side_length, plot=False)
+net_structured.populate_network(cube_side_len=cube_side_length, plot=False)
 
 # Create both structured and random configurations:
 tic = time.perf_counter()
-net_structured.connectivity_mat = net_structured.create_connections(configuration='structured', rearrange_iterations=10, plot=True)
+net_structured.create_connections(alias='structured', rearrange_iterations=10, plot=True)
 toc = time.perf_counter()
 print('Create Connections time {}'.format(toc-tic))
 
-#net_structured.create_weights()
+net_structured.create_weights()
 
 # Initialize 100 trials:
 net_structured.initialize_trials(trial_no=trial_no)
 
 # Export parameters to NEURON hoc files:
-net_structured.export_net_structuredwork_parameters(configuration='structured')
-net_structured.export_net_structuredwork_parameters(configuration='random')
-net_structured.export_stimulation_parameters()
+net_structured.export_network_parameters()
 
 # Save Network parameters and data to a HDF5 file:
-net_structured.save_data()
+#net_structured.save_data()
 
 # Create a random network as a copy of the structured:
-net_random = copy.deepcopy(net_structured)
+#net_random = copy.deepcopy(net_structured)
+# Create a network configuration with given serial number (used to seed the RNG for reproducability)
+net_random = Network(serial_no=1, pc_no=pn_no, pv_no=pv_no)
+
+# A cube of side 180 um, has about 60000 cells.
+net_random.populate_network(cube_side_len=cube_side_length, plot=False)
 
 # Change random net connectivity and weights:
+net_structured.create_network_stats()
+overall_conn_prob = net_structured.stats['averageConnectivity']
+# Create a random/uniform connected network, with the same overall connection probability as the structured one.
 tic = time.perf_counter()
-net_random.configurations['random'] = net_random.create_connections(configuration='random', uniform_probability=0.1752, plot=True)
+net_random.create_connections(alias='random', uniform_probability=overall_conn_prob, plot=True)
 toc = time.perf_counter()
 print('Create Connections time {}'.format(toc-tic))
+net_random.create_network_stats()
 
-#net_random.create_weights()
+net_random.create_weights()
 
 # Initialize 100 trials:
 net_random.initialize_trials(trial_no=trial_no)
 
 # Export parameters to NEURON hoc files:
-net_random.export_net_randomwork_parameters(configuration='structured')
-net_random.export_net_randomwork_parameters(configuration='random')
-net_random.export_stimulation_parameters()
+net_random.export_network_parameters()
 
 # Save Network parameters and data to a HDF5 file:
-net_random.save_data()
+#net_random.save_data()
 pass
 
