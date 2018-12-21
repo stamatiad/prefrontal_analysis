@@ -304,7 +304,11 @@ class Network:
         # 3) B -> A
         # Other/custom connectivity functions can be used as well in the same framework, in order to connect different
         # network configurations i.e. random or just get the connection  probability of all pairs (vectorized = fast).
-        pv_factor = 1/(0.154+0.019+0.077)
+
+        # Average connectivity in Otsuka et al., 2009 is 0.25 (inside ~80um)
+        # Average connectivity in Packer, Yuste, 2011 is 0.67 (inside ~200um)
+        # We combine them, using an average, distance attenuating connectivity of 0.46
+        pv_factor = 0.46/(0.154+0.019+0.077)
         # Use numpy array friendly lambdas. It is harder on the eyes, but can save hours (!) of computations:
         connection_functions_d = {}
         # PN with PN connectivity:
@@ -627,11 +631,13 @@ class Network:
         # Kayaguchi : more potent synapses in reciprocal pairs
         # Perin: more potent synapses with more clustering coeff:
         # We try to combine them
-        # Evry connected pair has weight of one:
+        # Every connected pair has weight of one:
         self.weights_mat = np.asarray(self.connectivity_mat, dtype=float)
 
-
+        '''
         # Inhibitory weights are connection type dependent:
+        # PV to PN weights must be 3 somatic 5 dendritic synapses.
+        # These must result in ~90 pA current at the soma (reciprocal pairs; max)
         pv_pn_upairs = [pair for pair in self.upairs_d.values() if pair.type_cells == 'PN_PV' and pair.type_conn == 'reciprocal']
         for pair in pv_pn_upairs:
             a, b = pair.a, pair.b
@@ -640,9 +646,16 @@ class Network:
             # IPSCs from PVs to PNs are 2.2 times greater if reciprocally connected:
             # since A, B lie by convention on the upper half of the connectivity matrix, swap them to get to PV -> PN:
             self.weights_mat[b, a] = 2.2
+        # At the end normalize the weight matrix (separately for each type to preserve validation)
+        pv2pn_weights = self.weights_mat[self.pc_no:, :self.pc_no]
+        pv2pn_weights = np.divide(pv2pn_weights, pv2pn_weights.max())
+        self.weights_mat[self.pc_no:, :self.pc_no] = pv2pn_weights
 
+        pn2pv_weights = self.weights_mat[:self.pc_no, self.pc_no:]
+        pn2pv_weights = np.divide(pn2pv_weights, pn2pv_weights.max())
+        self.weights_mat[:self.pc_no, self.pc_no:] = pn2pv_weights
+        '''
 
-        # At the end normalize the weight matrix (should I do that?)
     def create_network_stats(self):
         '''
         Connectivity stats ONLY for excitatory connections (PN to PN).
@@ -702,7 +715,7 @@ class Network:
             f.write('nAllCells={}\n'.format(self.cell_no))
             f.write('// Object decleration:\n')
             f.write('objref C, W\n')
-            f.write('objref PcellStimList_{}[{}]\n'.format(self.configuration_alias, self.trial_no))
+            f.write('objref StimulatedPNs[{}]\n'.format(self.trial_no))
             f.write('C = new Matrix(nAllCells, nAllCells)\n')
             f.write('W = new Matrix(nAllCells, nAllCells)\n')
             f.write('\n// Import parameters: (long-long text following!)\n')
@@ -714,11 +727,9 @@ class Network:
                 f.write('W.x[{}][{}]={}\n'.format(i, j, self.weights_mat[i, j]))
             # Network stimulation:
             for trial in range(self.trial_no):
-                f.write('PcellStimList_{}[{}]=new Vector({})\n'.format(self.configuration_alias,
-                                                                       trial, self.stimulated_cells.shape[1]))
+                f.write('StimulatedPNs[{}]=new Vector({})\n'.format(trial, self.stimulated_cells.shape[1]))
                 for i in range(self.stimulated_cells.shape[1]):
-                    f.write('PcellStimList_{}[{}].x[{}]={}\n'.format(self.configuration_alias,
-                                                                     trial, i, self.stimulated_cells[trial][i]))
+                    f.write('StimulatedPNs[{}].x[{}]={}\n'.format(trial, i, self.stimulated_cells[trial][i]))
             f.write('//EOF\n')
 
 

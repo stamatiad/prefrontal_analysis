@@ -27,14 +27,14 @@ cube_side_length = 180  # um
 trial_no = 100
 
 # Create a network configuration with given serial number (used to seed the RNG for reproducability)
-net_structured = Network(serial_no=1, pc_no=pn_no, pv_no=pv_no)
+net_structured = Network(serial_no=4, pc_no=pn_no, pv_no=pv_no)
 
 # A cube of side 180 um, has about 60000 cells.
 net_structured.populate_network(cube_side_len=cube_side_length, plot=False)
 
 # Create both structured and random configurations:
 tic = time.perf_counter()
-net_structured.create_connections(alias='structured', rearrange_iterations=10, plot=True)
+net_structured.create_connections(alias='structured', rearrange_iterations=1000, plot=True)
 toc = time.perf_counter()
 print('Create Connections time {}'.format(toc-tic))
 
@@ -49,7 +49,8 @@ net_structured.export_network_parameters()
 # Save Network parameters and data to a HDF5 file:
 #net_structured.save_data()
 
-# Create a random network as a copy of the structured:
+'''
+## Create a random network as a copy of the structured:
 #net_random = copy.deepcopy(net_structured)
 # Create a network configuration with given serial number (used to seed the RNG for reproducability)
 net_random = Network(serial_no=1, pc_no=pn_no, pv_no=pv_no)
@@ -78,4 +79,4 @@ net_random.export_network_parameters()
 # Save Network parameters and data to a HDF5 file:
 #net_random.save_data()
 pass
-
+'''
