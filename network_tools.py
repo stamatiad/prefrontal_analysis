@@ -16,6 +16,7 @@ import h5py
 import time
 import os
 from functools import wraps
+import pandas as pd
 
 def with_reproducible_rng(class_method):
     '''
@@ -42,7 +43,7 @@ class Network:
     @property
     def serial_no(self):
         return self._serial_no
-    
+
     @serial_no.setter
     def serial_no(self, serial_no):
         if serial_no < 1:
@@ -89,11 +90,11 @@ class Network:
         if pos.size == 0:
             raise ValueError("Position is empty!")
         self._pc_somata = pos
-    
+
     @property
     def pv_somata(self):
         return self._pv_somata
-    
+
     @pv_somata.setter
     def pv_somata(self, pos):
         if pos.size == 0:
@@ -107,11 +108,11 @@ class Network:
     @configurations.setter
     def configurations(self, dict):
         self._configurations = dict
-    
+
     @property
     def configuration_rnd(self):
         return self._configuration_rnd
-    
+
     @configuration_rnd.setter
     def configuration_rnd(self, mat):
         if mat.size == 0:
@@ -147,11 +148,11 @@ class Network:
         if not c_list:
             raise ValueError("Cell list is empty!")
         self._stim_groups_rnd = c_list
-    
+
     @property
     def dist_mat(self):
         return self._dist_mat
-    
+
     @dist_mat.setter
     def dist_mat(self, mat):
         if mat.size == 0:
@@ -278,18 +279,18 @@ class Network:
             ax.set_zlabel('Z Label')
             plt.savefig('Network_sn{}_3d_positions.png'.format(self.serial_no))
             plt.show()
-        
+
         return
-        
+
 
     @with_reproducible_rng
-    def create_connections(self, alias='', rearrange_iterations=100, uniform_probability=None,
+    def create_connections(self, alias='', rearrange_iterations=100, average_conn_prob=None,
                            plot=False):
         '''
         Create connectivity and weights of the network, based on the dictionary of connectivity functions and the
         configuration alias.
         :param rearrange_iterations:
-        :param uniform_probability:
+        :param average_conn_prob:
         :param plot:
         :return:
         '''
@@ -459,8 +460,12 @@ class Network:
         # Now if configuration is random, update the PN to PN connectivity matrix part and return:
         if self.configuration_alias is 'random':
             # if a uniform connection probability is given, update the default.
-            uniform_prob_reciprocal = uniform_probability**2
-            uniform_prob_unidirectional = (uniform_probability - (uniform_probability**2))/2
+            # Calculate unidirectional probability for the uniform / random network:
+            # This is p = sqrt(overall + 1) - 1
+            uniform_prob_unidirectional = np.sqrt(average_conn_prob + 1) - 1
+            uniform_prob_reciprocal = uniform_prob_unidirectional**2
+            #uniform_prob_reciprocal = average_conn_prob**2
+            #uniform_prob_unidirectional = (average_conn_prob - (average_conn_prob**2))/2
             connection_functions_d['PN_PN']['uniform_reciprocal'] \
                 = lambda x: np.multiply(np.ones(x.shape), uniform_prob_reciprocal)
             connection_functions_d['PN_PN']['uniform_A2B'] \
@@ -678,17 +683,20 @@ class Network:
 
         connected = np.logical_or(connectivity_mat, connectivity_mat.T)
         reciprocal = np.logical_and(connectivity_mat, connectivity_mat.T)
-        unidirectional = np.logical_xor(connectivity_mat, reciprocal)
+        #unidirectional = np.logical_xor(connectivity_mat, reciprocal)
+        unidirectional = np.logical_xor(connectivity_mat, connectivity_mat.T)
         # Get unordered pairs that are connected (not care about directionality):
         connected_up = np.logical_and(connected, np.asmatrix(np.triu(np.ones((N, N)), 1), dtype=bool))
         # The average connectivity is measured as the number of connected unordered pairs, out of total unordered pairs.
         self.stats['averageConnectivity'] = np.sum(connected_up) / self.stats['nUniqueUnorderedPairs']
+        self.stats['nReciprocalUnorderedPairs'] = reciprocal.sum() / 2
+        self.stats['nUnidirectionalUnorderedPairs'] = unidirectional.sum() / 2
 
         # UNVALIDATED VALUES TODO: validate values
         # overall connection probability
-        self.stats['connectedUnorderedPairsPercentage'] = np.sum(connected) / self.stats['nUniqueUnorderedPairs']
-        self.stats['unidirectionalUnorderedPairsPercentage'] = np.sum(unidirectional) / self.stats['nUniqueUnorderedPairs']
-        self.stats['bidirectionalUnorderedPairsPercentage'] = (np.sum(reciprocal)/2) / self.stats['nUniqueUnorderedPairs']
+        #self.stats['connectedUnorderedPairsPercentage'] = np.sum(connected) / self.stats['nUniqueUnorderedPairs']
+        #self.stats['unidirectionalUnorderedPairsPercentage'] = np.sum(unidirectional) / self.stats['nUniqueUnorderedPairs']
+        #self.stats['bidirectionalUnorderedPairsPercentage'] = (np.sum(reciprocal)/2) / self.stats['nUniqueUnorderedPairs']
 
         _, self.stats['clust_coeff'], _ = clust_coeff(self.connectivity_mat)
         # degree distribution:
@@ -738,21 +746,22 @@ class Network:
         Store Network data to a HDF5 file
         :return:
         '''
-        # TODO: check the Pandas lib!
-        # Get attributes' names:
-        #net_attrs = [a for a in dir(self) if not a.startswith('_') and not callable(getattr(self, a, None))]
-        with h5py.File(os.path.join(export_path,
-                            '{}Network_{}{}.hdf5'.format(filename_prefix, self.serial_no, filename_postfix)), 'w') as f:
-            subgroup = f.create_group('configurations')
-            subgroup.attrs['serial_no'] = self.serial_no
-            subgroup.attrs['pc_no'] = self.pc_no
-            subgroup.attrs['pv_no'] = self.pv_no
-            subgroup['structured'] = self.configurations['structured']
-            subgroup['dist_mat'] = self.dist_mat
-            subgroup['stimulated_cells'] = self.stimulated_cells
-            subgroup['pc_somata'] = self.pc_somata
-            subgroup['pv_somata'] = self.pv_somata
-            pass
+        # Save using pandas for consistency:
+        filename = os.path.join(export_path, '{}{}_network_SN{}{}.hdf5'
+                                .format(filename_prefix, self.configuration_alias, self.serial_no, filename_postfix))
+        df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
+                           'configuration_alias': self.configuration_alias})
+        df.to_hdf(filename, key='attributes', mode='w')
+        df = pd.DataFrame(self.connectivity_mat)
+        df.to_hdf(filename, key='connectivity_mat')
+        df = pd.DataFrame(self.weights_mat)
+        df.to_hdf(filename, key='weights_mat')
+        df = pd.DataFrame(self.upairs_d)
+        df.to_hdf(filename, key='upairs_d')
+        df = pd.DataFrame(self.stats, index=[0])
+        df.to_hdf(filename, key='stats')
+        #blah = pd.read_hdf(filename, key='attributes')
+        pass
 
 def isdirected(adj):
     '''
