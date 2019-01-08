@@ -25,7 +25,7 @@ pn_no = 250
 pv_no = round(250*25/75)
 cube_side_length = 180  # um
 trial_no = 100
-serial_no = 1
+serial_no = 4
 
 # Create a network configuration with given serial number (used to seed the RNG for reproducability)
 net_structured = Network(serial_no=serial_no, pc_no=pn_no, pv_no=pv_no)
