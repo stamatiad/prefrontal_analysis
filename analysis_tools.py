@@ -28,7 +28,7 @@ def quick_spikes(voltage_trace=None, upper_threshold=None, lower_threshold=None,
     ts_2 = np.add(upper_crossings.astype(int), np.roll(lower_crossings.astype(int), -1))
     spikes_end = np.nonzero(np.greater(ts_2, 1))[0]
     # Make sure that we have the same amount of starts/ends:
-    if spikes_start.size is not spikes_end.size:
+    if spikes_start.size != spikes_end.size:
         raise ValueError('Check algorithm. Why is this happening?')
     # Then, get the maximum voltage in this region.
     spike_timings = []
@@ -53,16 +53,48 @@ def quick_spikes(voltage_trace=None, upper_threshold=None, lower_threshold=None,
 
 
 
-    return
+    return spike_timings
+
+def q_generator(q_size=50, q_total=2):
+    '''
+    Generate starting/ending positions of q_total windows q of size q_size.
+    :param q_size:
+    :param q_total:
+    :return:
+    '''
+    for q in range(1, q_total + 1):
+        q_start = (q - 1) * q_size + 1
+        q_end = (q - 1) * q_size + q_size
+        # yield starting/ending positions of q (in ms)
+        yield (q_start, q_end)
+        q += 1
 
 if __name__ is "__main__":
-    print('Performing quick spikes')
-    #voltage_trace = np.array([1,1,1,1,1,4,4,4,4,1,1,1,1,4,4,4,1,1,1])
-    df = pd.read_hdf(Path(r'F:\vsoma.hdf5'), key='vsoma')
-    voltage_trace = df.loc[251, :].values
+    # This is essentially the analyze_network file. To be moved later on.
     upper_threshold = 0
     lower_threshold = -10
-    quick_spikes(voltage_trace=voltage_trace,
-                 upper_threshold=upper_threshold,
-                 lower_threshold=lower_threshold,
-                 plot=True)
+    window_size = 50
+    total_qs = int(np.floor(3000 / window_size))
+
+    # For multiple runs:
+
+    df = pd.read_hdf(Path(r'F:\vsoma.hdf5'), key='vsoma')
+    # Convert dataframe to ndarray:
+    voltage_traces = df.values
+    # Reduce each voltage trace to a list of spike times:
+    spike_trains = [
+        quick_spikes(voltage_trace=voltage_trace,
+                      upper_threshold=upper_threshold,
+                      lower_threshold=lower_threshold,
+                      plot=False)
+        for voltage_trace in voltage_traces
+    ]
+    windowed_activity = np.empty(voltage_traces.shape)
+    # Sum spikes inside a window Q:
+    for cellid, spike_train in enumerate(spike_trains):
+        if len(spike_train) > 0:
+            for q, (q_start, q_end) in enumerate(q_generator(q_size=window_size, q_total=total_qs)):
+                windowed_activity[cellid][q] = sum([spike for spike in spike_train if q_start < spike and spike < q_end])
+
+
+    print('success!')
