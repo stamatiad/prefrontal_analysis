@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 from pathlib import Path
 import pandas as pd
+import h5py
 
 def quick_spikes(voltage_trace=None, upper_threshold=None, lower_threshold=None, steps_per_ms=10, plot=False):
     #   ADVANCED_SPIKE_COUNT(vt, lt, ht) find spikes in voltage trace vt ( that
@@ -69,32 +70,7 @@ def q_generator(q_size=50, q_total=2):
         yield (q_start, q_end)
         q += 1
 
-if __name__ is "__main__":
-    # This is essentially the analyze_network file. To be moved later on.
-    upper_threshold = 0
-    lower_threshold = -10
-    window_size = 50
-    total_qs = int(np.floor(3000 / window_size))
 
-    # For multiple runs:
-
-    df = pd.read_hdf(Path(r'F:\vsoma.hdf5'), key='vsoma')
-    # Convert dataframe to ndarray:
-    voltage_traces = df.values
-    # Reduce each voltage trace to a list of spike times:
-    spike_trains = [
-        quick_spikes(voltage_trace=voltage_trace,
-                      upper_threshold=upper_threshold,
-                      lower_threshold=lower_threshold,
-                      plot=False)
-        for voltage_trace in voltage_traces
-    ]
-    windowed_activity = np.empty(voltage_traces.shape)
-    # Sum spikes inside a window Q:
-    for cellid, spike_train in enumerate(spike_trains):
-        if len(spike_train) > 0:
-            for q, (q_start, q_end) in enumerate(q_generator(q_size=window_size, q_total=total_qs)):
-                windowed_activity[cellid][q] = sum([spike for spike in spike_train if q_start < spike and spike < q_end])
-
+if __name__ == "__main__":
 
     print('success!')
