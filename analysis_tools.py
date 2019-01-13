@@ -3,8 +3,171 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 from pathlib import Path
 import pandas as pd
-import h5py
+from sklearn import decomposition
 from scipy import spatial
+import time
+from functools import wraps
+
+def time_it(function):
+    @wraps(function)
+    def runandtime(*args, **kwargs):
+        tic = time.perf_counter()
+        result = function(*args, **kwargs)
+        toc = time.perf_counter()
+        print(f'{function.__name__} took {toc-tic} seconds.')
+        return result
+    return runandtime
+
+experiment_config_str = 'SN{animal_model}LC{learning_condition}'.format
+
+simulation_template = (
+    'SN{animal_model}'
+    'LC{learning_condition}'
+    'TR{trial}'
+    '_EB1.750'
+    '_IB1.500'
+    '_GBF2.000'
+    '_NMDAb6.000'
+    '_AMPAb1.000'
+    '_randomdur3').format
+
+class open_hdf_dataframe():
+
+    def __init__(self, filename=None, hdf_key=None):
+        self.filename = filename
+        self.hdf_key = hdf_key
+
+    def __enter__(self):
+        try:
+            return pd.read_hdf(self.filename, key=self.hdf_key)
+        except Exception as e:
+            print(f'File ({self.filename}) or key ({self.hdf_key}) not found!')
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+    pass
+
+def simulation_to_network_activity(tofile=None, animal_models=None, learning_conditions=None, **kwargs):
+    # Convert voltage traces to spike trains:
+    upper_threshold = kwargs.get('upper_threshold', None)
+    lower_threshold = kwargs.get('lower_threshold', None)
+    ntrials = kwargs.get('ntrials', None)
+    total_qs = kwargs.get('total_qs', None)
+    q_size = kwargs.get('q_size', None)
+    cellno = kwargs.get('cellno', None)
+
+    # For multiple runs:
+    # Use panda dataframes to keep track across learning conditions and animal models.
+    # Group multiple trials in the same dataframe, since these are our working unit.
+    # Touch the output file:
+    open(tofile, 'w').close()
+
+
+    for animal_model in animal_models:
+        for learning_condition in learning_conditions:
+            windowed_activity = np.zeros((ntrials, total_qs, cellno), dtype=int)
+            #data_key = f'SN{animal_model}LC{learning_condition}'
+            dataset = experiment_config_str(
+                animal_model=animal_model,
+                learning_condition=learning_condition
+            )
+            print(f'Handling: {dataset}')
+            for trial in range(ntrials):
+                inputfile = Path('G:\Glia') \
+                    .joinpath(
+                    simulation_template(animal_model=animal_model,
+                                        learning_condition=learning_condition,
+                                        trial=trial)) \
+                    .joinpath('vsoma.hdf5')
+                #with open_hdf_dataframe(filename=filename, hdf_key='vsoma') as df:
+                if inputfile.exists():
+                    # Convert dataframe to ndarray:
+                    voltage_traces = pd.read_hdf(inputfile, key='vsoma').values
+                    # Reduce each voltage trace to a list of spike times:
+                    spike_trains = [
+                        quick_spikes(voltage_trace=voltage_trace,
+                                        upper_threshold=upper_threshold,
+                                        lower_threshold=lower_threshold,
+                                        plot=False)
+                        for voltage_trace in voltage_traces
+                    ]
+                    # Sum spikes inside a window Q:
+                    for cellid, spike_train in enumerate(spike_trains):
+                        if len(spike_train) > 0:
+                            for q, (q_start, q_end) in enumerate(generate_slices_g(size=q_size, number=total_qs)):
+                                windowed_activity[trial][q][cellid] = sum([1 for spike in spike_train if q_start <= spike and spike < q_end])
+            #fig, ax = plt.subplots()
+            #ax.imshow(windowed_activity.reshape(total_qs * ntrials, cellno, order='C'))
+            #plt.show()
+            df = pd.DataFrame(windowed_activity.reshape(total_qs * ntrials, cellno, order='C'))
+            df.to_hdf(tofile, key=dataset, mode='a')
+
+
+#===================================================================================================================
+def read_network_activity(fromfile=None, dataset=None, **kwargs):
+    # Parse keyword arguments:
+    ntrials = kwargs.get('ntrials', None)
+    total_qs = kwargs.get('total_qs', None)
+    cellno = kwargs.get('cellno', None)
+
+    data = None
+    # Read spiketrains and plot them
+    df = pd.read_hdf(fromfile, key=dataset)
+    #with open_hdf_dataframe(filename=filename, hdf_key=data_key) as df:
+    if df is not None:
+        data = df.values.T
+        # Also reshape the data into a 3d array:
+        data = data.reshape(data.shape[0], ntrials, total_qs, order='C')
+
+    return data
+
+def pcaL2(data=None, plot=False, custom_range=None, **kwargs):
+
+    ntrials = kwargs.get('ntrials', None)
+    total_qs = kwargs.get('total_qs', None)
+    cellno = kwargs.get('cellno', None)
+
+    # how many components
+    L = 2
+    pca = decomposition.PCA(n_components=L)
+    # Use custom_range to compute PCA only on a portion of the original data:
+    new_len = len(custom_range)
+    t_L = pca.fit_transform(
+        data[:250, :, custom_range].reshape(250, ntrials * new_len).T
+    ).T
+    t_L_reshaped = t_L.reshape(L, ntrials, new_len, order='C')
+    if plot:
+        plot_pcaL2(data=t_L_reshaped)
+
+    return t_L_reshaped
+
+def plot_pcaL2(data=None, klabels=None, **kwargs):
+    #Plots the data as 2d timeseries.
+    # If labels are provided then it colors them also.
+    dims, ntrials, duration = data.shape
+    fig = plt.figure()
+    plt.ion()
+    ax = fig.add_subplot(111, projection='3d')
+
+    if klabels is not None:
+        labels = klabels.tolist()
+        colors = cm.Set2(np.linspace(0, 1, len(labels) - 1))
+        key_labels = np.nonzero(np.concatenate(([1], np.diff(klabels.tolist()))))[0]
+        #key_labels = np.nonzero(np.unique(labels))[0]
+        handles = []
+        for i, (trial, label) in enumerate(zip(range(ntrials), labels)):
+            handle, = ax.plot(data[0][trial][:], data[1][trial][:],
+                             range(duration), color=colors[label], label=f'Cluster {label + 1}'
+             )
+            if i in key_labels:
+                handles.append(handle)
+        # Youmust group handles based on unique labels.
+        plt.legend(handles)
+    else:
+        colors = cm.viridis(np.linspace(0, 1, duration - 1))
+        for trial in range(ntrials):
+            for t, c in zip(range(duration - 1), colors):
+                ax.plot(data[0][trial][t:t+2], data[1][trial][t:t+2], [t, t+1], color=c)
+    plt.show()
 
 def from_zero_to(x):
     '''
@@ -219,9 +382,9 @@ def itriu(size=None, idx=None):
     ctr = 0
     for i in range(size):
         for j in range(start, size):
-            ctr += 1
             if ctr == idx:
                 return (i, j)
+            ctr += 1
         start += 1
 
 def ndpoints2array(points=None, **kwargs):
@@ -292,28 +455,32 @@ def initialize_algorithm(data=None, k=None, plot=None, **kwargs):
                 a=mean_shift_points[cluster].ndarray, b=data[:, trial, :].T
             )
     klabels = ed_array.argmin(axis=0)
-    cluster_group_idx = [
-        np.nonzero(cluster == klabels)[0]
-        for cluster in range(k)
-    ]
+    aggregate_dataset = create_agregate_dataset(klabels=klabels, k=k)
     md_array = np.zeros((k, ntrials))
     for cluster in range(k):
         for trial in range(ntrials):
             pass
             md_array[cluster, trial] = mahalanobis_distance(
-                idx_a=data[:, cluster_group_idx[cluster], :],
+                idx_a=data[:, aggregate_dataset[cluster], :],
                 idx_b=data[:, [trial], :]
             )
 
     cumulative_dist = np.zeros((1, ntrials))
+    #TODO: use aggregated_dataset function.
     for cluster_i in range(k):
         cumulative_dist[0, cluster_i] = np.nansum(
-            md_array[cluster_i, [np.nonzero(cluster_i == klabels)[0]]]
+            md_array[cluster_i, [aggregate_dataset[cluster_i]]]
         )
     J_k = cumulative_dist.sum() / ntrials
     return (klabels, J_k)
 
-    print('done')
+def create_agregate_dataset(klabels=None, k=None):
+    # Group the trials in clusters, creating an aggregate dataset:
+    aggregate_dataset = [
+        np.nonzero(cluster == klabels)[0]
+        for cluster in range(k)
+    ]
+    return aggregate_dataset
 
 def mahalanobis_distance(idx_a=None, idx_b=None):
     # Compute the MD of a trial average (idx_b) from the cluster centroid (idx_a):
@@ -341,21 +508,72 @@ def point2points_average_euclidean(a=None, b=None):
     )
     return np.mean(distance[:m])
 
-def kmeans_clustering(data=None, k=2, plot=False, **kwargs):
+@time_it
+def kmeans_clustering(data=None, k=2, max_iterations=None, plot=False, **kwargs):
     #return (labels_final, J_k_final, S_i)
     # Perform kmeans clustering.
     # Input:
     #   X: n x d data matrix
     #   m: initialization parameter (k)
     # Adapted by Stefanos Stamatiadis (stamatiad.st@gmail.com).
+    def correct_labels(klabels):
+        # Make the klabels unique and monotonically incrementing:
+        key_labels = np.unique(klabels)
+        key_idx = np.nonzero(key_labels)[0]
+        # Labels start from 1:
+        new_klabels = np.zeros(klabels.shape, dtype=int)
+        for label, key in zip(key_labels.tolist(), key_idx.tolist()):
+            print(label)
+            print(key)
+            # replace label with key:
+            new_klabels[klabels == label] = key + 1
+        return new_klabels
+
     # mahal_dist_flag = true
     max_iter = 20
     # wsize = 20 # 4*50=200ms window!
     # n, d, N
     dims, ntrials, total_qs  = data.shape
-    J_k, klabels = initialize_algorithm(data=data, k=k, plot=plot, **kwargs)
-    pass
+    J_k = []
+    klabels, J_k_init = initialize_algorithm(data=data, k=k, plot=plot, **kwargs)
+    J_k.append(J_k_init)
+    # If k == 1 return now:
+    if k == 1:
+        return correct_labels(klabels), J_k
 
+    for iteration in from_one_to(max_iterations):
+        aggregate_dataset = create_agregate_dataset(klabels=klabels, k=k)
+        md_array = np.zeros((k, ntrials))
+        for cluster in range(k):
+            for trial in range(ntrials):
+                pass
+                md_array[cluster, trial] = mahalanobis_distance(
+                    idx_a=data[:, aggregate_dataset[cluster], :],
+                    idx_b=data[:, [trial], :]
+                )
+
+        klabels = md_array.argmin(axis=0)
+        cumulative_dist = np.zeros((1, ntrials))
+        for cluster_i in range(k):
+            cumulative_dist[0, cluster_i] = np.nansum(
+                md_array[cluster_i, [aggregate_dataset[cluster_i]]]
+            )
+        J_k.append(cumulative_dist.sum() / ntrials)
+        if np.abs(J_k[iteration-1] - J_k[iteration]) < 1e-12:
+            break
+
+    return correct_labels(klabels), J_k
+
+def determine_number_of_clusters(data=None, max_clusters=None, **kwargs):
+    ntrials = kwargs.get('ntrials', None)
+    assert max_clusters <= ntrials, 'Cannot run kmeans with greater k than the datapoints!'
+    labels = np.zeros((ntrials, max_clusters), dtype=int)
+    J_k_all = list()
+    for k in range(1, max_clusters + 1):
+        klabels, J_k = kmeans_clustering(data=data, k=k, max_iterations=100, plot=False, **kwargs)
+        labels[:, k -1] = klabels.T
+        J_k_all.append(J_k)
+    print('blah!')
 
 if __name__ == "__main__":
 
