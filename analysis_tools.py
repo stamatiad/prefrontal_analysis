@@ -116,7 +116,8 @@ class MeanShiftCentroid(NDPoint):
         distance = spatial.distance.pdist(
             np.concatenate((self.ndarray, pts_array), axis=0)
         )
-        return (distance[1:m+1]).reshape(m, 1)
+        #TODO: do I start from 0 or 1: this is NOT squareform!
+        return (distance[:m]).reshape(m, 1)
 
     def update(self, ndarray):
         # Updates/moves centroid. Also calculates norm of movement
@@ -124,6 +125,10 @@ class MeanShiftCentroid(NDPoint):
         assert m == 1, 'Nd array must be row vector!'
         self.shift = np.linalg.norm(self.ndarray - ndarray)
         self.ndarray = ndarray
+
+    def to_point(self):
+        return NDPoint(self.ndarray)
+        pass
 
 
 
@@ -143,21 +148,23 @@ def mu_bar(k_rbf=None, xs=None):
     x_mu_bar = np.multiply(k_rbf, xs).sum(axis=0) / k_rbf.sum()
     return x_mu_bar.reshape(1,2)
 
-def my_mean_shift(data=None, k=None, plot=False, properties=None, dims = None):
+def mean_shift(data=None, k=None, plot=False, **kwargs):
+    ntrials = kwargs.get('ntrials', None)
+    data_dim = kwargs.get('data_dim', None)
     #return [density_pts, sigma_hat]
     # k for the kmeans (how many clusters)
     # N are the number of trials (meanshift initial points)
-    N = properties.ntrials
+    #N = properties.ntrials
     # Collapse data to ndim points (2d):
     new_len = data.shape[2]
-    pts = data.reshape(dims, properties.ntrials * new_len, order='C')
+    pts = data.reshape(data_dim, ntrials * new_len, order='C')
     # Take the average STD the cells in PCA space:
     sigma_hat = pts.std(axis=1)
     # TODO: make slices smaller, we need a rational size window (1sec?) to account for activity drifting.
     # TODO: to slicing den einai swsto gia C type arrays; prepei na to ftia3w, kai na bebaiw8w gia opou allou to xrisimopoiw!
     std_array = np.array([
         pts[:, slice_start:slice_end].std(axis=1)
-        for slice_start, slice_end in generate_slices_g(size=new_len, number=properties.ntrials)
+        for slice_start, slice_end in generate_slices_g(size=new_len, number=ntrials)
     ])
     sigma_hat = std_array.mean(axis=0).mean()
 
@@ -173,7 +180,7 @@ def my_mean_shift(data=None, k=None, plot=False, properties=None, dims = None):
     init_centroids = data.mean(axis=2)
     centroids = [
         MeanShiftCentroid(init_centroids[:, [x]].T)
-        for x in range(properties.ntrials)
+        for x in range(ntrials)
     ]
     #rw_mus = squeeze(mean(X,1))'
     while any([centroid.shift for centroid in centroids] > sigma_hat/10):
@@ -197,10 +204,144 @@ def my_mean_shift(data=None, k=None, plot=False, properties=None, dims = None):
                 plt.pause(0.0001)
             centroid.update(mu_x_bar)
 
+    # Cast to a list of points:
+    points = [
+        centroid.to_point()
+        for centroid in centroids
+    ]
+
+    return (points, sigma_hat)
+
+def itriu(size=None, idx=None):
+    # transform index (idx) to i,j pair in pdist, without getting its squareform:
+    # Only for square (pdist)matrices of side size
+    start = 1
+    ctr = 0
+    for i in range(size):
+        for j in range(start, size):
+            ctr += 1
+            if ctr == idx:
+                return (i, j)
+        start += 1
+
+def ndpoints2array(points=None, **kwargs):
+    # TODO: works as expected??
+    # convert a batch of same dimension points to an np.array, for handling:
+    #Optionally keep only one dim (useful for plotting):
+    assert len(points), 'Points array is empty!'
+    only_dim = kwargs.get('only_dim', range(points[0].dim))
+    pts_array = np.concatenate([
+        point.ndarray[:, only_dim]
+        for point in points
+    ])
+    return pts_array
+    pass
+
+def initialize_algorithm(data=None, k=None, plot=None, **kwargs):
+    # TODO: remove the None default, so to have exceptions flying around in case of an error:
+    data_dim = kwargs.get('data_dim', None)
+    ntrials = kwargs.get('ntrials', None)
+    # return [J_k, label, dE_i_q, dM_i_q] = init_algo(X, m, plot_flag)
+
+    mean_shift_points, sigma_hat = mean_shift(data=data, k=k, plot=False, **kwargs)
+    # TODO: check if I get this error and handle it:
+    #if any(isnan(density_pts))
+    #    error('I got NaNs inside density points!');
+    #end
+
+    # Sort density points by their distance and merge them, pair-wise, until have only k of them:
+    while len(mean_shift_points) > k:
+        # Calculate distances between mean shift points:
+        mean_shift_pts_inter_distance = spatial.distance.pdist(
+            ndpoints2array(mean_shift_points)
+        )
+        # Locate the two points (i,j) having the smallest distance:
+        idx = np.argsort(mean_shift_pts_inter_distance, axis=0)
+        i, j = itriu(size=len(mean_shift_points), idx=idx[0])
+        # Replace them with their mean:
+        # TODO:this wont work
+        tmp_point = NDPoint(
+            np.mean(
+                ndpoints2array([mean_shift_points[i], mean_shift_points[j]]),
+            axis=0).reshape(1, 2)
+        )
+        mean_shift_points[i] = tmp_point
+        mean_shift_points.pop(j)
+
+    if plot:
+        fig, ax = plt.subplots()
+        plt.ion()
+        ax.scatter(
+            ndpoints2array(points=mean_shift_points, only_dim=0),
+            ndpoints2array(points=mean_shift_points, only_dim=1),
+        s=10, c='red')
+        # Collapse data to ndim points (2d):
+        new_len = data.shape[2]
+        pts = data.reshape(data_dim, ntrials * new_len, order='C')
+        ax.scatter(pts[0], pts[1], s=2, c='black')
+        plt.xlabel('Principal component 1')
+        plt.ylabel('Principal component 2')
+        plt.show()
+        pass
+
+    # Initialize the clusters with simple euclidean distance:
+    ed_array = np.zeros((k, ntrials))
+    for cluster in range(k):
+        for trial in range(ntrials):
+            ed_array[cluster, trial] = point2points_average_euclidean(
+                a=mean_shift_points[cluster].ndarray, b=data[:, trial, :].T
+            )
+    klabels = ed_array.argmin(axis=0)
+    cluster_group_idx = [
+        np.nonzero(cluster == klabels)[0]
+        for cluster in range(k)
+    ]
+    md_array = np.zeros((k, ntrials))
+    for cluster in range(k):
+        for trial in range(ntrials):
+            pass
+            md_array[cluster, trial] = mahalanobis_distance(
+                idx_a=data[:, cluster_group_idx[cluster], :],
+                idx_b=data[:, [trial], :]
+            )
+
+    cumulative_dist = np.zeros((1, ntrials))
+    for cluster_i in range(k):
+        cumulative_dist[0, cluster_i] = np.nansum(
+            md_array[cluster_i, [np.nonzero(cluster_i == klabels)[0]]]
+        )
+    J_k = cumulative_dist.sum() / ntrials
+    return (klabels, J_k)
+
     print('done')
 
+def mahalanobis_distance(idx_a=None, idx_b=None):
+    # Compute the MD of a trial average (idx_b) from the cluster centroid (idx_a):
+    #TODO: check again how to handle e.g. mean to return a matrix not a vector. It really mess up the multiplications..
+    dim, trials, t = idx_a.shape
+    if any(np.array(idx_a.shape) < 1):
+        return np.nan
+    cluster_data = idx_a.reshape(t * trials, -1, order='C')
+    point_data = np.mean(idx_b.reshape(t, -1, order='C'), axis=0).reshape(1, -1)
+    mu = np.mean(cluster_data, axis=0).reshape(1, -1)
+    C = np.cov(cluster_data.T)
+    try:
+        np.linalg.cholesky(C)
+    except np.linalg.LinAlgError as e:
+        raise e('Covariance matrix is not PD!')
+    tmp = point_data - mu
+    return np.sqrt(tmp @ np.linalg.inv(C) @ tmp.T)
 
-def kmeans_clustering(data=None, initial_k=2, plot=False):
+def point2points_average_euclidean(a=None, b=None):
+    # return the average euclidean distance between the point a and points b
+    # run dist of a single point against a list of points:
+    m, n = b.shape
+    distance = spatial.distance.pdist(
+        np.concatenate((a, b), axis=0)
+    )
+    return np.mean(distance[:m])
+
+def kmeans_clustering(data=None, k=2, plot=False, **kwargs):
     #return (labels_final, J_k_final, S_i)
     # Perform kmeans clustering.
     # Input:
@@ -212,6 +353,7 @@ def kmeans_clustering(data=None, initial_k=2, plot=False):
     # wsize = 20 # 4*50=200ms window!
     # n, d, N
     dims, ntrials, total_qs  = data.shape
+    J_k, klabels = initialize_algorithm(data=data, k=k, plot=plot, **kwargs)
     pass
 
 
