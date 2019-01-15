@@ -8,6 +8,7 @@ from scipy import spatial
 import time
 from functools import wraps
 from collections import namedtuple
+from scipy.signal import savgol_filter
 
 def time_it(function):
     @wraps(function)
@@ -26,11 +27,11 @@ simulation_template = (
     'LC{learning_condition}'
     'TR{trial}'
     '_EB1.750'
-    '_IB1.500'
+    '_IB3.000'
     '_GBF2.000'
     '_NMDAb6.000'
     '_AMPAb1.000'
-    '_randomdur3').format
+    '_{configuration}dur3').format
 
 MD_params = namedtuple('MD_params', ['mu', 'S'])
 
@@ -51,6 +52,7 @@ class open_hdf_dataframe():
 
 def simulation_to_network_activity(tofile=None, animal_models=None, learning_conditions=None, **kwargs):
     # Convert voltage traces to spike trains:
+    configuration = kwargs.get('configuration', None)
     upper_threshold = kwargs.get('upper_threshold', None)
     lower_threshold = kwargs.get('lower_threshold', None)
     ntrials = kwargs.get('ntrials', None)
@@ -79,7 +81,8 @@ def simulation_to_network_activity(tofile=None, animal_models=None, learning_con
                     .joinpath(
                     simulation_template(animal_model=animal_model,
                                         learning_condition=learning_condition,
-                                        trial=trial)) \
+                                        trial=trial,
+                                        configuration=configuration)) \
                     .joinpath('vsoma.hdf5')
                 #with open_hdf_dataframe(filename=filename, hdf_key='vsoma') as df:
                 if inputfile.exists():
@@ -126,24 +129,30 @@ def read_network_activity(fromfile=None, dataset=None, **kwargs):
 def pcaL2(data=None, plot=False, custom_range=None, **kwargs):
 
     ntrials = kwargs.get('ntrials', None)
-    total_qs = kwargs.get('total_qs', None)
-    cellno = kwargs.get('cellno', None)
 
+    #TODO: check that network activity have PA:
+    have_pa = [
+        data[:, trial, -1].mean() > 0
+        for trial in range(ntrials)
+    ]
+    data = data[:, have_pa, :]
+    ntrials = sum(have_pa)
     # how many components
     L = 2
     pca = decomposition.PCA(n_components=L)
     # Use custom_range to compute PCA only on a portion of the original data:
-    new_len = len(custom_range)
+    duration = len(custom_range)
     t_L = pca.fit_transform(
-        data[:250, :, custom_range].reshape(250, ntrials * new_len).T
+        #TODO: remove hardcoded nPC:
+        data[:250, :, custom_range].reshape(250, ntrials * duration).T
     ).T
-    t_L_reshaped = t_L.reshape(L, ntrials, new_len, order='C')
+    t_L_reshaped = t_L.reshape(L, ntrials, duration, order='C')
     if plot:
         plot_pcaL2(data=t_L_reshaped)
 
     return t_L_reshaped
 
-def plot_pcaL2(data=None, klabels=None, **kwargs):
+def plot_pcaL2(data=None, klabels=None, smooth=False, **kwargs):
     #Plots the data as 2d timeseries.
     # If labels are provided then it colors them also.
     dims, ntrials, duration = data.shape
@@ -158,7 +167,13 @@ def plot_pcaL2(data=None, klabels=None, **kwargs):
         _, key_labels = np.unique(labels, return_index=True)
         handles = []
         for i, (trial, label) in enumerate(zip(range(ntrials), labels)):
-            handle, = ax.plot(data[0][trial][:], data[1][trial][:],
+            if smooth:
+                x = savgol_filter(data[0][trial][:], 11, 3)
+                y = savgol_filter(data[1][trial][:], 11, 3)
+            else:
+                x = data[0][trial][:]
+                y = data[1][trial][:]
+            handle, = ax.plot(x, y,
                              range(duration),
                               color=colors[label - 1],
                               label=f'Cluster {label}'
@@ -168,6 +183,7 @@ def plot_pcaL2(data=None, klabels=None, **kwargs):
         # Youmust group handles based on unique labels.
         plt.legend(handles)
     else:
+        #TODO: incorporate smoothing here also:
         colors = cm.viridis(np.linspace(0, 1, duration - 1))
         for trial in range(ntrials):
             for t, c in zip(range(duration - 1), colors):
@@ -317,7 +333,8 @@ def mu_bar(k_rbf=None, xs=None):
     return x_mu_bar.reshape(1,2)
 
 def mean_shift(data=None, k=None, plot=False, **kwargs):
-    ntrials = kwargs.get('ntrials', None)
+    #ntrials = kwargs.get('ntrials', None)
+    ntrials = data.shape[1]
     data_dim = kwargs.get('data_dim', None)
     #return [density_pts, sigma_hat]
     # k for the kmeans (how many clusters)
@@ -408,7 +425,8 @@ def ndpoints2array(points=None, **kwargs):
 def initialize_algorithm(data=None, k=None, plot=None, **kwargs):
     # TODO: remove the None default, so to have exceptions flying around in case of an error:
     data_dim = kwargs.get('data_dim', None)
-    ntrials = kwargs.get('ntrials', None)
+    #ntrials = kwargs.get('ntrials', None)
+    ntrials = data.shape[1]
     # return [J_k, label, dE_i_q, dM_i_q] = init_algo(X, m, plot_flag)
 
     mean_shift_points, sigma_hat = mean_shift(data=data, k=k, plot=False, **kwargs)
@@ -598,8 +616,11 @@ def evaluate_clustering(klabels=None, md_array=None, md_params=None, **kwargs):
 
 def determine_number_of_clusters(data=None, max_clusters=None, y_array=None, **kwargs):
     # Return the optimal number of clusters, as per BIC:
-    ntrials = kwargs.get('ntrials', None)
-    assert max_clusters <= ntrials, 'Cannot run kmeans with greater k than the datapoints!'
+    ntrials = data.shape[1]
+    #assert max_clusters <= ntrials, 'Cannot run kmeans with greater k than the datapoints!'
+    if max_clusters > ntrials:
+        print('Cannot run kmeans with greater k than the datapoints!')
+        max_clusters = ntrials
     dims, ntrials, duration = data.shape
     kmeans_labels = np.zeros((ntrials, max_clusters), dtype=int)
     J_k_all = list()
@@ -629,10 +650,14 @@ def determine_number_of_clusters(data=None, max_clusters=None, y_array=None, **k
     for i, y in enumerate(y_array):
         # Compute K* as a variant of the rate distortion function, utilizing BIC:
         K_s = np.argmax(np.diff(np.power(BIC_all, -y)))
+        # The idx of the kmeans_labels array (starts from 0 = one cluster):
+        K_s_labelidx = K_s + 1
+        # This directly corresponds to how many clusters:
+        K_s_trueidx = K_s_labelidx + 1
         # Add 1 to start counting from 1, then another, since we diff above:
-        K_star[0, i] = K_s + 2
+        K_star[0, i] = K_s_trueidx
         # Store the klabels corresponding to each K*:
-        K_labels[:, i] = kmeans_labels[:, K_s]
+        K_labels[:, i] = kmeans_labels[:, K_s_labelidx]
         pass
 
     return K_star, K_labels

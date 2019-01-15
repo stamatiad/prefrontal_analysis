@@ -17,13 +17,15 @@ from scipy import spatial
 #===================================================================================================================
 if __name__ == '__main__':
     # The file where network activity lies:
-    network_activity_hdf5 = Path(fr'G:\Glia\all_data.hdf5')
+    #network_activity_hdf5 = Path(fr'G:\Glia\all_data.hdf5')
+    network_activity_hdf5 = Path(fr'G:\Glia\str_data.hdf5')
 
     # Pass arguments from a dictionary to make it easier on the eyes.
     analysis_parameters = {
+        'configuration': 'structured',
         'sim_stop': 3000,
         'q_size': 50,
-        'total_qs': None, # this must be calculated later on.
+        'total_qs': None,  # this must be calculated later on.
         'ntrials': 10,
         'cellno': 333,
         'upper_threshold': 0,
@@ -33,17 +35,16 @@ if __name__ == '__main__':
     analysis_parameters['total_qs'] = int(np.floor(analysis_parameters['sim_stop'] / analysis_parameters['q_size']))
 
     # Parse voltage traces into network activity matrices once and save to file for later use:
-    '''
-    at.simulation_to_network_activity(
-        tofile=network_activity_hdf5,
-        animal_models=from_one_to(1),
-        learning_conditions=from_one_to(10),
-        ntrials=10,
-        **analysis_parameters
-    )
-    '''
 
-    for lc in range(4, 5):
+    if False:
+        at.simulation_to_network_activity(
+            tofile=network_activity_hdf5,
+            animal_models=from_one_to(1),
+            learning_conditions=from_one_to(10),
+            **analysis_parameters
+        )
+
+    for lc in range(1, 11):
         # Load and plot network activity:
         # cellno, ntrials, total_qs
         network_activity = at.read_network_activity(
@@ -54,6 +55,11 @@ if __name__ == '__main__':
             ),
             **analysis_parameters
         )
+
+        #fig = plt.figure()
+        #plt.imshow(network_activity[:,3,:])
+        #ptl.show
+
 
         t_L = at.pcaL2(
             data=network_activity,
@@ -71,7 +77,8 @@ if __name__ == '__main__':
         # Utilize only one y power, based on the dataset:
         y_i = 500
 
-        at.plot_pcaL2(data=t_L, klabels=K_labels[:, y_i].T)
+        #at.plot_pcaL2(data=t_L, smooth=True, **analysis_parameters)
+        at.plot_pcaL2(data=t_L, klabels=K_labels[:, y_i].T, smooth=True, **analysis_parameters)
 
     print('breakpoint!')
 
