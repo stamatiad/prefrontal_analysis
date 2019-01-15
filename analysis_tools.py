@@ -7,6 +7,7 @@ from sklearn import decomposition
 from scipy import spatial
 import time
 from functools import wraps
+from collections import namedtuple
 
 def time_it(function):
     @wraps(function)
@@ -30,6 +31,8 @@ simulation_template = (
     '_NMDAb6.000'
     '_AMPAb1.000'
     '_randomdur3').format
+
+MD_params = namedtuple('MD_params', ['mu', 'S'])
 
 class open_hdf_dataframe():
 
@@ -452,27 +455,10 @@ def initialize_algorithm(data=None, k=None, plot=None, **kwargs):
     for cluster in range(k):
         for trial in range(ntrials):
             ed_array[cluster, trial] = point2points_average_euclidean(
-                a=mean_shift_points[cluster].ndarray, b=data[:, trial, :].T
+                point=mean_shift_points[cluster].ndarray, points=data[:, trial, :].T
             )
     klabels = ed_array.argmin(axis=0)
-    aggregate_dataset = create_agregate_dataset(klabels=klabels, k=k)
-    md_array = np.zeros((k, ntrials))
-    for cluster in range(k):
-        for trial in range(ntrials):
-            pass
-            md_array[cluster, trial] = mahalanobis_distance(
-                idx_a=data[:, aggregate_dataset[cluster], :],
-                idx_b=data[:, [trial], :]
-            )
-
-    cumulative_dist = np.zeros((1, ntrials))
-    #TODO: use aggregated_dataset function.
-    for cluster_i in range(k):
-        cumulative_dist[0, cluster_i] = np.nansum(
-            md_array[cluster_i, [aggregate_dataset[cluster_i]]]
-        )
-    J_k = cumulative_dist.sum() / ntrials
-    return (klabels, J_k)
+    return klabels
 
 def create_agregate_dataset(klabels=None, k=None):
     # Group the trials in clusters, creating an aggregate dataset:
@@ -484,27 +470,28 @@ def create_agregate_dataset(klabels=None, k=None):
 
 def mahalanobis_distance(idx_a=None, idx_b=None):
     # Compute the MD of a trial average (idx_b) from the cluster centroid (idx_a):
+    # Return also the mu and S for later use.
     #TODO: check again how to handle e.g. mean to return a matrix not a vector. It really mess up the multiplications..
     dim, trials, t = idx_a.shape
     if any(np.array(idx_a.shape) < 1):
-        return np.nan
+        return np.nan, MD_params(np.nan, np.nan)
     cluster_data = idx_a.reshape(t * trials, -1, order='C')
     point_data = np.mean(idx_b.reshape(t, -1, order='C'), axis=0).reshape(1, -1)
     mu = np.mean(cluster_data, axis=0).reshape(1, -1)
-    C = np.cov(cluster_data.T)
+    S = np.cov(cluster_data.T)
     try:
-        np.linalg.cholesky(C)
+        np.linalg.cholesky(S)
     except np.linalg.LinAlgError as e:
         raise e('Covariance matrix is not PD!')
     tmp = point_data - mu
-    return np.sqrt(tmp @ np.linalg.inv(C) @ tmp.T)
+    return np.sqrt(tmp @ np.linalg.inv(S) @ tmp.T), MD_params(mu, S)
 
-def point2points_average_euclidean(a=None, b=None):
+def point2points_average_euclidean(point=None, points=None):
     # return the average euclidean distance between the point a and points b
     # run dist of a single point against a list of points:
-    m, n = b.shape
+    m, n = points.shape
     distance = spatial.distance.pdist(
-        np.concatenate((a, b), axis=0)
+        np.concatenate((point, points), axis=0)
     )
     return np.mean(distance[:m])
 
@@ -516,64 +503,121 @@ def kmeans_clustering(data=None, k=2, max_iterations=None, plot=False, **kwargs)
     #   X: n x d data matrix
     #   m: initialization parameter (k)
     # Adapted by Stefanos Stamatiadis (stamatiad.st@gmail.com).
-    def correct_labels(klabels):
+    def rearrange_labels(klabels, distance_array, params):
         # Make the klabels unique and monotonically incrementing:
+        # Change also the md_array row ordering to reflect that.
         key_labels = np.unique(klabels)
-        key_idx = np.nonzero(key_labels)[0]
         # Labels start from 1:
         new_klabels = np.zeros(klabels.shape, dtype=int)
-        for label, key in zip(key_labels.tolist(), key_idx.tolist()):
-            print(label)
-            print(key)
-            # replace label with key:
-            new_klabels[klabels == label] = key + 1
-        return new_klabels
+        new_params = {}
+        for new_label, original_label in enumerate(key_labels):
+            new_klabels[klabels == original_label] = new_label + 1
+            # Swap distance array rows, utilizing slice copy and unpacking:
+            distance_array[original_label, :], distance_array[new_label, :] = \
+                distance_array[new_label, :].copy(), distance_array[original_label, :].copy()
+            # Update parameters dictionary:
+            new_params[new_label] = params[original_label]
+        return new_klabels, distance_array, new_params
 
-    # mahal_dist_flag = true
-    max_iter = 20
-    # wsize = 20 # 4*50=200ms window!
-    # n, d, N
-    dims, ntrials, total_qs  = data.shape
-    J_k = []
-    klabels, J_k_init = initialize_algorithm(data=data, k=k, plot=plot, **kwargs)
-    J_k.append(J_k_init)
-    # If k == 1 return now:
-    if k == 1:
-        return correct_labels(klabels), J_k
+    def compare_arrays(arr1=None, arr2=None):
+        arr_a = arr1.tolist()
+        arr_b = arr2.tolist()
+        assert len(arr_a) == len(arr_b), 'Arrays must have the same length!'
+        for i, j in zip(arr_a, arr_b):
+            if i != j:
+                return False
+        return True
 
+    dims, ntrials, total_qs = data.shape
+    # Initiallization step:
+    klabels = initialize_algorithm(data=data, k=k, plot=plot, **kwargs)
+    aggregate_dataset = create_agregate_dataset(klabels=klabels, k=k)
     for iteration in from_one_to(max_iterations):
-        aggregate_dataset = create_agregate_dataset(klabels=klabels, k=k)
+        # Assignment step:
         md_array = np.zeros((k, ntrials))
+        md_params_d = {}
         for cluster in range(k):
             for trial in range(ntrials):
-                pass
-                md_array[cluster, trial] = mahalanobis_distance(
+                md_array[cluster, trial], md_params_d[cluster] = mahalanobis_distance(
                     idx_a=data[:, aggregate_dataset[cluster], :],
                     idx_b=data[:, [trial], :]
                 )
-
-        klabels = md_array.argmin(axis=0)
-        cumulative_dist = np.zeros((1, ntrials))
-        for cluster_i in range(k):
-            cumulative_dist[0, cluster_i] = np.nansum(
-                md_array[cluster_i, [aggregate_dataset[cluster_i]]]
-            )
-        J_k.append(cumulative_dist.sum() / ntrials)
-        if np.abs(J_k[iteration-1] - J_k[iteration]) < 1e-12:
+        klabels_old = klabels
+        klabels = np.nanargmin(md_array, axis=0)
+        # Update step:
+        aggregate_dataset = create_agregate_dataset(klabels=klabels, k=k)
+        # Termination step:
+        if k == 1:
             break
+        #TODO: change name to something better:
+        if compare_arrays(klabels_old, klabels):
+            break
+    # Calculate the within cluster distance:
+    cumulative_dist = np.zeros((1, ntrials))
+    for cluster_i in range(k):
+        cumulative_dist[0, cluster_i] = np.nansum(
+            md_array[cluster_i, [aggregate_dataset[cluster_i]]]
+        )
+    J_k = cumulative_dist.sum() / ntrials
+    klabels, md_array, md_params_d = rearrange_labels(klabels, md_array, md_params_d)
+    return klabels, J_k, md_array, md_params_d
 
-    return correct_labels(klabels), J_k
+def evaluate_clustering(klabels=None, md_array=None, md_params=None, **kwargs):
+    # Calculate likelihood of each trial, given the cluster centroid:
+    nclusters, ntrials = md_array.shape
+    data_dim = kwargs.get('data_dim', None)
+
+    ln_L = np.zeros((1, ntrials))
+    ln_L.fill(np.nan)
+    for trial in range(ntrials):
+        #TODO: is the labels with the md_array values aligned? Or they change with the unique labeling code?
+        #TODO: decide in using start from 0 or 1...
+        cluster = klabels[trial] - 1
+        mdist = md_array[cluster, trial]
+        S = md_params[cluster].S
+        # Remove clusters without any points:
+        try:
+            ln_L[0, trial] = np.exp(-1/2 * mdist) / np.sqrt((2*np.pi)**data_dim * np.linalg.det(S))
+        except Exception as e:
+            raise e('Something went wrong!')
+    L_ln_hat = np.nansum(np.log(ln_L * 0.0001))
+
+    if L_ln_hat > 0:
+        print('L_ln_hat is wrong! Possibly near singular S!')
+        BIC = np.nan
+    else:
+        BIC = np.log(ntrials)*nclusters - 2 * L_ln_hat
+    return BIC
+
 
 def determine_number_of_clusters(data=None, max_clusters=None, **kwargs):
+    # Return the optimal number of clusters, as per BIC:
     ntrials = kwargs.get('ntrials', None)
     assert max_clusters <= ntrials, 'Cannot run kmeans with greater k than the datapoints!'
+    dims, ntrials, duration = data.shape
     labels = np.zeros((ntrials, max_clusters), dtype=int)
     J_k_all = list()
+    BIC_all = list()
+    md_params_all = list()
     for k in range(1, max_clusters + 1):
-        klabels, J_k = kmeans_clustering(data=data, k=k, max_iterations=100, plot=False, **kwargs)
-        labels[:, k -1] = klabels.T
+        print(f'Clustering with {k} clusters.')
+        klabels, J_k, md_array, md_params_d = kmeans_clustering(data=data, k=k, max_iterations=100, plot=False, **kwargs)
+        print(klabels)
+        BIC = evaluate_clustering(klabels=klabels, md_array=md_array, md_params=md_params_d, **kwargs)
+        BIC_all.append(BIC)
+        labels[:, k - 1] = klabels.T
         J_k_all.append(J_k)
+        md_params_all.append(md_params_d)
     print('blah!')
+    # Calculate the mim intercluster distance:
+    run_average_translation = np.zeros((data.shape[:2]))
+    for trial in range(ntrials):
+        run_average_translation[:, trial] = np.diff(
+            np.concatenate((data[:, trial, :].min(axis=1).reshape(1, dims),
+            data[:, trial, :].max(axis=1).reshape(1,dims)), axis=0)
+        ).T
+    min_intercluster_d = run_average_translation.mean(axis=1)
+    # BIC
 
 if __name__ == "__main__":
 

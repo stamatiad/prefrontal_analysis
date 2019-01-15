@@ -53,9 +53,6 @@ if __name__ == '__main__':
         ),
         **analysis_parameters
     )
-    #fig, ax = plt.subplots()
-    #ax.imshow(data)
-    #plt.show()
 
     t_L = at.pcaL2(
         data=network_activity,
