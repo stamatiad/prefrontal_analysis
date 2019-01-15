@@ -43,29 +43,35 @@ if __name__ == '__main__':
     )
     '''
 
-    # Load and plot network activity:
-    # cellno, ntrials, total_qs
-    network_activity = at.read_network_activity(
-        fromfile=network_activity_hdf5,
-        dataset=at.experiment_config_str(
-            animal_model=1,
-            learning_condition=1
-        ),
-        **analysis_parameters
-    )
+    for lc in range(4, 5):
+        # Load and plot network activity:
+        # cellno, ntrials, total_qs
+        network_activity = at.read_network_activity(
+            fromfile=network_activity_hdf5,
+            dataset=at.experiment_config_str(
+                animal_model=1,
+                learning_condition=lc
+            ),
+            **analysis_parameters
+        )
 
-    t_L = at.pcaL2(
-        data=network_activity,
-        custom_range=range(20, 60),
-        plot=False,
-        **analysis_parameters
-    )
+        t_L = at.pcaL2(
+            data=network_activity,
+            custom_range=range(20, 60),
+            plot=False,
+            **analysis_parameters
+        )
 
 
-    # k-means cluster network activity:
-    at.determine_number_of_clusters(data=t_L, max_clusters=10, **analysis_parameters)
+        # Determine the optimal number of clusters for all trials of a single animal model/learning condition.
+        #y_array = np.linspace(0.01, 10, 1000)
+        y_array = np.linspace(0.1, 100, 1000)
+        K_star, K_labels = at.determine_number_of_clusters(data=t_L[:, :, -20:], max_clusters=10, y_array=y_array, **analysis_parameters)
 
-    #at.plot_pcaL2(data=t_L, klabels=klabels)
+        # Utilize only one y power, based on the dataset:
+        y_i = 500
+
+        at.plot_pcaL2(data=t_L, klabels=K_labels[:, y_i].T)
 
     print('breakpoint!')
 

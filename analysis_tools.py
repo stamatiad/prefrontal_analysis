@@ -153,14 +153,16 @@ def plot_pcaL2(data=None, klabels=None, **kwargs):
 
     if klabels is not None:
         labels = klabels.tolist()
-        colors = cm.Set2(np.linspace(0, 1, len(labels) - 1))
-        key_labels = np.nonzero(np.concatenate(([1], np.diff(klabels.tolist()))))[0]
-        #key_labels = np.nonzero(np.unique(labels))[0]
+        nclusters = np.unique(klabels).size
+        colors = cm.Set2(np.linspace(0, 1, nclusters))
+        _, key_labels = np.unique(labels, return_index=True)
         handles = []
         for i, (trial, label) in enumerate(zip(range(ntrials), labels)):
             handle, = ax.plot(data[0][trial][:], data[1][trial][:],
-                             range(duration), color=colors[label], label=f'Cluster {label + 1}'
-             )
+                             range(duration),
+                              color=colors[label - 1],
+                              label=f'Cluster {label}'
+            )
             if i in key_labels:
                 handles.append(handle)
         # Youmust group handles based on unique labels.
@@ -484,7 +486,11 @@ def mahalanobis_distance(idx_a=None, idx_b=None):
     except np.linalg.LinAlgError as e:
         raise e('Covariance matrix is not PD!')
     tmp = point_data - mu
-    return np.sqrt(tmp @ np.linalg.inv(S) @ tmp.T), MD_params(mu, S)
+    try:
+        MD = np.sqrt(tmp @ np.linalg.inv(S) @ tmp.T)
+    except np.linalg.LinAlgError as e:
+        raise e
+    return MD, MD_params(mu, S)
 
 def point2points_average_euclidean(point=None, points=None):
     # return the average euclidean distance between the point a and points b
@@ -590,34 +596,47 @@ def evaluate_clustering(klabels=None, md_array=None, md_params=None, **kwargs):
     return BIC
 
 
-def determine_number_of_clusters(data=None, max_clusters=None, **kwargs):
+def determine_number_of_clusters(data=None, max_clusters=None, y_array=None, **kwargs):
     # Return the optimal number of clusters, as per BIC:
     ntrials = kwargs.get('ntrials', None)
     assert max_clusters <= ntrials, 'Cannot run kmeans with greater k than the datapoints!'
     dims, ntrials, duration = data.shape
-    labels = np.zeros((ntrials, max_clusters), dtype=int)
+    kmeans_labels = np.zeros((ntrials, max_clusters), dtype=int)
     J_k_all = list()
     BIC_all = list()
     md_params_all = list()
     for k in range(1, max_clusters + 1):
         print(f'Clustering with {k} clusters.')
         klabels, J_k, md_array, md_params_d = kmeans_clustering(data=data, k=k, max_iterations=100, plot=False, **kwargs)
-        print(klabels)
         BIC = evaluate_clustering(klabels=klabels, md_array=md_array, md_params=md_params_d, **kwargs)
         BIC_all.append(BIC)
-        labels[:, k - 1] = klabels.T
+        kmeans_labels[:, k - 1] = klabels.T
         J_k_all.append(J_k)
         md_params_all.append(md_params_d)
-    print('blah!')
-    # Calculate the mim intercluster distance:
+    #TODO: den to kanw akomh, giati den fainetai na exw problhma me overfit (sto random pou me noiazei perissotero).
+    '''
+    # Calculate:
     run_average_translation = np.zeros((data.shape[:2]))
     for trial in range(ntrials):
         run_average_translation[:, trial] = np.diff(
             np.concatenate((data[:, trial, :].min(axis=1).reshape(1, dims),
             data[:, trial, :].max(axis=1).reshape(1,dims)), axis=0)
         ).T
-    min_intercluster_d = run_average_translation.mean(axis=1)
-    # BIC
+    mean_intratrial_translation = run_average_translation.mean(axis=1)
+    '''
+    K_star = np.zeros((1, y_array.size), dtype=int)
+    K_labels = np.zeros((ntrials, y_array.size), dtype=int)
+    for i, y in enumerate(y_array):
+        # Compute K* as a variant of the rate distortion function, utilizing BIC:
+        K_s = np.argmax(np.diff(np.power(BIC_all, -y)))
+        # Add 1 to start counting from 1, then another, since we diff above:
+        K_star[0, i] = K_s + 2
+        # Store the klabels corresponding to each K*:
+        K_labels[:, i] = kmeans_labels[:, K_s]
+        pass
+
+    return K_star, K_labels
+
 
 if __name__ == "__main__":
 
