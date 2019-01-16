@@ -15,8 +15,43 @@ from collections import OrderedDict, defaultdict, namedtuple
 import h5py
 import time
 import os
+import sys
 from functools import wraps
 import pandas as pd
+import pkg_resources
+from pkg_resources import DistributionNotFound, VersionConflict
+
+def check_requirements():
+    # Check that user is running a supported python version and necessary packages:
+    dependencies = [
+        'h5py==2.8.0',
+        'matplotlib==3.0.2',
+        'numpy==1.15.4',
+        'pandas==0.23.4',
+        'scikit-learn==0.20.2',
+        'scipy==1.1.0',
+        'sklearn==0.0',
+        'tables==3.4.4',
+        'wincertstore==0.2'
+    ]
+    py_major = sys.version_info[0]
+    py_minor = sys.version_info[1]
+    if py_major < 3 or py_minor < 7:
+        raise Exception('You are running an unsupported python version ({}.{}). Please use 3.7 or newer!' \
+                        .format(py_major, py_minor))
+
+    # If a dependency is not met, a DistributionNotFound or VersionConflict is thrown.
+    pkg_resources.require(dependencies)
+
+def time_it(function):
+    @wraps(function)
+    def runandtime(*args, **kwargs):
+        tic = time.perf_counter()
+        result = function(*args, **kwargs)
+        toc = time.perf_counter()
+        print(f'{function.__name__} took {toc-tic} seconds.')
+        return result
+    return runandtime
 
 def with_reproducible_rng(class_method):
     '''
@@ -36,6 +71,7 @@ def with_reproducible_rng(class_method):
     def reset_rng(*args, **kwargs):
         # this translates to self.serial_no ar runtime
         np.random.seed(args[0].serial_no)
+        print(f'{class_method.__name__} reseeds the NRG.')
         return class_method(*args, **kwargs)
     return reset_rng
 
@@ -283,6 +319,7 @@ class Network:
         return
 
 
+    @time_it
     @with_reproducible_rng
     def create_connections(self, alias='', rearrange_iterations=100, average_conn_prob=None,
                            plot=False):
@@ -367,7 +404,8 @@ class Network:
             #cpairs = [None]*len(upairs)
             new_upairs = [None]*len(upairs)
             prev_i = 0
-            query_pair_types = set(x.type_cells for x in upairs)
+            query_pair_types = sorted(set(x.type_cells for x in upairs))
+            # TODO: Sort the set (since its order is random!), to get reproducable RNG results!
             for pair_type in query_pair_types:
                 matching_upairs = [x for x in upairs if x.type_cells == pair_type]
                 upairs_dist = np.asarray([p.distance for p in matching_upairs])
@@ -378,6 +416,7 @@ class Network:
                 # Don't forget to include the (closed) last bin!
                 prob_arr_flat = np.append(np.add(prob_arr, np.tile(np.arange(len(matching_upairs)),
                                                          (len(connection_protocol)+1, 1))).flatten('F'), len(matching_upairs))
+                print(f'Length of matching pairs {len(matching_upairs)}')
                 rnd_arr_flat = np.add(np.random.rand(1, len(matching_upairs)), np.arange(len(matching_upairs)))
                 blah = np.histogram(rnd_arr_flat, bins=prob_arr_flat)[0]
                 blah2 = np.nonzero(blah)[0]
@@ -442,6 +481,7 @@ class Network:
 
         # Initially connect only non PN to PN pairs (but due to performance and code readability issues connect the PN
         # to PN pairs also; unordered pairs must lie on a square matrix!):
+        print(f'Random initially {np.random.rand(1)[0]}')
         connectivity_mat = np.full((self.cell_no, self.cell_no), False)
         # use a dict to instruct what connections you need:
         # This is the distance dependent connection types from Perin et al., 2011:
@@ -456,6 +496,10 @@ class Network:
         # Update upairs in object. Then generate theconnectivity matrix
         for upair in connected_upairs:
             self.upairs_d[self.to_ucoord(upair.a, upair.b)] = upair
+        print(f'Random finally {np.random.rand(1)[0]}')
+        with open('connblah1.txt', 'w') as f:
+            for element in connectivity_mat[-1, :]:
+                f.write(f'{element}\n')
 
         # Now if configuration is random, update the PN to PN connectivity matrix part and return:
         if self.configuration_alias is 'random':
