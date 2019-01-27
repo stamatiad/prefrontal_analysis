@@ -155,13 +155,13 @@ cell = 1
 cellid = cells_with_spikes[cell]
 vt = network_voltage_traces[cellid, ::samples_per_ms]
 #spikes = nwbfile.units.get_unit_spike_times(1)
-spikes = nwbfile.units['spike_times'][cell].reshape(1, -1)
+spike_train = nwbfile.units['spike_times'][cell].reshape(1, -1)
 
 # Plot single cell response
 #TODO: include stimulus line (this should be included in the NWB file and be ploted here).
 plt.ion()
 fig, ax = plt.subplots(2, 1)
-ax[0].eventplot(spikes)
+ax[0].eventplot(spike_train)
 ax[1].plot(vt)
 ax[1].set(xlabel='time (ms)', ylabel='voltage (mV)')
 ax[0].set(title='Spike events')

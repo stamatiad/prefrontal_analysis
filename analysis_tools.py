@@ -59,6 +59,28 @@ def getargs(*argnames):
         return kwargs.get(argnames[0])
     return [kwargs.get(arg) for arg in argnames[:-1]]
 
+def nwb_iter(sequencelike):
+    # This is a wrapper for NWB sequences. It returns something that you can iterate on.
+    # Without this, iterating can be cumbersome (does not stop; you can't even create a list).
+    # Although these types appear to support __len__ and __getitem__ :
+    n = len(sequencelike)
+    ctr = 0
+    while ctr < n:
+        yield sequencelike[ctr]
+        ctr += 1
+
+def load_nwb_file(**kwargs):
+    animal_model, learning_condition, experiment_config = \
+    getargs('animal_model', 'learning_condition', 'experiment_config', kwargs)
+
+    filename = experiment_config_filename(
+        animal_model=animal_model,
+        learning_condition=learning_condition,
+        experiment_config=experiment_config
+    )
+    nwbfile = NWBHDF5IO(str(filename), 'r').read()
+    return nwbfile
+
 def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
     # Get parameters externally:
     experiment_config, animal_model, learning_condition, ntrials, trial_len, ncells, stim_start_offset, \
@@ -107,6 +129,7 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
             membrane_potential[:, trial_start_t:trial_end_t] = voltage_traces[:ncells, :nsamples]
             # Use a dict to save space:
             for cellid in range(ncells):
+                #TODO: quick_spikes() appears to include spikes at the very last point in time. Is this a bug?
                 spike_train = quick_spikes(
                     voltage_trace=voltage_traces[cellid],
                     upper_threshold=spike_upper_threshold,
@@ -196,6 +219,70 @@ class open_hdf_dataframe():
         pass
     pass
 
+def bin_activity(NWBfile, **kwargs):
+    animal_model, learning_condition, experiment_config, q_size, data_path = getargs(
+        'animal_model', 'learning_condition', 'experiment_config', 'q_size', 'data_path',
+        kwargs
+    )
+
+    input_file = data_path.joinpath(
+        experiment_config_filename(
+            animal_model=animal_model,
+            learning_condition=learning_condition,
+            experiment_config=experiment_config
+        )
+    )
+    #with open_hdf_dataframe(filename=filename, hdf_key='vsoma') as df:
+    if input_file.exists():
+        nwbfile = NWBHDF5IO(str(input_file), 'r').read()
+        # Get somatic voltage membrane potential:
+        #TODO: can I get ncells without load the whole aquisition dataset?
+        network_voltage_traces = nwbfile.acquisition['membrane_potential'].data
+        ncells = network_voltage_traces.shape[0]
+        ntrials = len(nwbfile.trials)
+        #TODO: check that this is the SAME as the experiment_cofig
+        # This is the current experiment identifier (structured, random etc):
+        experiment_id = nwbfile.identifier
+        # Here I am using the same trial length for all my trials, because its a simulation,
+        # so I safely grab the first one only.
+        trial_len = nwbfile.trials['stop_time'][0] - nwbfile.trials['start_time'][0]  # in ms
+        samples_per_ms = nwbfile.acquisition['membrane_potential'].rate / 1000  # Sampling rate (Hz) / ms
+        conversion_factor = nwbfile.acquisition['membrane_potential'].conversion
+
+        # CAUTION: these appear to return similar objects, where they dont. Be very careful on how you use them
+        # together (e.g. zip() etc).
+        # Also these appear to not behave like iterables. So create some out of them:
+        cells_with_spikes = nwb_iter(nwbfile.units['cell_id'])
+        spike_trains = nwb_iter(nwbfile.units['spike_times'])
+
+        # Bin spiking activity for all trials/cells in total_qs bins of q_size size:
+        #TODO: THIS REQUIRES that each trial is divided by q_size exactly! Impose that constraint!
+        # How many qs in all trials?
+        total_qs = int(np.floor(trial_len / q_size)) * ntrials
+        trial_qs = int(np.floor(trial_len / q_size))
+        binned_activity = np.zeros((ncells, total_qs), dtype=int)
+        # This is essentially what we are doing, but since python is so slow, we refactor it with some optimized code.
+        #for cellid, spike_train in zip(cells_with_spikes, iter(spike_trains)):
+        #    for q, (q_start, q_end) in enumerate(generate_slices(size=q_size, number=total_qs)):
+        #        binned_activity[cellid][q] = sum([1 for spike in spike_train if q_start <= spike and spike < q_end])
+        try:
+            for cellid, spike_train in zip(cells_with_spikes, spike_trains):
+                #TODO: this is a serious bug!
+                if spike_train.max() >= trial_len * ntrials:
+                    print('having spikes outside of trial! How is this possible?')
+                    spike_train = spike_train[:-1]
+                bins = np.floor_divide(spike_train, q_size).astype(int)
+                np.add.at(binned_activity[cellid][:], bins, 1)
+        except Exception as e:
+            print(str(e))
+
+        # cells, trials, qs
+        # Reshape before returning:
+        return binned_activity.reshape(ncells, ntrials, trial_qs)
+    else:
+        print('Data file not found!')
+        return None
+
 def simulation_to_network_activity(tofile=None, animal_models=None, learning_conditions=None, **kwargs):
     # Convert voltage traces to spike trains:
     configuration = kwargs.get('configuration', None)
@@ -217,7 +304,7 @@ def simulation_to_network_activity(tofile=None, animal_models=None, learning_con
         for learning_condition in learning_conditions:
             windowed_activity = np.zeros((ntrials, total_qs, cellno), dtype=int)
             #data_key = f'SN{animal_model}LC{learning_condition}'
-            dataset = experiment_config_str(
+            dataset = experiment_config_filename(
                 animal_model=animal_model,
                 learning_condition=learning_condition
             )
@@ -245,7 +332,7 @@ def simulation_to_network_activity(tofile=None, animal_models=None, learning_con
                     # Sum spikes inside a window Q:
                     for cellid, spike_train in enumerate(spike_trains):
                         if len(spike_train) > 0:
-                            for q, (q_start, q_end) in enumerate(generate_slices_g(size=q_size, number=total_qs)):
+                            for q, (q_start, q_end) in enumerate(generate_slices(size=q_size, number=total_qs)):
                                 windowed_activity[trial][q][cellid] = sum([1 for spike in spike_train if q_start <= spike and spike < q_end])
             #fig, ax = plt.subplots()
             #ax.imshow(windowed_activity.reshape(total_qs * ntrials, cellno, order='C'))
@@ -276,7 +363,7 @@ def read_network_activity(fromfile=None, dataset=None, **kwargs):
 
 def pcaL2(data=None, plot=False, custom_range=None, **kwargs):
 
-    ntrials = kwargs.get('ntrials', None)
+    ntrials = 10#kwargs.get('ntrials', None)
 
     #TODO: check that network activity have PA:
     #Can I move this to the NWB format and have it on creation?
@@ -502,7 +589,7 @@ def mean_shift(data=None, k=None, plot=False, **kwargs):
     # TODO: to slicing den einai swsto gia C type arrays; prepei na to ftia3w, kai na bebaiw8w gia opou allou to xrisimopoiw!
     std_array = np.array([
         pts[:, slice_start:slice_end].std(axis=1)
-        for slice_start, slice_end in generate_slices_g(size=new_len, number=ntrials)
+        for slice_start, slice_end in generate_slices(size=new_len, number=ntrials)
     ])
     sigma_hat = std_array.mean(axis=0).mean()
 
