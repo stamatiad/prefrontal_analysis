@@ -10,6 +10,14 @@ from functools import wraps
 from collections import namedtuple
 from scipy.signal import savgol_filter
 
+from datetime import datetime
+from pynwb import NWBFile
+from pynwb import NWBHDF5IO
+from pynwb.form.backends.hdf5.h5_utils import H5DataIO
+from pynwb import TimeSeries
+from collections import defaultdict
+from functools import partial
+
 def time_it(function):
     @wraps(function)
     def runandtime(*args, **kwargs):
@@ -20,20 +28,158 @@ def time_it(function):
         return result
     return runandtime
 
-experiment_config_str = 'SN{animal_model}LC{learning_condition}'.format
+experiment_config_filename = \
+    'animal_model_{animal_model}_learning_condition_{learning_condition}_{experiment_config}.nwb'.format
 
 simulation_template = (
     'SN{animal_model}'
     'LC{learning_condition}'
     'TR{trial}'
-    '_EB1.750'
-    '_IB3.000'
+    '_EB{excitation_bias:.3f}'
+    '_IB{inhibition_bias:.3f}'
     '_GBF2.000'
-    '_NMDAb6.000'
-    '_AMPAb1.000'
-    '_{configuration}dur3').format
+    '_NMDAb{nmda_bias:.3f}'
+    '_AMPAb{ampa_bias:.3f}'
+    '_{experiment_config}_simdur{sim_duration}').format
 
 MD_params = namedtuple('MD_params', ['mu', 'S'])
+
+def getargs(*argnames):
+    '''getargs(*argnames, argdict)
+    Convenience function to retrieve arguments from a dictionary in batch
+    '''
+    if len(argnames) < 2:
+        raise ValueError('Must supply at least one key and a dict')
+    if not isinstance(argnames[-1], dict):
+        raise ValueError('last argument must be dict')
+    kwargs = argnames[-1]
+    if not argnames:
+        raise ValueError('must provide keyword to get')
+    if len(argnames) == 2:
+        return kwargs.get(argnames[0])
+    return [kwargs.get(arg) for arg in argnames[:-1]]
+
+def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
+    # Get parameters externally:
+    experiment_config, animal_model, learning_condition, ntrials, trial_len, ncells, stim_start_offset, \
+    stim_stop_offset, samples_per_ms, spike_upper_threshold, spike_lower_threshold, excitation_bias, \
+        inhibition_bias, nmda_bias, ampa_bias, sim_duration = \
+        getargs('experiment_config', 'animal_model', 'learning_condition', 'ntrials', 'trial_len', 'ncells', 'stim_start_offset', \
+                   'stim_stop_offset', 'samples_per_ms', 'spike_upper_threshold', 'spike_lower_threshold', \
+                'excitation_bias', 'inhibition_bias', 'nmda_bias', 'ampa_bias', 'sim_duration', kwargs)
+
+    # the base unit of time is the ms:
+    conversion_factor = 1 / samples_per_ms
+    nsamples = trial_len * samples_per_ms
+
+    nwbfile = NWBFile(
+        session_description='NEURON simulation results.',
+        identifier=experiment_config,
+        session_start_time=datetime.now(),
+        file_create_date=datetime.now()
+    )
+
+    nwbfile.add_unit_column('cell_id', 'Id of the cell recorded')
+    nwbfile.add_trial_column('persistent_activity', 'If this trial has persistent activity')
+    #nwbfile.add_epoch_column('stimulus')
+
+    time_series_l = []
+    spike_train_l = []
+    spike_trains_d = defaultdict(partial(np.ndarray, 0))
+    membrane_potential = np.zeros((ncells, nsamples * ntrials), dtype=float)
+    for trial, (trial_start_t, trial_end_t) in enumerate(generate_slices(size=nsamples, number=ntrials)):
+        # Search inputdir for files specified in the parameters
+        inputfile = inputdir.joinpath(
+            simulation_template(
+                excitation_bias=excitation_bias,
+                inhibition_bias=inhibition_bias,
+                nmda_bias=nmda_bias,
+                ampa_bias=ampa_bias,
+                sim_duration=sim_duration,
+                animal_model=animal_model,
+                learning_condition=learning_condition,
+                trial=trial,
+                experiment_config=experiment_config
+            )).joinpath('vsoma.hdf5')
+        if inputfile.exists():
+            # Convert dataframe to ndarray:
+            voltage_traces = pd.read_hdf(inputfile, key='vsoma').values
+            membrane_potential[:, trial_start_t:trial_end_t] = voltage_traces[:ncells, :nsamples]
+            # Use a dict to save space:
+            for cellid in range(ncells):
+                spike_train = quick_spikes(
+                    voltage_trace=voltage_traces[cellid],
+                    upper_threshold=spike_upper_threshold,
+                    lower_threshold=spike_lower_threshold,
+                    plot=False
+                )
+                #TODO: to better name conversion factor!
+                spike_trains_d[cellid] = np.append(
+                    spike_trains_d[cellid], np.add(spike_train, trial_start_t * conversion_factor)
+                )
+
+            # Define the region of PA as the last 200 ms of the simulation:
+            pa_stop = int(nsamples * conversion_factor)  # in ms
+            pa_start = int(pa_stop - 200)
+            has_persistent = voltage_traces[:ncells, pa_start:pa_stop].max() > 0
+            # Add trial:
+            nwbfile.add_trial(
+                start_time=trial_start_t * conversion_factor,
+                stop_time=trial_end_t * conversion_factor,
+                persistent_activity=has_persistent
+            )
+            # Add stimulus epoch for that trial:
+            nwbfile.add_epoch(
+                start_time=float(trial_start_t + stim_start_offset),
+                stop_time=float(trial_start_t + stim_stop_offset),
+                tags=f'trial {trial} stimulus'
+            )
+        else:
+            #TODO: handle missing files!
+            print('error!')
+            pass
+
+    # Chunk and compress the data:
+    wrapped_data = H5DataIO(
+        data=membrane_potential,
+        chunks=True,  # <---- Enable chunking (although I'm not sure if it will do any good in my huge dataset.
+        compression='gzip',
+        compression_opts=9
+    )
+    # Add somatic voltage traces (all trials concatenated)
+    vsoma_timeseries = TimeSeries(
+        'membrane_potential',  # Name of the TimeSeries
+        wrapped_data,  # Actual data
+        'miliseconds',  # Base unit of the measurement
+        starting_time=0.0,  # The timestamp of the first sample
+        rate=10000.0,  # Sampling rate in Hz
+        conversion=conversion_factor  #  Scalar to multiply each element in data to convert it to the specified unit
+    )
+    nwbfile.add_acquisition(vsoma_timeseries)
+
+    for cellid in range(ncells):
+        if spike_trains_d[cellid].size > 0:
+            #TODO: standardize these! You are using the format for that:
+            # Get each trial start/end in no of samples, rather than ms:
+            activity_intervals = [
+                [q_start, q_end]
+                for q_start, q_end in generate_slices(size=trial_len / 1000, number=ntrials, start_from=0)
+            ]
+            nwbfile.add_unit(
+                id=cellid, spike_times=spike_trains_d[cellid],
+                obs_intervals=activity_intervals,
+                cell_id=cellid
+            )
+
+    # write to file:
+    output_file = outputdir.joinpath(
+        experiment_config_filename(
+            animal_model=animal_model, learning_condition=learning_condition,
+            experiment_config=experiment_config
+        )
+    )
+    with NWBHDF5IO(str(output_file), 'w') as io:
+        io.write(nwbfile)
 
 class open_hdf_dataframe():
 
@@ -114,6 +260,8 @@ def read_network_activity(fromfile=None, dataset=None, **kwargs):
     ntrials = kwargs.get('ntrials', None)
     total_qs = kwargs.get('total_qs', None)
     cellno = kwargs.get('cellno', None)
+    #TODO: You can use something like that to get your arguments. It's more pythonic:
+    # id, columns, desc, colnames = popargs('id', 'columns', 'description', 'colnames', kwargs)
 
     data = None
     # Read spiketrains and plot them
@@ -131,6 +279,7 @@ def pcaL2(data=None, plot=False, custom_range=None, **kwargs):
     ntrials = kwargs.get('ntrials', None)
 
     #TODO: check that network activity have PA:
+    #Can I move this to the NWB format and have it on creation?
     have_pa = [
         data[:, trial, -1].mean() > 0
         for trial in range(ntrials)
@@ -206,7 +355,7 @@ def from_one_to(x):
     '''
     return range(1, x + 1)
 
-def quick_spikes(voltage_trace=None, upper_threshold=None, lower_threshold=None, steps_per_ms=10, plot=False):
+def quick_spikes(voltage_trace=None, upper_threshold=None, lower_threshold=None, samples_per_ms=10, plot=False):
     #   ADVANCED_SPIKE_COUNT(vt, lt, ht) find spikes in voltage trace vt ( that
     #   first cross high threshold and again low threshold).
     #   ADVANCED_SPIKE_COUNT(vt, lt, ht, 'threshold',true) will return spikes
@@ -235,11 +384,11 @@ def quick_spikes(voltage_trace=None, upper_threshold=None, lower_threshold=None,
     # Then, get the maximum voltage in this region.
     spike_timings = []
     for start, stop in zip(spikes_start, spikes_end):
-        spike_timings.append((np.argmax(voltage_trace[start:stop+1]) + start) / steps_per_ms)
+        spike_timings.append((np.argmax(voltage_trace[start:stop+1]) + start) / samples_per_ms)
     # Plot if requested.
     if plot:
-        #vt_reduced = voltage_trace.loc[::steps_per_ms]
-        vt_reduced = voltage_trace[::steps_per_ms]
+        #vt_reduced = voltage_trace.loc[::samples_per_ms]
+        vt_reduced = voltage_trace[::samples_per_ms]
         # Re index it:
         #vt_reduced.index = (range(vt_reduced.size))
         fig, ax = plt.subplots()
@@ -257,19 +406,23 @@ def quick_spikes(voltage_trace=None, upper_threshold=None, lower_threshold=None,
 
     return spike_timings
 
-def generate_slices_g(size=50, number=2):
+def generate_slices(size=50, number=2, start_from=0, to_slice = True):
     '''
     Generate starting/ending positions of q_total windows q of size q_size.
+    TODO: accomondate the user case starting from idx zero, rather than one.
+    If the toslice is True, you got one extra included unit at the end, so the qs can be used to slice a array.
     :param q_size:
     :param q_total:
     :return:
     '''
-    for q in from_one_to(number):
-        q_start = (q - 1) * size + 1
-        q_end = (q - 1) * size + size
+    for q in range(number):
+        q_start = q * size + start_from
+        q_end = q_start + size + start_from
         # yield starting/ending positions of q (in ms)
-        yield (q_start, q_end)
-        q += 1
+        if to_slice:
+            yield (q_start, q_end)
+        else:
+            yield (q_start, q_end - 1)
 
 class NDPoint():
     def __init__(self, ndarray=None):

@@ -405,7 +405,7 @@ class Network:
             new_upairs = [None]*len(upairs)
             prev_i = 0
             query_pair_types = sorted(set(x.type_cells for x in upairs))
-            # TODO: Sort the set (since its order is random!), to get reproducable RNG results!
+            # Sort the set (since its order is random!), to get reproducible RNG results!
             for pair_type in query_pair_types:
                 matching_upairs = [x for x in upairs if x.type_cells == pair_type]
                 upairs_dist = np.asarray([p.distance for p in matching_upairs])
@@ -485,8 +485,6 @@ class Network:
         connectivity_mat = np.full((self.cell_no, self.cell_no), False)
         # use a dict to instruct what connections you need:
         # This is the distance dependent connection types from Perin et al., 2011:
-        # TODO: check that the network configuration will be the same, the second time that this function will run (for
-        # the random config). Given that is the same, you can 'bake' the
         based_on_distance = {0: 'reciprocal', 1: 'A2B', 2: 'B2A'}
         # reuse the generated connectivity for PN_PV and PV_PV pairs that never changes again:
         all_upairs = [pair for pair in self.upairs_d.values()]

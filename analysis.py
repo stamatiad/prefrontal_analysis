@@ -37,6 +37,8 @@ if __name__ == '__main__':
     # Parse voltage traces into network activity matrices once and save to file for later use:
 
     if False:
+        #TODO: Create/transform data types to 'Timeseries aquisitions' and compute spikes. Save them as nwb files.
+        #TODO: remove this block, since this is 'done' after the NEURON completes.
         at.simulation_to_network_activity(
             tofile=network_activity_hdf5,
             animal_models=from_one_to(1),
@@ -46,6 +48,11 @@ if __name__ == '__main__':
 
     for lc in range(1, 11):
         # Load and plot network activity:
+        #TODO: My goal is to replace this function with the NWB data type and load the data that I want.
+        #TODO: Lazy read the data that I want (multiple trials, ONE learning condition, ONE animal) and create an
+        # TimeSeries with the windowed activity (is the latter lies on a nice numpy arra? if not, use my own format)
+        # I can pass around the TimeSeries with cells and qs as dims, having the trials as markers. Then reshape in each function
+        # So the block below is reduced to the lazy load of the dataset. And AFTER that the pca will return a NDARRAY.
         # cellno, ntrials, total_qs
         network_activity = at.read_network_activity(
             fromfile=network_activity_hdf5,
@@ -60,7 +67,7 @@ if __name__ == '__main__':
         #plt.imshow(network_activity[:,3,:])
         #ptl.show
 
-
+        #TODO: This function will load a timeseries object.
         t_L = at.pcaL2(
             data=network_activity,
             custom_range=range(20, 60),
@@ -70,6 +77,7 @@ if __name__ == '__main__':
 
 
         # Determine the optimal number of clusters for all trials of a single animal model/learning condition.
+        #TODO: pass a plot flag, so not needing an extra function call for that in the notebook.
         #y_array = np.linspace(0.01, 10, 1000)
         y_array = np.linspace(0.1, 100, 1000)
         K_star, K_labels = at.determine_number_of_clusters(data=t_L[:, :, -20:], max_clusters=10, y_array=y_array, **analysis_parameters)

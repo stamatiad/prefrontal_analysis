@@ -1,5 +1,7 @@
 **/.git
 **/.idea
 **/.vscode
+old/
+deployed/
 *.png
 *.hdf5
