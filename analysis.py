@@ -35,7 +35,6 @@ if __name__ == '__main__':
     #plt.imshow(binned_network_activity)
     #plt.show
 
-    #TODO: why some of the PCA traces are zero (appear as lines?).
     analysis.pcaL2(
         nwbfile,
         custom_range=(20, 60),

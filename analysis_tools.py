@@ -91,12 +91,14 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
                 'excitation_bias', 'inhibition_bias', 'nmda_bias', 'ampa_bias', 'sim_duration', kwargs)
 
     # the base unit of time is the ms:
-    conversion_factor = 1 / samples_per_ms
+    samples2ms_factor = 1 / samples_per_ms
     nsamples = trial_len * samples_per_ms
 
     # Expand the NEURON/experiment parameters in the acquisition dict:
     acquisition_description = {
-        **kwargs
+        **kwargs,
+        'pn_no': 250,
+        'pv_no': 83
     }
     print('Creating NWBfile.')
     nwbfile = NWBFile(
@@ -142,13 +144,12 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
                     lower_threshold=spike_lower_threshold,
                     plot=False
                 )
-                #TODO: to better name conversion factor!
                 spike_trains_d[cellid] = np.append(
-                    spike_trains_d[cellid], np.add(spike_train, trial_start_t * conversion_factor)
+                    spike_trains_d[cellid], np.add(spike_train, trial_start_t * samples2ms_factor)
                 )
 
             # Define the region of PA as the last 200 ms of the simulation:
-            pa_stop = int(nsamples * conversion_factor) + trial_start_t * conversion_factor  # in ms
+            pa_stop = int(nsamples * samples2ms_factor) + trial_start_t * samples2ms_factor  # in ms
             pa_start = int(pa_stop - 200)
             has_persistent = False
             for cellid, spike_train in spike_trains_d.items():
@@ -159,8 +160,8 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
             #has_persistent = voltage_traces[:ncells, pa_start:pa_stop].max() > 0
             # Add trial:
             nwbfile.add_trial(
-                start_time=trial_start_t * conversion_factor,
-                stop_time=trial_end_t * conversion_factor,
+                start_time=trial_start_t * samples2ms_factor,
+                stop_time=trial_end_t * samples2ms_factor,
                 persistent_activity=has_persistent
             )
             # Add stimulus epoch for that trial:
@@ -189,8 +190,7 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
         'miliseconds',  # Base unit of the measurement
         starting_time=0.0,  # The timestamp of the first sample
         rate=10000.0,  # Sampling rate in Hz
-        conversion=conversion_factor,  #  Scalar to multiply each element in data to convert it to the specified unit
-        #TODO: What types of iterables can I use here? Dict could be nice..
+        conversion=samples2ms_factor,  #  Scalar to multiply each element in data to convert it to the specified unit
         # Since we can only use strings, stringify the dict!
         description=str(acquisition_description)
     )
@@ -199,15 +199,19 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
 
     for cellid in range(ncells):
         if spike_trains_d[cellid].size > 0:
-            #TODO: standardize these! You are using the format for that:
-            # Get each trial start/end in no of samples, rather than ms:
-            activity_intervals = [
-                [q_start, q_end]
-                for q_start, q_end in generate_slices(size=trial_len / 1000, number=ntrials, start_from=0)
+            # Get each trial start/end in seconds rather than ms:
+            trial_intervals = [
+                [trial_start, trial_end]
+                for trial_start, trial_end in \
+                generate_slices(
+                    size=trial_len / 1000, number=ntrials, start_from=0
+                )
             ]
+            #TODO: save if unit is PN or PV
             nwbfile.add_unit(
-                id=cellid, spike_times=spike_trains_d[cellid],
-                obs_intervals=activity_intervals,
+                id=cellid,
+                spike_times=spike_trains_d[cellid],
+                obs_intervals=trial_intervals,
                 cell_id=cellid
             )
 
@@ -240,12 +244,13 @@ class open_hdf_dataframe():
 def bin_activity(input_NWBfile, **kwargs):
     q_size = getargs('q_size', kwargs)
 
-    # Get somatic voltage membrane potential:
-    #TODO: can I get ncells without load the whole aquisition dataset?
-    network_voltage_traces = input_NWBfile.acquisition['membrane_potential'].data
-    ncells = network_voltage_traces.shape[0]
+    #Get ncells without load the whole aquisition dataset
+    nwbfile_description_d = eval(
+        input_NWBfile.acquisition['membrane_potential'].description
+    )
+    ncells = nwbfile_description_d['ncells']
+
     ntrials = len(input_NWBfile.trials)
-    #TODO: check that this is the SAME as the experiment_cofig
     # This is the current experiment identifier (structured, random etc):
     experiment_id = input_NWBfile.identifier
     # Here I am using the same trial length for all my trials, because its a simulation,
@@ -367,8 +372,6 @@ def read_network_activity(fromfile=None, dataset=None, **kwargs):
     ntrials = kwargs.get('ntrials', None)
     total_qs = kwargs.get('total_qs', None)
     cellno = kwargs.get('cellno', None)
-    #TODO: You can use something like that to get your arguments. It's more pythonic:
-    # id, columns, desc, colnames = popargs('id', 'columns', 'description', 'colnames', kwargs)
 
     data = None
     # Read spiketrains and plot them
@@ -387,6 +390,12 @@ def pcaL2(
 ):
     #TODO: is this deterministic? Because some times I got an error in some
     # matrix.
+    nwbfile_description_d = eval(input_NWBfile.acquisition['membrane_potential'].description)
+    animal_model_id = nwbfile_description_d['animal_model']
+    learning_condition_id = nwbfile_description_d['learning_condition']
+    ncells = nwbfile_description_d['ncells']
+    pn_no = nwbfile_description_d['pn_no']
+
     # Plot the  two first principal components of multiple trial binned activity.
     ntrials = len(input_NWBfile.trials)
     # Here I am using the same trial length for all my trials, because its a simulation,
@@ -407,16 +416,15 @@ def pcaL2(
     else:
         duration = trial_q_no
     # Load binned acquisition (all trials together)
-    binned_network_activity = input_NWBfile.acquisition['binned_activity'].data.data[:250, :].reshape(250, ntrials, trial_q_no)
+    binned_network_activity = input_NWBfile.acquisition['binned_activity'].data.data[:pn_no, :].reshape(pn_no, ntrials, trial_q_no)
     # Slice out non correct trials and unwanted trial periods:
     tmp = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
     # Reshape in array with m=cells, n=time bins.
-    tmp = tmp.reshape(250, correct_trials_no * duration)
+    tmp = tmp.reshape(pn_no, correct_trials_no * duration)
 
     # how many PCA components
     L = 2
     pca = decomposition.PCA(n_components=L)
-    #TODO: remove hardcoded nPC:
     t_L = pca.fit_transform(tmp.T).T
     # Reshape PCA results into separate trials for plotting.
     t_L_per_trial = t_L.reshape(L, correct_trials_no, duration, order='C')
@@ -426,13 +434,7 @@ def pcaL2(
             t_L_per_trial[1][trial][:] = savgol_filter(t_L_per_trial[1][trial][:], 11, 3)
 
     if plot:
-        #TODO: Utilize info in nwb file to print e.g. animal id etc.
         #Plots the t_L_r as 2d timeseries.
-        # Read acquisition info to label the plot:
-        nwbfile_description_d = eval(input_NWBfile.acquisition['membrane_potential'].description)
-        animal_model_id = nwbfile_description_d['animal_model']
-        learning_condition_id = nwbfile_description_d['learning_condition']
-
         fig = plt.figure()
         plt.ion()
         ax = fig.add_subplot(111, projection='3d')
@@ -457,7 +459,6 @@ def pcaL2(
             # Youmust group handles based on unique labels.
             plt.legend(handles)
         else:
-            #TODO: incorporate smoothing here also:
             colors = cm.viridis(np.linspace(0, 1, duration - 1))
             for trial in range(correct_trials_no):
                 for t, c in zip(range(duration - 1), colors):
