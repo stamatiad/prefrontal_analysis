@@ -29,6 +29,35 @@ analysis_parameters['total_qs'] = \
 
 outputdir = Path(r'G:\Glia')
 
+# for structured condition:
+inputdir = Path(r'G:\Glia\structured')
+for animal_model in range(2,3):
+    for learning_condition in range(5,6):
+        new_params = {
+            **analysis_parameters,
+            'excitation_bias': 1.75,
+            'inhibition_bias': 3.0,
+            'nmda_bias': 6.0,
+            'ampa_bias': 1.0,
+            'sim_duration': 5,
+            'trial_len': 5000,
+            'animal_model': animal_model,
+            'learning_condition': learning_condition,
+            'experiment_config': 'structured'
+        }
+        try:
+            analysis.create_nwb_file(
+                inputdir=inputdir,
+                outputdir=outputdir,
+                **new_params
+            )
+        except Exception as e:
+            print(str(e))
+            pass
+
+print('Done and exiting.')
+sys.exit()
+
 # for no NMDA condition:
 inputdir = Path(r'G:\Glia\nonmda')
 for animal_model in range(3, 5):
@@ -69,35 +98,6 @@ for animal_model in range(3, 5):
             'animal_model': animal_model,
             'learning_condition': learning_condition,
             'experiment_config': 'random'
-        }
-        try:
-            analysis.create_nwb_file(
-                inputdir=inputdir,
-                outputdir=outputdir,
-                **new_params
-            )
-        except Exception as e:
-            print(str(e))
-            pass
-
-print('Done and exiting.')
-sys.exit()
-
-# for structured condition:
-inputdir = Path(r'G:\Glia\structured')
-for animal_model in range(4, 5):
-    for learning_condition in range(10, 11):
-        new_params = {
-            **analysis_parameters,
-            'excitation_bias': 1.75,
-            'inhibition_bias': 3.0,
-            'nmda_bias': 6.0,
-            'ampa_bias': 1.0,
-            'sim_duration': 5,
-            'trial_len': 5000,
-            'animal_model': animal_model,
-            'learning_condition': learning_condition,
-            'experiment_config': 'structured'
         }
         try:
             analysis.create_nwb_file(

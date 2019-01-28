@@ -70,14 +70,14 @@ def nwb_iter(sequencelike):
         ctr += 1
 
 def load_nwb_file(**kwargs):
-    animal_model, learning_condition, experiment_config = \
-    getargs('animal_model', 'learning_condition', 'experiment_config', kwargs)
+    animal_model, learning_condition, experiment_config, data_path = \
+    getargs('animal_model', 'learning_condition', 'experiment_config', 'data_path', kwargs)
 
-    filename = experiment_config_filename(
+    filename = data_path.joinpath(experiment_config_filename(
         animal_model=animal_model,
         learning_condition=learning_condition,
         experiment_config=experiment_config
-    )
+    ))
     nwbfile = NWBHDF5IO(str(filename), 'r').read()
     return nwbfile
 
@@ -94,6 +94,11 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
     conversion_factor = 1 / samples_per_ms
     nsamples = trial_len * samples_per_ms
 
+    # Expand the NEURON/experiment parameters in the acquisition dict:
+    acquisition_description = {
+        **kwargs
+    }
+    print('Creating NWBfile.')
     nwbfile = NWBFile(
         session_description='NEURON simulation results.',
         identifier=experiment_config,
@@ -105,6 +110,7 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
     nwbfile.add_trial_column('persistent_activity', 'If this trial has persistent activity')
     #nwbfile.add_epoch_column('stimulus')
 
+    print('Loading files from NEURON output.')
     time_series_l = []
     spike_train_l = []
     spike_trains_d = defaultdict(partial(np.ndarray, 0))
@@ -142,9 +148,15 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
                 )
 
             # Define the region of PA as the last 200 ms of the simulation:
-            pa_stop = int(nsamples * conversion_factor)  # in ms
+            pa_stop = int(nsamples * conversion_factor) + trial_start_t * conversion_factor  # in ms
             pa_start = int(pa_stop - 200)
-            has_persistent = voltage_traces[:ncells, pa_start:pa_stop].max() > 0
+            has_persistent = False
+            for cellid, spike_train in spike_trains_d.items():
+                if any(spike_train > pa_start) and any(spike_train < pa_stop):
+                    print(f'On trial:{trial}, cell:{cellid} has spikes, so PA.')
+                    has_persistent = True
+                    break
+            #has_persistent = voltage_traces[:ncells, pa_start:pa_stop].max() > 0
             # Add trial:
             nwbfile.add_trial(
                 start_time=trial_start_t * conversion_factor,
@@ -161,6 +173,7 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
             #TODO: handle missing files!
             print('error!')
             pass
+        print(f'Trial {trial}, processed.')
 
     # Chunk and compress the data:
     wrapped_data = H5DataIO(
@@ -176,9 +189,13 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
         'miliseconds',  # Base unit of the measurement
         starting_time=0.0,  # The timestamp of the first sample
         rate=10000.0,  # Sampling rate in Hz
-        conversion=conversion_factor  #  Scalar to multiply each element in data to convert it to the specified unit
+        conversion=conversion_factor,  #  Scalar to multiply each element in data to convert it to the specified unit
+        #TODO: What types of iterables can I use here? Dict could be nice..
+        # Since we can only use strings, stringify the dict!
+        description=str(acquisition_description)
     )
     nwbfile.add_acquisition(vsoma_timeseries)
+    print('Time series acquired.')
 
     for cellid in range(ncells):
         if spike_trains_d[cellid].size > 0:
@@ -201,6 +218,7 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
             experiment_config=experiment_config
         )
     )
+    print(f'Writing to NWBfile: {output_file}')
     with NWBHDF5IO(str(output_file), 'w') as io:
         io.write(nwbfile)
 
@@ -219,69 +237,71 @@ class open_hdf_dataframe():
         pass
     pass
 
-def bin_activity(NWBfile, **kwargs):
-    animal_model, learning_condition, experiment_config, q_size, data_path = getargs(
-        'animal_model', 'learning_condition', 'experiment_config', 'q_size', 'data_path',
-        kwargs
+def bin_activity(input_NWBfile, **kwargs):
+    q_size = getargs('q_size', kwargs)
+
+    # Get somatic voltage membrane potential:
+    #TODO: can I get ncells without load the whole aquisition dataset?
+    network_voltage_traces = input_NWBfile.acquisition['membrane_potential'].data
+    ncells = network_voltage_traces.shape[0]
+    ntrials = len(input_NWBfile.trials)
+    #TODO: check that this is the SAME as the experiment_cofig
+    # This is the current experiment identifier (structured, random etc):
+    experiment_id = input_NWBfile.identifier
+    # Here I am using the same trial length for all my trials, because its a simulation,
+    # so I safely grab the first one only.
+    trial_len = input_NWBfile.trials['stop_time'][0] - input_NWBfile.trials['start_time'][0]  # in ms
+    samples_per_ms = input_NWBfile.acquisition['membrane_potential'].rate / 1000  # Sampling rate (Hz) / ms
+    conversion_factor = input_NWBfile.acquisition['membrane_potential'].conversion
+
+    # CAUTION: these appear to return similar objects, where they dont. Be very careful on how you use them
+    # together (e.g. zip() etc).
+    # Also these appear to not behave like iterables. So create some out of them:
+    cells_with_spikes = nwb_iter(input_NWBfile.units['cell_id'])
+    spike_trains = nwb_iter(input_NWBfile.units['spike_times'])
+
+    # Bin spiking activity for all trials/cells in total_qs bins of q_size size:
+    #TODO: THIS REQUIRES that each trial is divided by q_size exactly! Impose that constraint!
+    # How many qs in all trials?
+    total_qs = int(np.floor(trial_len / q_size)) * ntrials
+    trial_qs = int(np.floor(trial_len / q_size))
+    binned_activity = np.zeros((ncells, total_qs), dtype=int)
+    # This is essentially what we are doing, but since python is so slow, we refactor it with some optimized code.
+    #for cellid, spike_train in zip(cells_with_spikes, iter(spike_trains)):
+    #    for q, (q_start, q_end) in enumerate(generate_slices(size=q_size, number=total_qs)):
+    #        binned_activity[cellid][q] = sum([1 for spike in spike_train if q_start <= spike and spike < q_end])
+    #TODO: can you bypass the erroneous trials in the code below?
+    try:
+        for cellid, spike_train in zip(cells_with_spikes, spike_trains):
+            #TODO: this is a serious bug!
+            if spike_train.max() >= trial_len * ntrials:
+                print('having spikes outside of trial! How is this possible?')
+                spike_train = spike_train[:-1]
+            bins = np.floor_divide(spike_train, q_size).astype(int)
+            np.add.at(binned_activity[cellid][:], bins, 1)
+    except Exception as e:
+        print(str(e))
+
+    # Chunk and compress the data:
+    wrapped_data = H5DataIO(
+        data=binned_activity,
+        chunks=True,  # <---- Enable chunking (although I'm not sure if it will do any good in my huge dataset.
+        compression='gzip',
+        compression_opts=9
     )
-
-    input_file = data_path.joinpath(
-        experiment_config_filename(
-            animal_model=animal_model,
-            learning_condition=learning_condition,
-            experiment_config=experiment_config
-        )
+    # Add binned activity:
+    network_binned_activity = TimeSeries(
+        'binned_activity',  # Name of the TimeSeries
+        wrapped_data,  # Actual data
+        'miliseconds',  # Base unit of the measurement
+        starting_time=0.0,  # The timestamp of the first sample
+        rate=20.0,  # Sampling rate in Hz
+        conversion=float(q_size)  #  Scalar to multiply each element in data to convert it to the specified unit
     )
-    #with open_hdf_dataframe(filename=filename, hdf_key='vsoma') as df:
-    if input_file.exists():
-        nwbfile = NWBHDF5IO(str(input_file), 'r').read()
-        # Get somatic voltage membrane potential:
-        #TODO: can I get ncells without load the whole aquisition dataset?
-        network_voltage_traces = nwbfile.acquisition['membrane_potential'].data
-        ncells = network_voltage_traces.shape[0]
-        ntrials = len(nwbfile.trials)
-        #TODO: check that this is the SAME as the experiment_cofig
-        # This is the current experiment identifier (structured, random etc):
-        experiment_id = nwbfile.identifier
-        # Here I am using the same trial length for all my trials, because its a simulation,
-        # so I safely grab the first one only.
-        trial_len = nwbfile.trials['stop_time'][0] - nwbfile.trials['start_time'][0]  # in ms
-        samples_per_ms = nwbfile.acquisition['membrane_potential'].rate / 1000  # Sampling rate (Hz) / ms
-        conversion_factor = nwbfile.acquisition['membrane_potential'].conversion
+    input_NWBfile.add_acquisition(network_binned_activity)
 
-        # CAUTION: these appear to return similar objects, where they dont. Be very careful on how you use them
-        # together (e.g. zip() etc).
-        # Also these appear to not behave like iterables. So create some out of them:
-        cells_with_spikes = nwb_iter(nwbfile.units['cell_id'])
-        spike_trains = nwb_iter(nwbfile.units['spike_times'])
-
-        # Bin spiking activity for all trials/cells in total_qs bins of q_size size:
-        #TODO: THIS REQUIRES that each trial is divided by q_size exactly! Impose that constraint!
-        # How many qs in all trials?
-        total_qs = int(np.floor(trial_len / q_size)) * ntrials
-        trial_qs = int(np.floor(trial_len / q_size))
-        binned_activity = np.zeros((ncells, total_qs), dtype=int)
-        # This is essentially what we are doing, but since python is so slow, we refactor it with some optimized code.
-        #for cellid, spike_train in zip(cells_with_spikes, iter(spike_trains)):
-        #    for q, (q_start, q_end) in enumerate(generate_slices(size=q_size, number=total_qs)):
-        #        binned_activity[cellid][q] = sum([1 for spike in spike_train if q_start <= spike and spike < q_end])
-        try:
-            for cellid, spike_train in zip(cells_with_spikes, spike_trains):
-                #TODO: this is a serious bug!
-                if spike_train.max() >= trial_len * ntrials:
-                    print('having spikes outside of trial! How is this possible?')
-                    spike_train = spike_train[:-1]
-                bins = np.floor_divide(spike_train, q_size).astype(int)
-                np.add.at(binned_activity[cellid][:], bins, 1)
-        except Exception as e:
-            print(str(e))
-
-        # cells, trials, qs
-        # Reshape before returning:
-        return binned_activity.reshape(ncells, ntrials, trial_qs)
-    else:
-        print('Data file not found!')
-        return None
+    # Reshape before returning:
+    return binned_activity.reshape(ncells, ntrials, trial_qs)
 
 def simulation_to_network_activity(tofile=None, animal_models=None, learning_conditions=None, **kwargs):
     # Convert voltage traces to spike trains:
@@ -361,70 +381,94 @@ def read_network_activity(fromfile=None, dataset=None, **kwargs):
 
     return data
 
-def pcaL2(data=None, plot=False, custom_range=None, **kwargs):
+def pcaL2(
+        input_NWBfile, plot=False, custom_range=None, klabels=None,
+        smooth=False, **kwargs
+):
+    #TODO: is this deterministic? Because some times I got an error in some
+    # matrix.
+    # Plot the  two first principal components of multiple trial binned activity.
+    ntrials = len(input_NWBfile.trials)
+    # Here I am using the same trial length for all my trials, because its a simulation,
+    # so I safely grab the first one only.
+    trial_len = input_NWBfile.trials['stop_time'][0] - input_NWBfile.trials['start_time'][0]  # in ms
+    q_size = input_NWBfile.acquisition['binned_activity'].conversion
+    trial_q_no = int(np.floor(trial_len / q_size))
+    correct_trials_idx = list(
+        nwb_iter(input_NWBfile.trials['persistent_activity'])
+    )
+    correct_trials_no = sum(correct_trials_idx)
 
-    ntrials = 10#kwargs.get('ntrials', None)
+    # Use custom_range to compute PCA only on a portion of the original data:
+    if custom_range is not None:
+        trial_slice_start = custom_range[0]
+        trial_slice_stop = custom_range[1]
+        duration = trial_slice_stop - trial_slice_start
+    else:
+        duration = trial_q_no
+    # Load binned acquisition (all trials together)
+    binned_network_activity = input_NWBfile.acquisition['binned_activity'].data.data[:250, :].reshape(250, ntrials, trial_q_no)
+    # Slice out non correct trials and unwanted trial periods:
+    tmp = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
+    # Reshape in array with m=cells, n=time bins.
+    tmp = tmp.reshape(250, correct_trials_no * duration)
 
-    #TODO: check that network activity have PA:
-    #Can I move this to the NWB format and have it on creation?
-    have_pa = [
-        data[:, trial, -1].mean() > 0
-        for trial in range(ntrials)
-    ]
-    data = data[:, have_pa, :]
-    ntrials = sum(have_pa)
-    # how many components
+    # how many PCA components
     L = 2
     pca = decomposition.PCA(n_components=L)
-    # Use custom_range to compute PCA only on a portion of the original data:
-    duration = len(custom_range)
-    t_L = pca.fit_transform(
-        #TODO: remove hardcoded nPC:
-        data[:250, :, custom_range].reshape(250, ntrials * duration).T
-    ).T
-    t_L_reshaped = t_L.reshape(L, ntrials, duration, order='C')
+    #TODO: remove hardcoded nPC:
+    t_L = pca.fit_transform(tmp.T).T
+    # Reshape PCA results into separate trials for plotting.
+    t_L_per_trial = t_L.reshape(L, correct_trials_no, duration, order='C')
+    if smooth:
+        for trial in range(correct_trials_no):
+            t_L_per_trial[0][trial][:] = savgol_filter(t_L_per_trial[0][trial][:], 11, 3)
+            t_L_per_trial[1][trial][:] = savgol_filter(t_L_per_trial[1][trial][:], 11, 3)
+
     if plot:
-        plot_pcaL2(data=t_L_reshaped)
+        #TODO: Utilize info in nwb file to print e.g. animal id etc.
+        #Plots the t_L_r as 2d timeseries.
+        # Read acquisition info to label the plot:
+        nwbfile_description_d = eval(input_NWBfile.acquisition['membrane_potential'].description)
+        animal_model_id = nwbfile_description_d['animal_model']
+        learning_condition_id = nwbfile_description_d['learning_condition']
 
-    return t_L_reshaped
+        fig = plt.figure()
+        plt.ion()
+        ax = fig.add_subplot(111, projection='3d')
+        plt.title(f'PCAL2 animal model {animal_model_id}, learning condition {learning_condition_id}')
 
-def plot_pcaL2(data=None, klabels=None, smooth=False, **kwargs):
-    #Plots the data as 2d timeseries.
-    # If labels are provided then it colors them also.
-    dims, ntrials, duration = data.shape
-    fig = plt.figure()
-    plt.ion()
-    ax = fig.add_subplot(111, projection='3d')
+        if klabels is not None:
+            labels = klabels.tolist()
+            nclusters = np.unique(klabels).size
+            colors = cm.Set2(np.linspace(0, 1, nclusters))
+            _, key_labels = np.unique(labels, return_index=True)
+            handles = []
+            for i, (trial, label) in enumerate(zip(range(correct_trials_no), labels)):
+                x = t_L_per_trial[0][trial][:]
+                y = t_L_per_trial[1][trial][:]
+                handle, = ax.plot(x, y,
+                                  range(duration),
+                                  color=colors[label - 1],
+                                  label=f'Cluster {label}'
+                                  )
+                if i in key_labels:
+                    handles.append(handle)
+            # Youmust group handles based on unique labels.
+            plt.legend(handles)
+        else:
+            #TODO: incorporate smoothing here also:
+            colors = cm.viridis(np.linspace(0, 1, duration - 1))
+            for trial in range(correct_trials_no):
+                for t, c in zip(range(duration - 1), colors):
+                    ax.plot(
+                        t_L_per_trial[0][trial][t:t+2],
+                        t_L_per_trial[1][trial][t:t+2],
+                        [t, t+1], color=c
+                    )
+        plt.show()
 
-    if klabels is not None:
-        labels = klabels.tolist()
-        nclusters = np.unique(klabels).size
-        colors = cm.Set2(np.linspace(0, 1, nclusters))
-        _, key_labels = np.unique(labels, return_index=True)
-        handles = []
-        for i, (trial, label) in enumerate(zip(range(ntrials), labels)):
-            if smooth:
-                x = savgol_filter(data[0][trial][:], 11, 3)
-                y = savgol_filter(data[1][trial][:], 11, 3)
-            else:
-                x = data[0][trial][:]
-                y = data[1][trial][:]
-            handle, = ax.plot(x, y,
-                             range(duration),
-                              color=colors[label - 1],
-                              label=f'Cluster {label}'
-            )
-            if i in key_labels:
-                handles.append(handle)
-        # Youmust group handles based on unique labels.
-        plt.legend(handles)
-    else:
-        #TODO: incorporate smoothing here also:
-        colors = cm.viridis(np.linspace(0, 1, duration - 1))
-        for trial in range(ntrials):
-            for t, c in zip(range(duration - 1), colors):
-                ax.plot(data[0][trial][t:t+2], data[1][trial][t:t+2], [t, t+1], color=c)
-    plt.show()
+    return t_L_per_trial
 
 def from_zero_to(x):
     '''
@@ -575,7 +619,8 @@ def mu_bar(k_rbf=None, xs=None):
 def mean_shift(data=None, k=None, plot=False, **kwargs):
     #ntrials = kwargs.get('ntrials', None)
     ntrials = data.shape[1]
-    data_dim = kwargs.get('data_dim', None)
+    #TODO: do I consider more than two dims?
+    data_dim = 2  # kwargs.get('data_dim', None)
     #return [density_pts, sigma_hat]
     # k for the kmeans (how many clusters)
     # N are the number of trials (meanshift initial points)
@@ -664,7 +709,8 @@ def ndpoints2array(points=None, **kwargs):
 
 def initialize_algorithm(data=None, k=None, plot=None, **kwargs):
     # TODO: remove the None default, so to have exceptions flying around in case of an error:
-    data_dim = kwargs.get('data_dim', None)
+    # TODO: Do I consider more than two dimensions?
+    data_dim = 2 #kwargs.get('data_dim', None)
     #ntrials = kwargs.get('ntrials', None)
     ntrials = data.shape[1]
     # return [J_k, label, dE_i_q, dM_i_q] = init_algo(X, m, plot_flag)
@@ -760,7 +806,7 @@ def point2points_average_euclidean(point=None, points=None):
     return np.mean(distance[:m])
 
 @time_it
-def kmeans_clustering(data=None, k=2, max_iterations=None, plot=False, **kwargs):
+def kmeans_clustering(data=None, k=2, max_iterations=100, plot=False, **kwargs):
     #return (labels_final, J_k_final, S_i)
     # Perform kmeans clustering.
     # Input:
@@ -777,8 +823,10 @@ def kmeans_clustering(data=None, k=2, max_iterations=None, plot=False, **kwargs)
         for new_label, original_label in enumerate(key_labels):
             new_klabels[klabels == original_label] = new_label + 1
             # Swap distance array rows, utilizing slice copy and unpacking:
-            distance_array[original_label, :], distance_array[new_label, :] = \
-                distance_array[new_label, :].copy(), distance_array[original_label, :].copy()
+            distance_array[original_label, :],\
+            distance_array[new_label, :] = \
+                distance_array[new_label, :].copy(),\
+                distance_array[original_label, :].copy()
             # Update parameters dictionary:
             new_params[new_label] = params[original_label]
         return new_klabels, distance_array, new_params
@@ -802,7 +850,8 @@ def kmeans_clustering(data=None, k=2, max_iterations=None, plot=False, **kwargs)
         md_params_d = {}
         for cluster in range(k):
             for trial in range(ntrials):
-                md_array[cluster, trial], md_params_d[cluster] = mahalanobis_distance(
+                md_array[cluster, trial], md_params_d[cluster] = \
+                    mahalanobis_distance(
                     idx_a=data[:, aggregate_dataset[cluster], :],
                     idx_b=data[:, [trial], :]
                 )
@@ -829,7 +878,8 @@ def kmeans_clustering(data=None, k=2, max_iterations=None, plot=False, **kwargs)
 def evaluate_clustering(klabels=None, md_array=None, md_params=None, **kwargs):
     # Calculate likelihood of each trial, given the cluster centroid:
     nclusters, ntrials = md_array.shape
-    data_dim = kwargs.get('data_dim', None)
+    #TODO: do I use more than two dims?
+    data_dim = 2  # kwargs.get('data_dim', None)
 
     ln_L = np.zeros((1, ntrials))
     ln_L.fill(np.nan)
@@ -841,9 +891,12 @@ def evaluate_clustering(klabels=None, md_array=None, md_params=None, **kwargs):
         S = md_params[cluster].S
         # Remove clusters without any points:
         try:
-            ln_L[0, trial] = np.exp(-1/2 * mdist) / np.sqrt((2*np.pi)**data_dim * np.linalg.det(S))
+            ln_L[0, trial] = \
+                np.exp(-1/2 * mdist) / \
+                np.sqrt((2*np.pi)**data_dim * np.linalg.det(S))
         except Exception as e:
-            raise e('Something went wrong!')
+            print('Something went wrong!')
+            print(str(e))
     L_ln_hat = np.nansum(np.log(ln_L * 0.0001))
 
     if L_ln_hat > 0:
@@ -854,34 +907,54 @@ def evaluate_clustering(klabels=None, md_array=None, md_params=None, **kwargs):
     return BIC
 
 
-def determine_number_of_clusters(data=None, max_clusters=None, y_array=None, **kwargs):
+def determine_number_of_clusters(
+        input_NWBfile, max_clusters=None, y_array=None, **kwargs
+    ):
     # Return the optimal number of clusters, as per BIC:
-    ntrials = data.shape[1]
-    #assert max_clusters <= ntrials, 'Cannot run kmeans with greater k than the datapoints!'
+
+    # Perform PCA to the binned network activity:
+    data_pca = pcaL2(
+        input_NWBfile,
+        custom_range=range(20, 60),
+        plot=False
+    )
+
+    ntrials = data_pca.shape[1]
+    #assert max_clusters <= ntrials, 'Cannot run kmeans with greater k than the data_pcapoints!'
     if max_clusters > ntrials:
-        print('Cannot run kmeans with greater k than the datapoints!')
+        print('Cannot run kmeans with greater k than the data_pcapoints!')
         max_clusters = ntrials
-    dims, ntrials, duration = data.shape
+
+    dims, ntrials, duration = data_pca.shape
     kmeans_labels = np.zeros((ntrials, max_clusters), dtype=int)
     J_k_all = list()
     BIC_all = list()
     md_params_all = list()
+    # Calculate BIC for up to max_clusters:
     for k in range(1, max_clusters + 1):
         print(f'Clustering with {k} clusters.')
-        klabels, J_k, md_array, md_params_d = kmeans_clustering(data=data, k=k, max_iterations=100, plot=False, **kwargs)
-        BIC = evaluate_clustering(klabels=klabels, md_array=md_array, md_params=md_params_d, **kwargs)
+        klabels, J_k, md_array, md_params_d = kmeans_clustering(
+            data=data_pca, k=k, max_iterations=100, **kwargs
+        )
+        BIC = evaluate_clustering(
+            klabels=klabels, md_array=md_array, md_params=md_params_d, **kwargs
+        )
         BIC_all.append(BIC)
         kmeans_labels[:, k - 1] = klabels.T
         J_k_all.append(J_k)
         md_params_all.append(md_params_d)
     #TODO: den to kanw akomh, giati den fainetai na exw problhma me overfit (sto random pou me noiazei perissotero).
+    # I can normalize my data (pool them in ONE distribution, get the
+    # std (2dims) and judge overfitting by how much are centroids (aggregate
+    # datasets) are far apart if one of them lies in distribution mean
+    # (mahalanobis)
     '''
     # Calculate:
-    run_average_translation = np.zeros((data.shape[:2]))
+    run_average_translation = np.zeros((data_pca.shape[:2]))
     for trial in range(ntrials):
         run_average_translation[:, trial] = np.diff(
-            np.concatenate((data[:, trial, :].min(axis=1).reshape(1, dims),
-            data[:, trial, :].max(axis=1).reshape(1,dims)), axis=0)
+            np.concatenate((data_pca[:, trial, :].min(axis=1).reshape(1, dims),
+            data_pca[:, trial, :].max(axis=1).reshape(1,dims)), axis=0)
         ).T
     mean_intratrial_translation = run_average_translation.mean(axis=1)
     '''
@@ -898,7 +971,6 @@ def determine_number_of_clusters(data=None, max_clusters=None, y_array=None, **k
         K_star[0, i] = K_s_trueidx
         # Store the klabels corresponding to each K*:
         K_labels[:, i] = kmeans_labels[:, K_s_labelidx]
-        pass
 
     return K_star, K_labels
 
