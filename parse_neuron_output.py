@@ -31,8 +31,8 @@ outputdir = Path(r'G:\Glia')
 
 # for structured condition:
 inputdir = Path(r'G:\Glia\structured')
-for animal_model in range(2,3):
-    for learning_condition in range(5,6):
+for animal_model in range(1, 5):
+    for learning_condition in range(1, 11):
         new_params = {
             **analysis_parameters,
             'excitation_bias': 1.75,
@@ -55,38 +55,13 @@ for animal_model in range(2,3):
             print(str(e))
             pass
 
-print('Done and exiting.')
-sys.exit()
-
-# for no NMDA condition:
-inputdir = Path(r'G:\Glia\nonmda')
-for animal_model in range(3, 5):
-    for learning_condition in range(1, 6):
-        new_params = {
-            **analysis_parameters,
-            'excitation_bias': 1.75,
-            'inhibition_bias': 1.0,
-            'nmda_bias': 0.0,
-            'ampa_bias': 50.0,
-            'sim_duration': 5,
-            'trial_len': 5000,
-            'animal_model': animal_model,
-            'learning_condition': learning_condition,
-            'experiment_config': 'structured_nonmda'
-        }
-        analysis.create_nwb_file(
-            inputdir=inputdir,
-            outputdir=outputdir,
-            **new_params
-        )
-
-print('Done and exiting.')
-sys.exit()
+#print('Done and exiting.')
+#sys.exit()
 
 # for random condition:
 inputdir = Path(r'G:\Glia\random')
-for animal_model in range(3, 5):
-    for learning_condition in range(1, 3):
+for animal_model in range(1, 5):
+    for learning_condition in range(1, 11):
         new_params = {
             **analysis_parameters,
             'excitation_bias': 1.75,
@@ -109,8 +84,34 @@ for animal_model in range(3, 5):
             print(str(e))
             pass
 
-print('Done and exiting.')
-sys.exit()
+#print('Done and exiting.')
+#sys.exit()
+
+# for no NMDA condition:
+inputdir = Path(r'G:\Glia\nonmda')
+for animal_model in range(1, 5):
+    for learning_condition in range(1, 6):
+        new_params = {
+            **analysis_parameters,
+            'excitation_bias': 1.75,
+            'inhibition_bias': 1.0,
+            'nmda_bias': 0.0,
+            'ampa_bias': 50.0,
+            'sim_duration': 5,
+            'trial_len': 5000,
+            'animal_model': animal_model,
+            'learning_condition': learning_condition,
+            'experiment_config': 'structured_nonmda'
+        }
+        analysis.create_nwb_file(
+            inputdir=inputdir,
+            outputdir=outputdir,
+            **new_params
+        )
+
+#print('Done and exiting.')
+#sys.exit()
+
 
 # for No Mg condition:
 inputdir = Path(r'G:\Glia\noMg')
@@ -118,15 +119,25 @@ for animal_model in range(1, 2):
     for learning_condition in range(1, 6):
         new_params = {
             **analysis_parameters,
+            'excitation_bias': 1.75,
+            'inhibition_bias': 3.0,
+            'nmda_bias': 6.0,
+            'ampa_bias': 1.0,
+            'sim_duration': 3,
+            'trial_len': 3000,
             'animal_model': animal_model,
             'learning_condition': learning_condition,
-            'experiment_config': 'structurednomg'
+            'experiment_config': 'structured_nomg'
         }
         analysis.create_nwb_file(
             inputdir=inputdir,
             outputdir=outputdir,
             **new_params
         )
+
+print('Done and exiting.')
+sys.exit()
+
 
 # Read back NWB format and check/plot output:
 input_file = outputdir.joinpath(

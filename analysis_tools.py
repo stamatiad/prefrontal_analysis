@@ -44,6 +44,13 @@ simulation_template = (
 
 MD_params = namedtuple('MD_params', ['mu', 'S'])
 
+def get_cell_type(cellid, pn_no):
+    # simply determine the type, given that cells' ids are sorted with PN first:
+    if cellid < pn_no:
+        return 'PN'
+    else:
+        return 'PV'
+
 def getargs(*argnames):
     '''getargs(*argnames, argdict)
     Convenience function to retrieve arguments from a dictionary in batch
@@ -95,10 +102,12 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
     nsamples = trial_len * samples_per_ms
 
     # Expand the NEURON/experiment parameters in the acquisition dict:
+    pn_no = 250
+    pv_no = 83
     acquisition_description = {
         **kwargs,
-        'pn_no': 250,
-        'pv_no': 83
+        'pn_no': pn_no,
+        'pv_no': pv_no
     }
     print('Creating NWBfile.')
     nwbfile = NWBFile(
@@ -109,6 +118,7 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
     )
 
     nwbfile.add_unit_column('cell_id', 'Id of the cell recorded')
+    nwbfile.add_unit_column('cell_type', 'Type of the cell recorded (PN or PV)')
     nwbfile.add_trial_column('persistent_activity', 'If this trial has persistent activity')
     #nwbfile.add_epoch_column('stimulus')
 
@@ -212,7 +222,8 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
                 id=cellid,
                 spike_times=spike_trains_d[cellid],
                 obs_intervals=trial_intervals,
-                cell_id=cellid
+                cell_id=cellid,
+                cell_type=get_cell_type(cellid, pn_no)
             )
 
     # write to file:
@@ -410,8 +421,10 @@ def pcaL2(
 
     # Use custom_range to compute PCA only on a portion of the original data:
     if custom_range is not None:
-        trial_slice_start = custom_range[0]
-        trial_slice_stop = custom_range[1]
+        if not isinstance(custom_range, tuple):
+            raise ValueError('Custom range must be a tuple!')
+        trial_slice_start = int(custom_range[0])
+        trial_slice_stop = int(custom_range[1])
         duration = trial_slice_stop - trial_slice_start
     else:
         duration = trial_q_no
@@ -782,10 +795,19 @@ def mahalanobis_distance(idx_a=None, idx_b=None):
     dim, trials, t = idx_a.shape
     if any(np.array(idx_a.shape) < 1):
         return np.nan, MD_params(np.nan, np.nan)
-    cluster_data = idx_a.reshape(t * trials, -1, order='C')
-    point_data = np.mean(idx_b.reshape(t, -1, order='C'), axis=0).reshape(1, -1)
-    mu = np.mean(cluster_data, axis=0).reshape(1, -1)
+
+    cluster_data = idx_a.reshape(dim, t * trials, order='C').T
+    point_data = np.squeeze(idx_b).mean(axis=1).reshape(1, -1)
+    mu = cluster_data.mean(axis=0).reshape(1, -1)
     S = np.cov(cluster_data.T)
+    # Debug/scatter
+    if False:
+        fig, ax = plt.subplots(1,1)
+        ax.scatter(point_data[:,0], point_data[:,1], s=50, c='r', marker='+')
+        ax.scatter(np.squeeze(idx_b)[0,:], np.squeeze(idx_b)[1,:],s=20, c='r', marker='.')
+        ax.scatter(cluster_data[:,0], cluster_data[:,1],s=5, c='k', marker='.')
+        ax.scatter(mu[:,0], mu[:,1],s=50, c='k', marker='+')
+
     try:
         np.linalg.cholesky(S)
     except np.linalg.LinAlgError as e:
@@ -874,6 +896,22 @@ def kmeans_clustering(data=None, k=2, max_iterations=100, plot=False, **kwargs):
         )
     J_k = cumulative_dist.sum() / ntrials
     klabels, md_array, md_params_d = rearrange_labels(klabels, md_array, md_params_d)
+    # Debug plot the results for quick inspection:
+    if False:
+        dim, trials, t = data.shape
+        flatten_data = data.reshape(dim, t * trials, order='C').T
+        fig, ax = plt.subplots(1,1)
+        colors = cm.Set2(np.linspace(0, 1, len(klabels)))
+        for i, l in enumerate(klabels):
+            this_label = klabels == i
+            len_label = sum(this_label)
+            label_data = data[:, this_label, :].reshape(dim, t * len_label, order='C').T
+            label_data_mean = label_data.mean(axis=0).reshape(1, -1)
+            ax.scatter(label_data[:,0], label_data[:,1], s=20, c=colors[i,:], marker='.')
+            ax.scatter(label_data_mean[:,0], label_data_mean[:,1], s=50, c=colors[i,:], marker='+')
+
+        ax.scatter(flatten_data[:,0], flatten_data[:,1],s=5, c='k', marker='.')
+
     return klabels, J_k, md_array, md_params_d
 
 def evaluate_clustering(klabels=None, md_array=None, md_params=None, **kwargs):
@@ -908,70 +946,158 @@ def evaluate_clustering(klabels=None, md_array=None, md_params=None, **kwargs):
     return BIC
 
 
+def test_for_overfit(klabels=None, data_pca=None, S=None, threshold=None):
+    '''
+    Test for overfit by computing the MD between centroids, but utilizing the
+    overall data covariance. If k means overfits, return True.
+    :param klabels:
+    :param data_pca:
+    :param S:
+    :param threshold:
+    :return:
+    '''
+    unique_labels = np.unique(klabels)
+    k = len(unique_labels)
+    if k == 1:
+        print('We have only one cluster, so skipping test for overfit.')
+        return False
+
+    dim, ntrial, duration = data_pca.shape
+    # Attention, labels must start from 0:
+    aggregate_datasets = create_agregate_dataset(klabels=klabels-1, k=k)
+    cluster_mu = []
+    for dataset in aggregate_datasets:
+        cluster_mu.append(data_pca[:, dataset, :].reshape(dim, -1).mean(axis=1))
+
+    # I only need the triangular upper portion of the distance matrix:
+    offset = 1
+    for i in range(k):
+        for j in range(offset, k):
+            # Calculate the distance between clusters:
+            xy_diff = cluster_mu[i] - cluster_mu[j]
+            MD = np.sqrt(xy_diff @ np.linalg.inv(S) @ xy_diff.T)
+            # If MD is less that the threshold, then k-means overfits
+            if MD < threshold:
+                return True
+        offset += 1
+
+    return False
+
+
 def determine_number_of_clusters(
-        input_NWBfile, max_clusters=None, y_array=None, **kwargs
+        input_NWBfile, max_clusters=None, y_array=None, custom_range=None,
+        **kwargs
     ):
-    # Return the optimal number of clusters, as per BIC:
+    '''
+    Return the optimal number of clusters, as per BIC:
+
+    :param input_NWBfile:
+    :param max_clusters:
+    :param y_array:
+    :param custom_range:
+    :param kwargs:
+    :return:
+    '''
 
     # Perform PCA to the binned network activity:
+    nwbfile_description_d = eval(input_NWBfile.acquisition['membrane_potential'].description)
+    animal_model_id = nwbfile_description_d['animal_model']
+    learning_condition_id = nwbfile_description_d['learning_condition']
+    trial_len = nwbfile_description_d['trial_len']
+    #TODO: import properly the q_size:
+    q_size = 50
+    total_trial_qs = trial_len / q_size
+    one_sec_qs = 1000 / q_size
+    start_q = total_trial_qs - one_sec_qs
+    # Analyze only each trial's last second:
     data_pca = pcaL2(
         input_NWBfile,
-        custom_range=range(20, 60),
+        custom_range=(start_q, total_trial_qs),
         plot=False
     )
 
-    ntrials = data_pca.shape[1]
+    dims, ntrials, duration = data_pca.shape
+
+    # move the means to the origin for each trial:
+    all_datapoints = np.zeros((dims, duration, ntrials))
+    for trial in range(data_pca.shape[1]):
+        trial_datapoints = np.squeeze(data_pca[:, trial, :]).T
+        mu = trial_datapoints.mean(axis=0)
+        all_datapoints[:, :, trial] = np.transpose(trial_datapoints - mu)
+
+    # Compute this 'average' S (covariance).
+    S_all = np.cov(all_datapoints.reshape(dims, duration * ntrials))
+
+
     #assert max_clusters <= ntrials, 'Cannot run kmeans with greater k than the data_pcapoints!'
     if max_clusters > ntrials:
         print('Cannot run kmeans with greater k than the data_pcapoints!')
         max_clusters = ntrials
 
-    dims, ntrials, duration = data_pca.shape
-    kmeans_labels = np.zeros((ntrials, max_clusters), dtype=int)
-    J_k_all = list()
-    BIC_all = list()
-    md_params_all = list()
+    kmeans_labels = np.zeros((max_clusters, ntrials), dtype=int)
+    J_k_all = [0] * max_clusters
+    BIC_all = [0] * max_clusters
+    md_params_all = [0] * max_clusters
     # Calculate BIC for up to max_clusters:
-    for k in range(1, max_clusters + 1):
+    for i, k in enumerate(range(1, max_clusters + 1)):
         print(f'Clustering with {k} clusters.')
         klabels, J_k, md_array, md_params_d = kmeans_clustering(
             data=data_pca, k=k, max_iterations=100, **kwargs
         )
-        BIC = evaluate_clustering(
-            klabels=klabels, md_array=md_array, md_params=md_params_d, **kwargs
+        # I need to check overfitting (clustering into multiple subclusters).
+        #  Since
+        # the BIC will BE better moving over greater k, we need to calculate a
+        # maximum k - over that some k cluster centroids will be so close,
+        # essentially belonging to the same cluster.
+        # So after each k means I need to check if centroids are so close.
+        #TODO: 8elw ena function pou 8a ypologizei ola me ola ta centroids
+        # kai 8a entopizei afta pou exoun MD mikroterh apo ena threshold.
+        # Afto 8a shmatodotei k to telos tou increase k, ka8ws einai quasi-
+        # Deterministic to k-means init (mean-shift) kai oso kai na synexizw
+        # den yparxei periptwsh na parw 'diaforetiko' syndyasmo apo labels.
+        #TODO: afto pou me apasxolei einai, 8a einai to BIC kalo ean apla to
+        # krathsw se afth th sta8erh timh?
+        k_means_overfit = test_for_overfit(
+            klabels=klabels, data_pca=data_pca, S=S_all, threshold=3.0
         )
-        BIC_all.append(BIC)
-        kmeans_labels[:, k - 1] = klabels.T
-        J_k_all.append(J_k)
-        md_params_all.append(md_params_d)
-    #TODO: den to kanw akomh, giati den fainetai na exw problhma me overfit (sto random pou me noiazei perissotero).
-    # I can normalize my data (pool them in ONE distribution, get the
-    # std (2dims) and judge overfitting by how much are centroids (aggregate
-    # datasets) are far apart if one of them lies in distribution mean
-    # (mahalanobis)
-    '''
-    # Calculate:
-    run_average_translation = np.zeros((data_pca.shape[:2]))
-    for trial in range(ntrials):
-        run_average_translation[:, trial] = np.diff(
-            np.concatenate((data_pca[:, trial, :].min(axis=1).reshape(1, dims),
-            data_pca[:, trial, :].max(axis=1).reshape(1,dims)), axis=0)
-        ).T
-    mean_intratrial_translation = run_average_translation.mean(axis=1)
-    '''
-    K_star = np.zeros((1, y_array.size), dtype=int)
-    K_labels = np.zeros((ntrials, y_array.size), dtype=int)
+        if k_means_overfit:
+            # Stop searching for fit of greater ks.
+            BIC_all[i:] = [BIC_all[i - 1]] * (max_clusters - i)
+            kmeans_labels[i:, :] = kmeans_labels[i - 1, :]
+            J_k_all[i:] = [J_k_all[i - 1]] * (max_clusters - i)
+            md_params_all[i:] = [md_params_all[i - 1]] * (max_clusters - i)
+            break
+        else:
+            BIC = evaluate_clustering(
+                klabels=klabels, md_array=md_array, md_params=md_params_d, **kwargs
+            )
+            BIC_all[i] = BIC
+            kmeans_labels[i, :] = klabels.T
+            J_k_all[i] = J_k
+            md_params_all[i] = md_params_d
+
+    K_star = np.zeros((y_array.size, 1), dtype=int)
+    K_labels = np.zeros((y_array.size, ntrials), dtype=int)
     for i, y in enumerate(y_array):
-        # Compute K* as a variant of the rate distortion function, utilizing BIC:
-        K_s = np.argmax(np.diff(np.power(BIC_all, -y)))
-        # The idx of the kmeans_labels array (starts from 0 = one cluster):
-        K_s_labelidx = K_s + 1
-        # This directly corresponds to how many clusters:
-        K_s_trueidx = K_s_labelidx + 1
+        if len(np.unique(BIC_all)) == 1:
+            # If all BIC values are the same, we overfitted on k=2. So we get
+            # the labels from k=1.
+            K_s_labelidx = 0
+            # and the K* is one:
+            optimal_k = 1
+        else:
+            # Compute K* as a variant of the rate distortion function, utilizing BIC:
+            K_s = np.argmax(np.diff(np.power(BIC_all, -y)))
+            # The idx of the kmeans_labels array (starts from 0 = one cluster):
+            K_s_labelidx = K_s + 1
+            # This directly corresponds to how many clusters:
+            optimal_k = K_s_labelidx + 1
+
         # Add 1 to start counting from 1, then another, since we diff above:
-        K_star[0, i] = K_s_trueidx
+        # This is the optimal no of clusters:
+        K_star[i, 0] = optimal_k
         # Store the klabels corresponding to each K*:
-        K_labels[:, i] = kmeans_labels[:, K_s_labelidx]
+        K_labels[i, :] = kmeans_labels[K_s_labelidx, :]
 
     return K_star, K_labels
 
