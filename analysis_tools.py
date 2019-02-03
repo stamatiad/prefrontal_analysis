@@ -42,6 +42,15 @@ simulation_template = (
     '_AMPAb{ampa_bias:.3f}'
     '_{experiment_config}_simdur{sim_duration}').format
 
+excitatory_validation_template = (
+    'vsoma_{condition}'
+    '_{currents}'
+    '_{nmda_bias:0.1f}'
+    '_{ampa_bias:0.1f}'
+    '_{synapse}'
+    '_{segment}'
+    '_{excitation_bias:0.2f}.txt').format
+
 MD_params = namedtuple('MD_params', ['mu', 'S'])
 
 def get_cell_type(cellid, pn_no):
@@ -69,7 +78,7 @@ def getargs(*argnames):
 def nwb_iter(sequencelike):
     # This is a wrapper for NWB sequences. It returns something that you can iterate on.
     # Without this, iterating can be cumbersome (does not stop; you can't even create a list).
-    # Although these types appear to support __len__ and __getitem__ :
+    # Although these types DO appear to support __len__ and __getitem__ :
     n = len(sequencelike)
     ctr = 0
     while ctr < n:
@@ -88,6 +97,178 @@ def load_nwb_file(**kwargs):
     nwbfile = NWBHDF5IO(str(filename), 'r').read()
     return nwbfile
 
+def read_timeseries_currents_validation(cellid=0, trialid=0, \
+    inputdir=None, **kwargs
+):
+    # This function takes two required argumends and return a timeseries. To
+    # be flexible, it accepts more specific kwargs, that are later removed
+    # with the use of a partial.
+    condition, currents, nmda_bias, ampa_bias, synapse_activation = getargs(
+        'condition', 'currents', 'nmda_bias', 'ampa_bias',
+        'synapse_activation', kwargs
+    )
+    # Some args are specific/hardcoded, but always can be passed through the
+    # kwargs list if wanted.
+    inputfile = inputdir.joinpath(
+        excitatory_validation_template(
+            condition=condition,
+            currents=currents,
+            nmda_bias=nmda_bias,
+            ampa_bias=ampa_bias,
+            synapse=synapse_activation[trialid],
+            segment=2,
+            excitation_bias=1.75
+        )
+    )
+    # In this instance just reads a txt file:
+    with open(inputfile, 'r') as f:
+        timeseries = list(map(float, f.readlines()))
+    return timeseries
+
+
+def load_as_nwb_trials(nwbfile=None, read_function=None, **kwargs):
+    # Load files as different trials on a nwb file given.
+    # Iteratively load each file and append it to the dataset. Create and
+    # annotate trials and stimulus in the process.
+    # The nwb file is created externally, so this function can be used multiple
+    # times to add more acquisitions.
+    if not read_function:
+        raise NotImplementedError('read_function() is not implemented!')
+
+    ncells, ntrials, timeseries_name, timeseries_description, \
+    stim_start_offset, stim_stop_offset, trial_len, samples_per_ms, \
+        samples2ms_factor = getargs(
+        'ncells', 'ntrials', 'timeseries_name', 'timeseries_description', \
+        'stim_start_offset', 'stim_stop_offset', 'trial_len',
+        'samples_per_ms', 'samples2ms_factor',
+        kwargs,
+    )
+
+
+    # the base unit of time is the ms:
+    samples2ms_factor = 1 / samples_per_ms
+    nsamples = trial_len * samples_per_ms
+
+
+    # Create the base array, containing the cells x trials.
+    membrane_potential = np.zeros((ncells, ntrials * nsamples))
+
+    # Iterate all cells and trials, loading each cell's activity and
+    # concatenating trials:
+    for trial, (trial_start, trial_end) in zip(range(ntrials),
+            generate_slices(size=nsamples, number=ntrials)
+    ):
+        for cellid in range(ncells):
+            # Take input filename externally as an array:
+            # Search inputdir for files specified in the parameters
+
+            # User should provide a function that returns a time series, given
+            # the cellid and trial:
+            try:
+                voltage_trace = read_function(cellid=cellid, trialid=trial)
+                membrane_potential[cellid, trial_start:trial_end] = \
+                    voltage_trace[:nsamples]
+                # Add trial:
+                nwbfile.add_trial(
+                    start_time=trial_start * samples2ms_factor,
+                    stop_time=trial_end * samples2ms_factor,
+                )
+                # Add stimulus epoch for that trial in ms:
+                nwbfile.add_epoch(
+                    start_time=float((trial_start * samples2ms_factor) + stim_start_offset),
+                    stop_time=float((trial_start * samples2ms_factor) + stim_stop_offset),
+                    tags=f'trial {trial} stimulus'
+                )
+            except Exception as e:
+                raise e('read_function error!')
+
+
+        print(f'Trial {trial}, processed.')
+
+    # Chunk and compress the data:
+    wrapped_data = H5DataIO(
+        data=membrane_potential,
+        chunks=True,
+        compression='gzip',
+        compression_opts=9
+    )
+    # Add somatic voltage traces (all trials concatenated)
+    timeseries = TimeSeries(
+        timeseries_name,  # Name of the TimeSeries
+        wrapped_data,  # Actual data
+        'miliseconds',  # Base unit of the measurement
+        starting_time=0.0,  # The timestamp of the first sample
+        rate=10000.0,  # Sampling rate in Hz
+        conversion=samples2ms_factor,  #  Scalar to multiply each element in data to convert it to the specified unit
+        # Since we can only use strings, stringify the dict!
+        description=timeseries_description
+    )
+    nwbfile.add_acquisition(timeseries)
+    print('Time series acquired.')
+    return
+
+def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
+    # Create a NWB file from the results of the validation routines.
+
+    print('Creating NWBfile.')
+    nwbfile = NWBFile(
+        session_description='NEURON validation results.',
+        identifier='excitatory_validation',
+        session_start_time=datetime.now(),
+        file_create_date=datetime.now()
+    )
+
+    # Partially automate the loading with the aid of a reading function;
+    # use a generic reading function that you make specific with partial and
+    # then just load all the trials:
+    synapse_activation = list(range(5, 200, 10))
+    basic_kwargs = {'ncells': 1, 'ntrials': len(synapse_activation), \
+                    'stim_start_offset': 100, 'stim_stop_offset': 140,
+                    'trial_len': 700, 'samples_per_ms': 10}
+
+
+    # Load first batch:
+    load_as_nwb_trials(
+        nwbfile=nwbfile,
+        read_function=partial(
+            read_timeseries_currents_validation,
+            inputdir=inputdir,
+            synapse_activation=synapse_activation,
+            condition='normal',
+            currents='NMDA+AMPA',
+            nmda_bias=6.0,
+            ampa_bias=1.0,
+        ),
+        timeseries_name='normal_NMDA+AMPA',
+        timeseries_description='Validation',
+        **basic_kwargs
+    )
+
+    # Rinse and repeat:
+    load_as_nwb_trials(
+        nwbfile=nwbfile,
+        read_function=partial(
+            read_timeseries_currents_validation,
+            inputdir=inputdir,
+            synapse_activation=synapse_activation,
+            condition='normal',
+            currents='AMPA',
+            nmda_bias=6.0,  # This is ignored since we have no NMDA!
+            ampa_bias=50.0,
+        ),
+        timeseries_name='normal_AMPA_only',
+        timeseries_description='Validation',
+        **basic_kwargs
+    )
+
+    # write to file:
+    output_file = outputdir.joinpath(
+        'excitatory_validation.nwb'
+    )
+    print(f'Writing to NWBfile: {output_file}')
+    with NWBHDF5IO(str(output_file), 'w') as io:
+        io.write(nwbfile)
+
 def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
     # Get parameters externally:
     experiment_config, animal_model, learning_condition, ntrials, trial_len, ncells, stim_start_offset, \
@@ -102,6 +283,7 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
     nsamples = trial_len * samples_per_ms
 
     # Expand the NEURON/experiment parameters in the acquisition dict:
+    #TODO: change these:
     pn_no = 250
     pv_no = 83
     acquisition_description = {
@@ -126,7 +308,9 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
     time_series_l = []
     spike_train_l = []
     spike_trains_d = defaultdict(partial(np.ndarray, 0))
-    membrane_potential = np.zeros((ncells, nsamples * ntrials), dtype=float)
+    membrane_potential = np.array([])
+    vsoma = np.zeros((ncells, nsamples), dtype=float)
+    trial_offset_samples = 0
     for trial, (trial_start_t, trial_end_t) in enumerate(generate_slices(size=nsamples, number=ntrials)):
         # Search inputdir for files specified in the parameters
         inputfile = inputdir.joinpath(
@@ -144,10 +328,12 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
         if inputfile.exists():
             # Convert dataframe to ndarray:
             voltage_traces = pd.read_hdf(inputfile, key='vsoma').values
-            membrane_potential[:, trial_start_t:trial_end_t] = voltage_traces[:ncells, :nsamples]
+            vsoma = voltage_traces[:ncells, :nsamples]
+            # Offset trial start, in case of any missing trials occuring.
+            trial_start_t -= trial_offset_samples
+            trial_end_t -= trial_offset_samples
             # Use a dict to save space:
             for cellid in range(ncells):
-                #TODO: quick_spikes() appears to include spikes at the very last point in time. Is this a bug?
                 spike_train = quick_spikes(
                     voltage_trace=voltage_traces[cellid],
                     upper_threshold=spike_upper_threshold,
@@ -155,11 +341,14 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
                     plot=False
                 )
                 spike_trains_d[cellid] = np.append(
-                    spike_trains_d[cellid], np.add(spike_train, trial_start_t * samples2ms_factor)
+                    spike_trains_d[cellid], np.add(
+                        spike_train, trial_start_t * samples2ms_factor
+                    )
                 )
 
             # Define the region of PA as the last 200 ms of the simulation:
-            pa_stop = int(nsamples * samples2ms_factor) + trial_start_t * samples2ms_factor  # in ms
+            pa_stop = int(nsamples * samples2ms_factor) + \
+                      trial_start_t * samples2ms_factor
             pa_start = int(pa_stop - 200)
             has_persistent = False
             for cellid, spike_train in spike_trains_d.items():
@@ -167,7 +356,6 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
                     print(f'On trial:{trial}, cell:{cellid} has spikes, so PA.')
                     has_persistent = True
                     break
-            #has_persistent = voltage_traces[:ncells, pa_start:pa_stop].max() > 0
             # Add trial:
             nwbfile.add_trial(
                 start_time=trial_start_t * samples2ms_factor,
@@ -175,15 +363,22 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
                 persistent_activity=has_persistent
             )
             # Add stimulus epoch for that trial:
+            #TODO: stimulus times are in ms or samples? Because _t is in samples!
             nwbfile.add_epoch(
                 start_time=float(trial_start_t + stim_start_offset),
                 stop_time=float(trial_start_t + stim_stop_offset),
                 tags=f'trial {trial} stimulus'
             )
+
+            if membrane_potential.size:
+                membrane_potential = np.concatenate((membrane_potential, vsoma), axis=1)
+            else:
+                membrane_potential = vsoma
         else:
-            #TODO: handle missing files!
-            print('error!')
-            pass
+            print('NEURON file is missing!')
+            # Inform next trials to skip the ms of the missing file
+            trial_offset_samples += nsamples
+
         print(f'Trial {trial}, processed.')
 
     # Chunk and compress the data:
@@ -206,25 +401,6 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
     )
     nwbfile.add_acquisition(vsoma_timeseries)
     print('Time series acquired.')
-
-    for cellid in range(ncells):
-        if spike_trains_d[cellid].size > 0:
-            # Get each trial start/end in seconds rather than ms:
-            trial_intervals = [
-                [trial_start, trial_end]
-                for trial_start, trial_end in \
-                generate_slices(
-                    size=trial_len / 1000, number=ntrials, start_from=0
-                )
-            ]
-            #TODO: save if unit is PN or PV
-            nwbfile.add_unit(
-                id=cellid,
-                spike_times=spike_trains_d[cellid],
-                obs_intervals=trial_intervals,
-                cell_id=cellid,
-                cell_type=get_cell_type(cellid, pn_no)
-            )
 
     # write to file:
     output_file = outputdir.joinpath(
@@ -266,13 +442,15 @@ def bin_activity(input_NWBfile, **kwargs):
     experiment_id = input_NWBfile.identifier
     # Here I am using the same trial length for all my trials, because its a simulation,
     # so I safely grab the first one only.
-    trial_len = input_NWBfile.trials['stop_time'][0] - input_NWBfile.trials['start_time'][0]  # in ms
+    trial_len = input_NWBfile.trials['stop_time'][0] - \
+                input_NWBfile.trials['start_time'][0]  # in ms
     samples_per_ms = input_NWBfile.acquisition['membrane_potential'].rate / 1000  # Sampling rate (Hz) / ms
     conversion_factor = input_NWBfile.acquisition['membrane_potential'].conversion
 
-    # CAUTION: these appear to return similar objects, where they dont. Be very careful on how you use them
-    # together (e.g. zip() etc).
-    # Also these appear to not behave like iterables. So create some out of them:
+    # CAUTION: these appear to return similar objects, where they don't. Be very
+    # careful on how you use them together (e.g. zip() etc).
+    # Also these appear to not behave like iterables. So create some out of
+    # them:
     cells_with_spikes = nwb_iter(input_NWBfile.units['cell_id'])
     spike_trains = nwb_iter(input_NWBfile.units['spike_times'])
 
@@ -286,17 +464,18 @@ def bin_activity(input_NWBfile, **kwargs):
     #for cellid, spike_train in zip(cells_with_spikes, iter(spike_trains)):
     #    for q, (q_start, q_end) in enumerate(generate_slices(size=q_size, number=total_qs)):
     #        binned_activity[cellid][q] = sum([1 for spike in spike_train if q_start <= spike and spike < q_end])
-    #TODO: can you bypass the erroneous trials in the code below?
     try:
         for cellid, spike_train in zip(cells_with_spikes, spike_trains):
             #TODO: this is a serious bug!
             if spike_train.max() >= trial_len * ntrials:
                 print('having spikes outside of trial! How is this possible?')
-                spike_train = spike_train[:-1]
+                #spike_train = spike_train[:-1]
+                raise IndexError('Error in spike trains!')
             bins = np.floor_divide(spike_train, q_size).astype(int)
             np.add.at(binned_activity[cellid][:], bins, 1)
     except Exception as e:
         print(str(e))
+        raise e
 
     # Chunk and compress the data:
     wrapped_data = H5DataIO(
@@ -418,6 +597,8 @@ def pcaL2(
         nwb_iter(input_NWBfile.trials['persistent_activity'])
     )
     correct_trials_no = sum(correct_trials_idx)
+    if correct_trials_no < 1:
+        raise ValueError('No correct trials were found in the NWBfile!')
 
     # Use custom_range to compute PCA only on a portion of the original data:
     if custom_range is not None:
@@ -500,7 +681,10 @@ def from_one_to(x):
     '''
     return range(1, x + 1)
 
-def quick_spikes(voltage_trace=None, upper_threshold=None, lower_threshold=None, samples_per_ms=10, plot=False):
+def quick_spikes(
+        voltage_trace=None, upper_threshold=None, lower_threshold=None,
+        samples_per_ms=10, plot=False
+):
     #   ADVANCED_SPIKE_COUNT(vt, lt, ht) find spikes in voltage trace vt ( that
     #   first cross high threshold and again low threshold).
     #   ADVANCED_SPIKE_COUNT(vt, lt, ht, 'threshold',true) will return spikes
@@ -513,23 +697,76 @@ def quick_spikes(voltage_trace=None, upper_threshold=None, lower_threshold=None,
     #
     #   author stamatiad.st@gmail.com
 
-    #Find values above high threshold:
+    #Find values from low, crossing high threshold:
     upper_crossings = np.greater(voltage_trace, upper_threshold)
-    lower_crossings = np.logical_not(upper_crossings)
+    not_upper_crossings = np.logical_not(upper_crossings)
     # You want the points where the vt crosses the upper threshold and again the lower one.
     # Simply detect crossing the upper threshold, across vt:
-    ts_1 = np.add(upper_crossings.astype(int), np.roll(lower_crossings, 1).astype(int))
-    spikes_start = np.nonzero(np.greater(ts_1, 1))[0]
+    ts_1 = np.add(
+        upper_crossings.astype(int), np.roll(not_upper_crossings, 1).astype(int)
+    )
+    # These are the time points where the upper threshold is crossed.
+    lower2upper_crossings = np.nonzero(np.greater(ts_1, 1))[0]
     # Simply detect crossing the lower threshold, across vt:
-    ts_2 = np.add(upper_crossings.astype(int), np.roll(lower_crossings.astype(int), -1))
-    spikes_end = np.nonzero(np.greater(ts_2, 1))[0]
-    # Make sure that we have the same amount of starts/ends:
-    if spikes_start.size != spikes_end.size:
-        raise ValueError('Check algorithm. Why is this happening?')
-    # Then, get the maximum voltage in this region.
+    lower_crossings = np.less(voltage_trace, lower_threshold)
+    not_lower_crossings = np.logical_not(lower_crossings)
+    # greater than before and then roll, to detect lower threshold crossings.
+    ts_2 = np.add(
+        not_lower_crossings.astype(int),
+        np.roll(lower_crossings.astype(int), -1)
+    )
+    # Avoid having a spike JUST at the very last moment. This could happen if a
+    # spike was ongoing when the simulation was stopped. And could blow up
+    # something downstream if ever the spike times are used as array indices.
+    # Im my case this can happen, so this is implementation specific.
+    ts_2[-1] = 1
+    # This is the time points where the lower threshold is called
+    upper2lower_crossings = np.nonzero(np.greater(ts_2, 1))[0]
+
     spike_timings = []
-    for start, stop in zip(spikes_start, spikes_end):
-        spike_timings.append((np.argmax(voltage_trace[start:stop+1]) + start) / samples_per_ms)
+    if lower2upper_crossings.size > 0 and upper2lower_crossings.size > 0:
+        # Make sure that we start from lower2upper (e.g due to noise)!!!:
+        tmpidx = np.greater(upper2lower_crossings, lower2upper_crossings[0])
+        upper2lower_crossings = upper2lower_crossings[tmpidx]
+
+        # Make sure that each upward threshold crossing is matched with a downward:
+        all_crossings = np.hstack(
+            (lower2upper_crossings, upper2lower_crossings)
+        )
+        binary_crossings = np.hstack(
+            (np.ones((lower2upper_crossings.size)),
+             np.ones((upper2lower_crossings.size)) * -1)
+        )
+        idx = np.argsort(all_crossings)
+        # Detect spike crossings (first cross the upper, then cross the lower):
+        spike_crossings = np.nonzero(
+            np.less(np.diff(binary_crossings[idx]), 0))[0]
+        spikes_start = all_crossings[idx[spike_crossings]]
+        spikes_end = all_crossings[idx[spike_crossings + 1]]
+
+        #TODO: remove old code after commit:
+        #tmp = np.not_equal(np.diff(binary_crossings[idx]), 0)
+        # Make sure we end the sequence with a upper2lower crossing:
+        #if binary_crossings[idx[-1]] < 0:
+        #    unique_crossings = idx[np.hstack((tmp, [True]))]
+        #else:
+        #    unique_crossings = idx[np.hstack((tmp, [False]))]
+
+        # Make sure that we have the same amount of starts/ends:
+        #if np.mod(unique_crossings.size, 2):
+        #    raise ValueError('crossnigs are not unique!')
+        #all_crossings_sorted = all_crossings[unique_crossings]. \
+        #    reshape(-1, 2)
+        #spikes_start = all_crossings_sorted[:, 0]
+        #spikes_end = all_crossings_sorted[:, 1]
+
+        # Then, get the maximum voltage in this region.
+        for start, stop in zip(spikes_start, spikes_end):
+            spike_timings.append(
+                (np.argmax(voltage_trace[start:stop+1]) + start) /
+                samples_per_ms
+            )
+
     # Plot if requested.
     if plot:
         #vt_reduced = voltage_trace.loc[::samples_per_ms]
@@ -547,13 +784,12 @@ def quick_spikes(voltage_trace=None, upper_threshold=None, lower_threshold=None,
         #fig.savefig("test.png")
         plt.show()
 
-
-
     return spike_timings
 
 def generate_slices(size=50, number=2, start_from=0, to_slice = True):
     '''
     Generate starting/ending positions of q_total windows q of size q_size.
+    TODO: MAJOR BUG in slicing! To recheck whenever I use this function!
     TODO: accomondate the user case starting from idx zero, rather than one.
     If the toslice is True, you got one extra included unit at the end, so the qs can be used to slice a array.
     :param q_size:
@@ -561,13 +797,13 @@ def generate_slices(size=50, number=2, start_from=0, to_slice = True):
     :return:
     '''
     for q in range(number):
-        q_start = q * size + start_from
-        q_end = q_start + size + start_from
+        q_start = q * size
+        q_end = q_start + size
         # yield starting/ending positions of q (in ms)
         if to_slice:
-            yield (q_start, q_end)
+            yield (q_start + start_from, q_end + start_from)
         else:
-            yield (q_start, q_end - 1)
+            yield (q_start + start_from, q_end + start_from - 1)
 
 class NDPoint():
     def __init__(self, ndarray=None):
