@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
+from colorspacious import cspace_converter
 from pathlib import Path
 import pandas as pd
 from sklearn import decomposition
@@ -260,6 +261,24 @@ def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
         timeseries_description='Validation',
         **basic_kwargs
     )
+
+    # Rinse and repeat:
+    load_as_nwb_trials(
+        nwbfile=nwbfile,
+        read_function=partial(
+            read_timeseries_currents_validation,
+            inputdir=inputdir,
+            synapse_activation=synapse_activation,
+            condition='noMg',
+            currents='NMDA+AMPA',
+            nmda_bias=6.0,  # This is ignored since we have no NMDA!
+            ampa_bias=1.0,
+        ),
+        timeseries_name='noMg_NMDA+AMPA',
+        timeseries_description='Validation',
+        **basic_kwargs
+    )
+
 
     # write to file:
     output_file = outputdir.joinpath(
@@ -574,19 +593,21 @@ def read_network_activity(fromfile=None, dataset=None, **kwargs):
 
     return data
 
-def pcaL2(
-        input_NWBfile, plot=False, custom_range=None, klabels=None,
-        smooth=False, **kwargs
-):
-    #TODO: is this deterministic? Because some times I got an error in some
-    # matrix.
-    nwbfile_description_d = eval(input_NWBfile.acquisition['membrane_potential'].description)
+def get_acquisition_parameters(input_NWBfile, **kwargs):
+    # Dig into NWB file and return the requested parameters. If not found,
+    # raise (EAFP).
+    #TODO: It would constitute a good practice to have the same annotations
+    # in different parts of the NWB file, if for any reason someone needs to
+    # trim it down i.e. I could have the description also in the spikes and
+    # binned sections, rather than only in membrane_potential.
+
+    nwbfile_description_d = eval(
+        input_NWBfile.acquisition['membrane_potential'].description
+    )
     animal_model_id = nwbfile_description_d['animal_model']
     learning_condition_id = nwbfile_description_d['learning_condition']
     ncells = nwbfile_description_d['ncells']
     pn_no = nwbfile_description_d['pn_no']
-
-    # Plot the  two first principal components of multiple trial binned activity.
     ntrials = len(input_NWBfile.trials)
     # Here I am using the same trial length for all my trials, because its a simulation,
     # so I safely grab the first one only.
@@ -597,71 +618,206 @@ def pcaL2(
         nwb_iter(input_NWBfile.trials['persistent_activity'])
     )
     correct_trials_no = sum(correct_trials_idx)
-    if correct_trials_no < 1:
-        raise ValueError('No correct trials were found in the NWBfile!')
 
-    # Use custom_range to compute PCA only on a portion of the original data:
-    if custom_range is not None:
-        if not isinstance(custom_range, tuple):
-            raise ValueError('Custom range must be a tuple!')
-        trial_slice_start = int(custom_range[0])
-        trial_slice_stop = int(custom_range[1])
-        duration = trial_slice_stop - trial_slice_start
-    else:
-        duration = trial_q_no
-    # Load binned acquisition (all trials together)
-    binned_network_activity = input_NWBfile.acquisition['binned_activity'].data.data[:pn_no, :].reshape(pn_no, ntrials, trial_q_no)
-    # Slice out non correct trials and unwanted trial periods:
-    tmp = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
-    # Reshape in array with m=cells, n=time bins.
-    tmp = tmp.reshape(pn_no, correct_trials_no * duration)
+    parameters = {
+        'animal_model_id': animal_model_id,
+        'learning_condition_id': learning_condition_id,
+        'ncells': ncells,
+        'pn_no': pn_no,
+        'ntrials': ntrials,
+        'trial_len': trial_len,
+        'q_size': q_size,
+        'trial_q_no': trial_q_no,
+        'correct_trials_idx': correct_trials_idx,
+        'correct_trials_no': correct_trials_no
+    }
+    return parameters
+
+def pcaL2(
+        input_NWBfiles=[], plot=False, custom_range=None, klabels=None,
+        smooth=False, **kwargs
+):
+    '''
+    This function reads binned activity from a list of files and performs PCA
+    with L=2 on it.
+    :param input_NWBfiles:
+    :param plot:
+    :param custom_range:
+    :param klabels:
+    :param smooth:
+    :param kwargs:
+    :return:
+    '''
+    #TODO: make more readable the whole function:
+    nfiles = len(input_NWBfiles)
+    if nfiles < 1:
+        raise ValueError('Got empty input_NWBfiles array!')
+
+    # Initialize pool_array:
+    pool_array = np.array([])
+    for input_NWBfile in input_NWBfiles:
+        #TODO: is this deterministic? Because some times I got an error in some
+        # matrix.
+        parameters = get_acquisition_parameters(input_NWBfile, **kwargs)
+
+        animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+        trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+        getargs(
+            'animal_model_id', 'learning_condition_id', 'ncells',
+            'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+            'correct_trials_idx', 'correct_trials_no', parameters
+        )
+
+        if correct_trials_no < 1:
+            raise ValueError('No correct trials were found in the NWBfile!')
+
+        # Use custom_range to compute PCA only on a portion of the original data:
+        if custom_range is not None:
+            if not isinstance(custom_range, tuple):
+                raise ValueError('Custom range must be a tuple!')
+            trial_slice_start = int(custom_range[0])
+            trial_slice_stop = int(custom_range[1])
+            duration = trial_slice_stop - trial_slice_start
+        else:
+            duration = trial_q_no
+
+        # Load binned acquisition (all trials together)
+        binned_network_activity = input_NWBfile. \
+            acquisition['binned_activity']. \
+            data.data[:pn_no, :]. \
+            reshape(pn_no, ntrials, trial_q_no)
+        # Slice out non correct trials and unwanted trial periods:
+        tmp = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
+        # Reshape in array with m=cells, n=time bins.
+        tmp = tmp.reshape(pn_no, correct_trials_no * duration)
+        # Concatinate it the pool array:
+        if pool_array.size:
+            pool_array = np.concatenate((pool_array, tmp), axis=1)
+            pass
+        else:
+            pool_array = tmp
+
 
     # how many PCA components
     L = 2
     pca = decomposition.PCA(n_components=L)
-    t_L = pca.fit_transform(tmp.T).T
+    t_L = pca.fit_transform(pool_array.T).T
     # Reshape PCA results into separate trials for plotting.
-    t_L_per_trial = t_L.reshape(L, correct_trials_no, duration, order='C')
+    #t_L_per_trial = t_L.reshape(L, correct_trials_no, duration, order='C')
+    #TODO: do a more elegant way of splitting into trials:
+    total_data_trials = int(pool_array.shape[1]/duration)
+    t_L_per_trial = t_L.reshape(L, total_data_trials, duration, order='C')
     if smooth:
-        for trial in range(correct_trials_no):
+        for trial in range(total_data_trials):
             t_L_per_trial[0][trial][:] = savgol_filter(t_L_per_trial[0][trial][:], 11, 3)
             t_L_per_trial[1][trial][:] = savgol_filter(t_L_per_trial[1][trial][:], 11, 3)
 
     if plot:
-        #Plots the t_L_r as 2d timeseries.
-        fig = plt.figure()
-        plt.ion()
-        ax = fig.add_subplot(111, projection='3d')
-        plt.title(f'PCAL2 animal model {animal_model_id}, learning condition {learning_condition_id}')
+        # Plots the t_L_r as 2d timeseries per trial. Also to ease the cluster
+        # identification in the case of multiple learning conditions plots in
+        # addition a 2d scatterplot of the data.
 
+        # Scatterplot:
         if klabels is not None:
+            fig = plt.figure()
+            plt.ion()
+            ax = fig.add_subplot(111)
+            plt.title(f'PCAL2 animal model {animal_model_id}, learning condition {learning_condition_id}')
             labels = klabels.tolist()
             nclusters = np.unique(klabels).size
             colors = cm.Set2(np.linspace(0, 1, nclusters))
             _, key_labels = np.unique(labels, return_index=True)
             handles = []
-            for i, (trial, label) in enumerate(zip(range(correct_trials_no), labels)):
-                x = t_L_per_trial[0][trial][:]
-                y = t_L_per_trial[1][trial][:]
-                handle, = ax.plot(x, y,
-                                  range(duration),
-                                  color=colors[label - 1],
-                                  label=f'Cluster {label}'
-                                  )
+            for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
+                print(f'Curently plotting trial: {trial}')
+                for t in range(duration - 1):
+                    handle, = ax.plot(
+                        t_L_per_trial[0, trial, t:t+2],
+                        t_L_per_trial[1, trial, t:t+2],
+                        label=f'Cluster {label}',
+                        color=colors[label - 1]
+                    )
                 if i in key_labels:
                     handles.append(handle)
-            # Youmust group handles based on unique labels.
-            plt.legend(handles)
+
+            for clusterid in range(nclusters):
+                #TODO: This comprehension is problematic, why?
+                # Plot each cluster mean (average of last second activity):
+                #cluster_trials = [
+                #    idx
+                #    for idx, label in enumerate(labels)
+                #    if label == clust + 1
+                #]
+                cluster_trials = []
+                for idx, label in enumerate(labels):
+                    if label == clusterid + 1:
+                        cluster_trials.append(idx)
+                mean_point = np.mean(
+                    t_L_per_trial[:, cluster_trials, :]. \
+                        reshape(2, len(cluster_trials) * duration),
+                    axis=1
+                )
+                ax.scatter(
+                    mean_point[0], mean_point[1], s=70, c='k', marker='+',
+                    zorder=20000
+                )
+
         else:
-            colors = cm.viridis(np.linspace(0, 1, duration - 1))
-            for trial in range(correct_trials_no):
+            fig = plt.figure()
+            plt.ion()
+            ax = fig.add_subplot(111)
+            plt.title(f'PCAL2 animal model {animal_model_id}, learning condition {learning_condition_id}')
+            colors = cm.Greens(np.linspace(0, 1, duration - 1))
+            for trial in range(total_data_trials):
                 for t, c in zip(range(duration - 1), colors):
                     ax.plot(
-                        t_L_per_trial[0][trial][t:t+2],
-                        t_L_per_trial[1][trial][t:t+2],
-                        [t, t+1], color=c
+                        t_L_per_trial[0, trial, t:t+2],
+                        t_L_per_trial[1, trial, t:t+2],
+                        color=c
                     )
-        plt.show()
+                mean_point = np.mean(np.squeeze(t_L_per_trial[:, trial, :]), axis=1)
+                ax.scatter(
+                    mean_point[0], mean_point[1], s=70, c='r', marker='+',
+                    zorder=200
+                )
+
+        if False:
+            # Plot 3D:
+            fig = plt.figure()
+            plt.ion()
+            ax = fig.add_subplot(111, projection='3d')
+            plt.title(f'PCAL2 animal model {animal_model_id}, learning condition {learning_condition_id}')
+
+            if klabels is not None:
+                labels = klabels.tolist()
+                nclusters = np.unique(klabels).size
+                colors = cm.Set2(np.linspace(0, 1, nclusters))
+                _, key_labels = np.unique(labels, return_index=True)
+                handles = []
+                for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
+                    x = t_L_per_trial[0][trial][:]
+                    y = t_L_per_trial[1][trial][:]
+                    handle, = ax.plot(x, y,
+                                      range(duration),
+                                      color=colors[label - 1],
+                                      label=f'Cluster {label}'
+                                      )
+                    if i in key_labels:
+                        handles.append(handle)
+                # Youmust group handles based on unique labels.
+                plt.legend(handles)
+            else:
+                colors = cm.viridis(np.linspace(0, 1, duration - 1))
+                for trial in range(total_data_trials):
+                    for t, c in zip(range(duration - 1), colors):
+                        ax.plot(
+                            t_L_per_trial[0][trial][t:t+2],
+                            t_L_per_trial[1][trial][t:t+2],
+                            [t, t+1], color=c
+                        )
+            plt.show()
+
+
 
     return t_L_per_trial
 
@@ -1221,13 +1377,13 @@ def test_for_overfit(klabels=None, data_pca=None, S=None, threshold=None):
 
 
 def determine_number_of_clusters(
-        input_NWBfile, max_clusters=None, y_array=None, custom_range=None,
+        input_NWBfiles, max_clusters=None, y_array=None, custom_range=None,
         **kwargs
     ):
     '''
     Return the optimal number of clusters, as per BIC:
 
-    :param input_NWBfile:
+    :param input_NWBfiles:
     :param max_clusters:
     :param y_array:
     :param custom_range:
@@ -1235,19 +1391,29 @@ def determine_number_of_clusters(
     :return:
     '''
 
-    # Perform PCA to the binned network activity:
-    nwbfile_description_d = eval(input_NWBfile.acquisition['membrane_potential'].description)
-    animal_model_id = nwbfile_description_d['animal_model']
-    learning_condition_id = nwbfile_description_d['learning_condition']
-    trial_len = nwbfile_description_d['trial_len']
-    #TODO: import properly the q_size:
-    q_size = 50
+    nfiles = len(input_NWBfiles)
+    if nfiles < 1:
+        raise ValueError('Got empty input_NWBfiles array!')
+
+    #TODO: This is python's EAFP, but tide up a little bit please:
+    parameters = get_acquisition_parameters(input_NWBfiles[0], **kwargs)
+
+    animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+    trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+        getargs(
+            'animal_model_id', 'learning_condition_id', 'ncells',
+            'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+            'correct_trials_idx', 'correct_trials_no', parameters
+        )
+
     total_trial_qs = trial_len / q_size
     one_sec_qs = 1000 / q_size
     start_q = total_trial_qs - one_sec_qs
+
+    # Perform PCA to the binned network activity:
     # Analyze only each trial's last second:
     data_pca = pcaL2(
-        input_NWBfile,
+        input_NWBfiles,
         custom_range=(start_q, total_trial_qs),
         plot=False
     )

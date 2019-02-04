@@ -12,14 +12,82 @@ from scipy import spatial
 from functools import partial
 from collections import defaultdict
 from scipy import stats
+import sys
 
 from pynwb import NWBHDF5IO
 
 #===================================================================================================================
 if __name__ == '__main__':
-    # Generate figure3A
+
+
+    animal_model = 4
+    configuration = 'structured'
+
+    NWBfiles = [
+        analysis.load_nwb_file(
+            animal_model=animal_model,
+            learning_condition=learning_condition,
+            experiment_config=configuration,
+            data_path=Path(r'G:\Glia')
+        )
+        for learning_condition in range(1, 11)
+    ]
+
+    #data = nwbfile.acquisition['membrane_potential'].data
+    #fig = plt.figure()
+    #plt.ion()
+    #plt.plot(data[10, :])
+    #plt.show
+
+
+
+    for nwbfile in NWBfiles:
+        analysis.bin_activity(nwbfile, q_size=50)
+
+    #binned_network_activity = \
+    #    np.squeeze(nwbfile.acquisition['binned_activity'].data.data[:, :])
+    #fig = plt.figure()
+    #plt.ion()
+    #plt.imshow(binned_network_activity)
+    #plt.show
+
+
+    trial_len = nwbfile.trials['stop_time'][0] - \
+                nwbfile.trials['start_time'][0]  # in ms
+    custom_range = (20, int(trial_len / 50))
+    #analysis.pcaL2(
+    #    NWBfiles, custom_range=custom_range, smooth=True, plot=True
+    #)
+
+
+    # Determine the optimal number of clusters for all trials of a single animal
+    # model/learning condition.
+    #y_array = np.linspace(0.01, 10, 1000)
+    y_array = np.linspace(0.1, 100, 1000)
+    K_star, K_labels = analysis.determine_number_of_clusters(
+        NWBfiles,
+        max_clusters=10,
+        y_array=y_array,
+        custom_range=custom_range
+    )
+
+    y_i = 500
+    print(f'K* = {K_star[y_i, :]}')
+    analysis.pcaL2(
+        NWBfiles, klabels=K_labels[y_i, :].T,
+        custom_range=custom_range,
+        smooth=True, plot=True
+    )
+    plt.savefig(Path(fr'C:\Users\steve\Pictures\Animal_{animal_model}_{configuration}_dim_5.png'))
+    print('Tutto pronto!')
+    sys.exit()
+
+    #========================================================================
+    #========================================================================
+    # FIGURE 3 A, B
 
     def separate_trials(input_NWBfile=None, acquisition_name=None):
+        # Return an iterable of each trial acrivity.
 
         #TODO: check if wrapped and unwrap:
         raw_acquisition = input_NWBfile.acquisition[acquisition_name].data
@@ -36,15 +104,34 @@ if __name__ == '__main__':
     # Lazy load the data as a NWB file.
     input_NWBfile = Path(r'G:\Glia\excitatory_validation.nwb')
     nwbfile = NWBHDF5IO(str(input_NWBfile), 'r').read()
-    per_trial_activity = separate_trials(
+    per_trial_activity = {}
+    per_trial_activity['normal_NMDA+AMPA'] = separate_trials(
         input_NWBfile=nwbfile, acquisition_name='normal_NMDA+AMPA'
     )
-    fig = plt.figure()
-    for trace in per_trial_activity:
-        plt.plot(trace[0])
+    per_trial_activity['normal_AMPA_only'] = separate_trials(
+        input_NWBfile=nwbfile, acquisition_name='normal_AMPA_only'
+    )
+    per_trial_activity['noMg_NMDA+AMPA'] = separate_trials(
+        input_NWBfile=nwbfile, acquisition_name='noMg_NMDA+AMPA'
+    )
+    fig, ax = plt.subplots()
+    for trace in per_trial_activity['normal_NMDA+AMPA']:
+        plt.plot(trace[0][500:5000], color='r')
+    for trace in per_trial_activity['normal_AMPA_only']:
+        plt.plot(trace[0][500:5000], color='b')
+    ax.set_xlabel('Time (ms)')
+    ax.set_ylabel('Somatic depolarization (mV)')
+    fig, ax = plt.subplots()
+    for trace in per_trial_activity['normal_NMDA+AMPA']:
+        plt.plot(trace[0][500:5000], color='r')
+    for trace in per_trial_activity['noMg_NMDA+AMPA']:
+        plt.plot(trace[0][500:5000], color='b')
+    ax.set_xlabel('Time (ms)')
+    ax.set_ylabel('Somatic depolarization (mV)')
 
     #========================================================================
     #========================================================================
+    # FIGURE 3 C
 
 
     def datasetName(id):
