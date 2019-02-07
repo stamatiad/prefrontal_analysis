@@ -22,24 +22,33 @@ analysis_parameters = {
     'spike_upper_threshold': 0,
     'spike_lower_threshold': -10,
     'data_dim': 2,
-    'samples_per_ms': 10
+    'samples_per_ms': 10,
+    'q_size': 50
 }
 analysis_parameters['total_qs'] = \
     int(np.floor(analysis_parameters['trial_len'] / analysis_parameters['q_size']))
 
-# for structured condition:
-inputdir = Path(r'G:\Glia\publication_validation\excitatory_validation')
-outputdir = Path(r'G:\Glia')
-try:
-    analysis.create_nwb_validation_file(
-        inputdir=inputdir,
-        outputdir=outputdir
-    )
-except Exception as e:
-    print(str(e))
+# Parse each of the NWB files and keep only the spiking activity. Can you
+# keep the properties? (are the fields for the acquisition the same as the
+# ones for the unit (where spikes lie)?
+# Keep the binned activity and pass the parameters from the membrane potential
+# to the binned activity.
 
-print('Done converting validation params and exiting.')
-sys.exit()
+
+
+# for structured condition:
+#inputdir = Path(r'G:\Glia\publication_validation\excitatory_validation')
+#outputdir = Path(r'G:\Glia')
+#try:
+#    analysis.create_nwb_validation_file(
+#        inputdir=inputdir,
+#        outputdir=outputdir
+#    )
+#except Exception as e:
+#    print(str(e))
+#
+#print('Done converting validation params and exiting.')
+#sys.exit()
 
 outputdir = Path(r'G:\Glia')
 
@@ -63,6 +72,7 @@ for animal_model in range(1, 5):
             analysis.create_nwb_file(
                 inputdir=inputdir,
                 outputdir=outputdir,
+                add_membrane_potential=False,
                 **new_params
             )
         except Exception as e:
@@ -92,6 +102,7 @@ for animal_model in range(1, 5):
             analysis.create_nwb_file(
                 inputdir=inputdir,
                 outputdir=outputdir,
+                add_membrane_potential=False,
                 **new_params
             )
         except Exception as e:
@@ -120,6 +131,7 @@ for animal_model in range(1, 5):
         analysis.create_nwb_file(
             inputdir=inputdir,
             outputdir=outputdir,
+            add_membrane_potential=False,
             **new_params
         )
 
@@ -146,6 +158,7 @@ for animal_model in range(1, 2):
         analysis.create_nwb_file(
             inputdir=inputdir,
             outputdir=outputdir,
+            add_membrane_potential=False,
             **new_params
         )
 

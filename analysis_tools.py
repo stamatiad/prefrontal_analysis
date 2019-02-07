@@ -30,7 +30,7 @@ def time_it(function):
     return runandtime
 
 experiment_config_filename = \
-    'animal_model_{animal_model}_learning_condition_{learning_condition}_{experiment_config}.nwb'.format
+    'animal_model_{animal_model}_learning_condition_{learning_condition}_{type}_{experiment_config}.nwb'.format
 
 simulation_template = (
     'SN{animal_model}'
@@ -87,13 +87,15 @@ def nwb_iter(sequencelike):
         ctr += 1
 
 def load_nwb_file(**kwargs):
-    animal_model, learning_condition, experiment_config, data_path = \
-    getargs('animal_model', 'learning_condition', 'experiment_config', 'data_path', kwargs)
+    animal_model, learning_condition, experiment_config, data_path, type = \
+    getargs('animal_model', 'learning_condition', 'experiment_config', \
+            'data_path', 'type', kwargs)
 
     filename = data_path.joinpath(experiment_config_filename(
         animal_model=animal_model,
         learning_condition=learning_condition,
-        experiment_config=experiment_config
+        experiment_config=experiment_config,
+        type=type
     ))
     nwbfile = NWBHDF5IO(str(filename), 'r').read()
     return nwbfile
@@ -288,14 +290,15 @@ def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
     with NWBHDF5IO(str(output_file), 'w') as io:
         io.write(nwbfile)
 
-def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
+def create_nwb_file(inputdir=None, outputdir=None, \
+                    add_membrane_potential=False, **kwargs):
     # Get parameters externally:
     experiment_config, animal_model, learning_condition, ntrials, trial_len, ncells, stim_start_offset, \
     stim_stop_offset, samples_per_ms, spike_upper_threshold, spike_lower_threshold, excitation_bias, \
-        inhibition_bias, nmda_bias, ampa_bias, sim_duration = \
+        inhibition_bias, nmda_bias, ampa_bias, sim_duration, q_size = \
         getargs('experiment_config', 'animal_model', 'learning_condition', 'ntrials', 'trial_len', 'ncells', 'stim_start_offset', \
                    'stim_stop_offset', 'samples_per_ms', 'spike_upper_threshold', 'spike_lower_threshold', \
-                'excitation_bias', 'inhibition_bias', 'nmda_bias', 'ampa_bias', 'sim_duration', kwargs)
+                'excitation_bias', 'inhibition_bias', 'nmda_bias', 'ampa_bias', 'sim_duration', 'q_size', kwargs)
 
     # the base unit of time is the ms:
     samples2ms_factor = 1 / samples_per_ms
@@ -400,52 +403,108 @@ def create_nwb_file(inputdir=None, outputdir=None, **kwargs):
 
         print(f'Trial {trial}, processed.')
 
+    if add_membrane_potential:
+        # Chunk and compress the data:
+        wrapped_data = H5DataIO(
+            data=membrane_potential,
+            chunks=True,  # <---- Enable chunking (although I'm not sure if it will do any good in my huge dataset.
+            compression='gzip',
+            compression_opts=9
+        )
+        # Add somatic voltage traces (all trials concatenated)
+        vsoma_timeseries = TimeSeries(
+            'membrane_potential',  # Name of the TimeSeries
+            wrapped_data,  # Actual data
+            'miliseconds',  # Base unit of the measurement
+            starting_time=0.0,  # The timestamp of the first sample
+            rate=10000.0,  # Sampling rate in Hz
+            conversion=samples2ms_factor,  # Scalar to multiply each element in data to convert it to the specified unit
+            # Since we can only use strings, stringify the dict!
+            description=str(acquisition_description)
+        )
+        nwbfile.add_acquisition(vsoma_timeseries)
+        print('Membrane potential acquired.')
+
+    for cellid in range(ncells):
+        if spike_trains_d[cellid].size > 0:
+            # Get each trial start/end in seconds rather than ms:
+            trial_intervals = [
+                [trial_start, trial_end]
+                for trial_start, trial_end in \
+                generate_slices(
+                    size=trial_len / 1000, number=ntrials, start_from=0
+                )
+            ]
+            nwbfile.add_unit(
+                id=cellid,
+                spike_times=spike_trains_d[cellid],
+                obs_intervals=trial_intervals,
+                cell_id=cellid,
+                cell_type=get_cell_type(cellid, pn_no)
+            )
+    print('Spikes acquired.')
+
+    cells_with_spikes = spike_trains_d.keys()
+    spike_trains = spike_trains_d.values()
+
+    # Bin spiking activity for all trials/cells in total_qs bins of q_size size:
+    # How many qs in all trials?
+    # Also, since I might got LESS trials, I should reassign the ntrials
+    # variable:
+    ntrials = len(nwbfile.trials)
+    total_qs = int(np.floor(trial_len / q_size)) * ntrials
+    trial_qs = int(np.floor(trial_len / q_size))
+    binned_activity = np.zeros((ncells, total_qs), dtype=int)
+    # This is essentially what we are doing, but since python is so slow, we refactor it with some optimized code.
+    #for cellid, spike_train in zip(cells_with_spikes, iter(spike_trains)):
+    #    for q, (q_start, q_end) in enumerate(generate_slices(size=q_size, number=total_qs)):
+    #        binned_activity[cellid][q] = sum([1 for spike in spike_train if q_start <= spike and spike < q_end])
+    try:
+        for cellid, spike_train in zip(cells_with_spikes, spike_trains):
+            bins = np.floor_divide(spike_train, q_size).astype(int)
+            np.add.at(binned_activity[cellid][:], bins, 1)
+    except Exception as e:
+        print(str(e))
+        raise e
+
     # Chunk and compress the data:
     wrapped_data = H5DataIO(
-        data=membrane_potential,
+        data=binned_activity,
         chunks=True,  # <---- Enable chunking (although I'm not sure if it will do any good in my huge dataset.
         compression='gzip',
         compression_opts=9
     )
-    # Add somatic voltage traces (all trials concatenated)
-    vsoma_timeseries = TimeSeries(
-        'membrane_potential',  # Name of the TimeSeries
+    # Add binned activity:
+    network_binned_activity = TimeSeries(
+        'binned_activity',  # Name of the TimeSeries
         wrapped_data,  # Actual data
         'miliseconds',  # Base unit of the measurement
         starting_time=0.0,  # The timestamp of the first sample
-        rate=10000.0,  # Sampling rate in Hz
-        conversion=samples2ms_factor,  #  Scalar to multiply each element in data to convert it to the specified unit
+        rate=1000/q_size,  # Sampling rate in Hz
+        conversion=float(q_size),  #  Scalar to multiply each element in data to convert it to the specified unit
         # Since we can only use strings, stringify the dict!
         description=str(acquisition_description)
     )
-    nwbfile.add_acquisition(vsoma_timeseries)
-    print('Time series acquired.')
+    nwbfile.add_acquisition(network_binned_activity)
+    print('Binned activity acquired')
 
     # write to file:
+    if add_membrane_potential:
+        type = 'mp'
+    else:
+        type = 'bn'
+
     output_file = outputdir.joinpath(
         experiment_config_filename(
-            animal_model=animal_model, learning_condition=learning_condition,
-            experiment_config=experiment_config
+            animal_model=animal_model,
+            learning_condition=learning_condition,
+            experiment_config=experiment_config,
+            type=type
         )
     )
     print(f'Writing to NWBfile: {output_file}')
     with NWBHDF5IO(str(output_file), 'w') as io:
         io.write(nwbfile)
-
-class open_hdf_dataframe():
-
-    def __init__(self, filename=None, hdf_key=None):
-        self.filename = filename
-        self.hdf_key = hdf_key
-
-    def __enter__(self):
-        try:
-            return pd.read_hdf(self.filename, key=self.hdf_key)
-        except Exception as e:
-            print(f'File ({self.filename}) or key ({self.hdf_key}) not found!')
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        pass
-    pass
 
 def bin_activity(input_NWBfile, **kwargs):
     q_size = getargs('q_size', kwargs)
@@ -517,63 +576,6 @@ def bin_activity(input_NWBfile, **kwargs):
     # Reshape before returning:
     return binned_activity.reshape(ncells, ntrials, trial_qs)
 
-def simulation_to_network_activity(tofile=None, animal_models=None, learning_conditions=None, **kwargs):
-    # Convert voltage traces to spike trains:
-    configuration = kwargs.get('configuration', None)
-    upper_threshold = kwargs.get('upper_threshold', None)
-    lower_threshold = kwargs.get('lower_threshold', None)
-    ntrials = kwargs.get('ntrials', None)
-    total_qs = kwargs.get('total_qs', None)
-    q_size = kwargs.get('q_size', None)
-    cellno = kwargs.get('cellno', None)
-
-    # For multiple runs:
-    # Use panda dataframes to keep track across learning conditions and animal models.
-    # Group multiple trials in the same dataframe, since these are our working unit.
-    # Touch the output file:
-    open(tofile, 'w').close()
-
-
-    for animal_model in animal_models:
-        for learning_condition in learning_conditions:
-            windowed_activity = np.zeros((ntrials, total_qs, cellno), dtype=int)
-            #data_key = f'SN{animal_model}LC{learning_condition}'
-            dataset = experiment_config_filename(
-                animal_model=animal_model,
-                learning_condition=learning_condition
-            )
-            print(f'Handling: {dataset}')
-            for trial in range(ntrials):
-                inputfile = Path('G:\Glia') \
-                    .joinpath(
-                    simulation_template(animal_model=animal_model,
-                                        learning_condition=learning_condition,
-                                        trial=trial,
-                                        configuration=configuration)) \
-                    .joinpath('vsoma.hdf5')
-                #with open_hdf_dataframe(filename=filename, hdf_key='vsoma') as df:
-                if inputfile.exists():
-                    # Convert dataframe to ndarray:
-                    voltage_traces = pd.read_hdf(inputfile, key='vsoma').values
-                    # Reduce each voltage trace to a list of spike times:
-                    spike_trains = [
-                        quick_spikes(voltage_trace=voltage_trace,
-                                        upper_threshold=upper_threshold,
-                                        lower_threshold=lower_threshold,
-                                        plot=False)
-                        for voltage_trace in voltage_traces
-                    ]
-                    # Sum spikes inside a window Q:
-                    for cellid, spike_train in enumerate(spike_trains):
-                        if len(spike_train) > 0:
-                            for q, (q_start, q_end) in enumerate(generate_slices(size=q_size, number=total_qs)):
-                                windowed_activity[trial][q][cellid] = sum([1 for spike in spike_train if q_start <= spike and spike < q_end])
-            #fig, ax = plt.subplots()
-            #ax.imshow(windowed_activity.reshape(total_qs * ntrials, cellno, order='C'))
-            #plt.show()
-            df = pd.DataFrame(windowed_activity.reshape(total_qs * ntrials, cellno, order='C'))
-            df.to_hdf(tofile, key=dataset, mode='a')
-
 
 #===================================================================================================================
 def read_network_activity(fromfile=None, dataset=None, **kwargs):
@@ -585,7 +587,6 @@ def read_network_activity(fromfile=None, dataset=None, **kwargs):
     data = None
     # Read spiketrains and plot them
     df = pd.read_hdf(fromfile, key=dataset)
-    #with open_hdf_dataframe(filename=filename, hdf_key=data_key) as df:
     if df is not None:
         data = df.values.T
         # Also reshape the data into a 3d array:
@@ -593,54 +594,75 @@ def read_network_activity(fromfile=None, dataset=None, **kwargs):
 
     return data
 
-def get_acquisition_parameters(input_NWBfile, **kwargs):
+def get_acquisition_parameters(input_NWBfile=None, requested_parameters=[],
+                               **kwargs):
     # Dig into NWB file and return the requested parameters. If not found,
     # raise (EAFP).
+    # Takes as granted that ONE of the acquisitions will have a description
+    # associated with it.
     #TODO: It would constitute a good practice to have the same annotations
     # in different parts of the NWB file, if for any reason someone needs to
     # trim it down i.e. I could have the description also in the spikes and
     # binned sections, rather than only in membrane_potential.
 
-    nwbfile_description_d = eval(
-        input_NWBfile.acquisition['membrane_potential'].description
-    )
-    animal_model_id = nwbfile_description_d['animal_model']
-    learning_condition_id = nwbfile_description_d['learning_condition']
-    ncells = nwbfile_description_d['ncells']
-    pn_no = nwbfile_description_d['pn_no']
-    ntrials = len(input_NWBfile.trials)
-    # Here I am using the same trial length for all my trials, because its a simulation,
-    # so I safely grab the first one only.
-    trial_len = input_NWBfile.trials['stop_time'][0] - input_NWBfile.trials['start_time'][0]  # in ms
-    q_size = input_NWBfile.acquisition['binned_activity'].conversion
-    trial_q_no = int(np.floor(trial_len / q_size))
-    correct_trials_idx = list(
-        nwb_iter(input_NWBfile.trials['persistent_activity'])
-    )
-    correct_trials_no = sum(correct_trials_idx)
+    # Search NWB file for a description, containing the strtingified dict:
+    for k in input_NWBfile.acquisition.keys():
+        if k in input_NWBfile.acquisition:
+            nwbfile_description_d = \
+                eval(input_NWBfile.acquisition[k].description)
+        else:
+            raise ValueError('No description found in NWB!')
 
-    parameters = {
-        'animal_model_id': animal_model_id,
-        'learning_condition_id': learning_condition_id,
-        'ncells': ncells,
-        'pn_no': pn_no,
-        'ntrials': ntrials,
-        'trial_len': trial_len,
-        'q_size': q_size,
-        'trial_q_no': trial_q_no,
-        'correct_trials_idx': correct_trials_idx,
-        'correct_trials_no': correct_trials_no
-    }
-    return parameters
+    # TODO: this is a little bit problematic, as some of the parameters need
+    # to be computed in advance. So compute them first and then filter them:
+    try:
+        animal_model_id = nwbfile_description_d['animal_model']
+        learning_condition_id = nwbfile_description_d['learning_condition']
+        ncells = nwbfile_description_d['ncells']
+        pn_no = nwbfile_description_d['pn_no']
+        ntrials = len(input_NWBfile.trials)
+        # Here I am using the same trial length for all my trials, because its a simulation,
+        # so I safely grab the first one only.
+        trial_len = input_NWBfile.trials['stop_time'][0] - input_NWBfile.trials['start_time'][0]  # in ms
+        q_size = input_NWBfile.acquisition['binned_activity'].conversion
+        trial_q_no = int(np.floor(trial_len / q_size))
+        correct_trials_idx = list(
+            nwb_iter(input_NWBfile.trials['persistent_activity'])
+        )
+        correct_trials_no = sum(correct_trials_idx)
+
+        parameters = {
+            'animal_model_id': animal_model_id,
+            'learning_condition_id': learning_condition_id,
+            'ncells': ncells,
+            'pn_no': pn_no,
+            'ntrials': ntrials,
+            'trial_len': trial_len,
+            'q_size': q_size,
+            'trial_q_no': trial_q_no,
+            'correct_trials_idx': correct_trials_idx,
+            'correct_trials_no': correct_trials_no
+        }
+
+        #Pass the requested parameters through getargs():
+        returned_parameters = getargs(*requested_parameters, parameters)
+        return returned_parameters
+        #TODO: implement this check:
+        #if len(returned_parameters) != len(requested_parameters):
+        #    raise ValueError('(Some) Requested parameter not found!')
+        #else:
+        #    return returned_parameters
+    except Exception as e:
+        raise e
 
 def pcaL2(
-        input_NWBfiles=[], plot=False, custom_range=None, klabels=None,
-        smooth=False, **kwargs
+        NWBfile_array=[], plot_2d=False, plot_3d=False, custom_range=None,
+        klabels=None, pca_components=5, smooth=False, plot_axes=None, **kwargs
 ):
     '''
     This function reads binned activity from a list of files and performs PCA
     with L=2 on it.
-    :param input_NWBfiles:
+    :param NWBfile_array:
     :param plot:
     :param custom_range:
     :param klabels:
@@ -649,23 +671,24 @@ def pcaL2(
     :return:
     '''
     #TODO: make more readable the whole function:
-    nfiles = len(input_NWBfiles)
+    nfiles = len(NWBfile_array)
     if nfiles < 1:
-        raise ValueError('Got empty input_NWBfiles array!')
+        raise ValueError('Got empty NWBfile_array array!')
 
     # Initialize pool_array:
     pool_array = np.array([])
-    for input_NWBfile in input_NWBfiles:
+    for input_NWBfile in NWBfile_array:
         #TODO: is this deterministic? Because some times I got an error in some
         # matrix.
-        parameters = get_acquisition_parameters(input_NWBfile, **kwargs)
-
         animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
         trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
-        getargs(
-            'animal_model_id', 'learning_condition_id', 'ncells',
-            'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
-            'correct_trials_idx', 'correct_trials_no', parameters
+        get_acquisition_parameters(
+            input_NWBfile=input_NWBfile,
+            requested_parameters=[
+                'animal_model_id', 'learning_condition_id', 'ncells',
+                'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+                'correct_trials_idx', 'correct_trials_no'
+            ]
         )
 
         if correct_trials_no < 1:
@@ -684,7 +707,7 @@ def pcaL2(
         # Load binned acquisition (all trials together)
         binned_network_activity = input_NWBfile. \
             acquisition['binned_activity']. \
-            data.data[:pn_no, :]. \
+            data[:pn_no, :]. \
             reshape(pn_no, ntrials, trial_q_no)
         # Slice out non correct trials and unwanted trial periods:
         tmp = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
@@ -699,7 +722,7 @@ def pcaL2(
 
 
     # how many PCA components
-    L = 2
+    L = pca_components
     pca = decomposition.PCA(n_components=L)
     t_L = pca.fit_transform(pool_array.T).T
     # Reshape PCA results into separate trials for plotting.
@@ -707,22 +730,33 @@ def pcaL2(
     #TODO: do a more elegant way of splitting into trials:
     total_data_trials = int(pool_array.shape[1]/duration)
     t_L_per_trial = t_L.reshape(L, total_data_trials, duration, order='C')
+    #TODO: somewhere here I get a warning about a non-tuple sequence for
+    # multi dim indexing. Why?
     if smooth:
         for trial in range(total_data_trials):
-            t_L_per_trial[0][trial][:] = savgol_filter(t_L_per_trial[0][trial][:], 11, 3)
-            t_L_per_trial[1][trial][:] = savgol_filter(t_L_per_trial[1][trial][:], 11, 3)
+            for l in range(L):
+                t_L_per_trial[l, trial, :] = savgol_filter(t_L_per_trial[l, trial, :], 11, 3)
 
-    if plot:
+    if plot_2d:
         # Plots the t_L_r as 2d timeseries per trial. Also to ease the cluster
         # identification in the case of multiple learning conditions plots in
         # addition a 2d scatterplot of the data.
 
         # Scatterplot:
         if klabels is not None:
-            fig = plt.figure()
-            plt.ion()
-            ax = fig.add_subplot(111)
-            plt.title(f'PCAL2 animal model {animal_model_id}, learning condition {learning_condition_id}')
+            # If not part of a subfigure, create one:
+            if not plot_axes:
+                fig = plt.figure()
+                plt.ion()
+                plot_axes = fig.add_subplot(111)
+
+            plot_axes.set_title(f'Model {animal_model_id}, learning condition {learning_condition_id}')
+            # Format 3d plot:
+            #plot_axes.axhline(linewidth=4)  # inc. width of x-axis and color it green
+            #plot_axes.axvline(linewidth=4)
+            for axis in ['top', 'bottom', 'left', 'right']:
+                plot_axes.spines[axis].set_linewidth(2)
+
             labels = klabels.tolist()
             nclusters = np.unique(klabels).size
             colors = cm.Set2(np.linspace(0, 1, nclusters))
@@ -731,11 +765,12 @@ def pcaL2(
             for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
                 print(f'Curently plotting trial: {trial}')
                 for t in range(duration - 1):
-                    handle, = ax.plot(
+                    handle, = plot_axes.plot(
                         t_L_per_trial[0, trial, t:t+2],
                         t_L_per_trial[1, trial, t:t+2],
                         label=f'Cluster {label}',
-                        color=colors[label - 1]
+                        color=colors[label - 1],
+                        alpha=t / duration
                     )
                 if i in key_labels:
                     handles.append(handle)
@@ -753,71 +788,78 @@ def pcaL2(
                     if label == clusterid + 1:
                         cluster_trials.append(idx)
                 mean_point = np.mean(
-                    t_L_per_trial[:, cluster_trials, :]. \
+                    t_L_per_trial[:2, cluster_trials, :]. \
                         reshape(2, len(cluster_trials) * duration),
                     axis=1
                 )
-                ax.scatter(
+                plot_axes.scatter(
                     mean_point[0], mean_point[1], s=70, c='k', marker='+',
                     zorder=20000
                 )
 
         else:
-            fig = plt.figure()
-            plt.ion()
-            ax = fig.add_subplot(111)
-            plt.title(f'PCAL2 animal model {animal_model_id}, learning condition {learning_condition_id}')
+            plot_axes.set_title(f'Model {animal_model_id}, learning condition {learning_condition_id}')
             colors = cm.Greens(np.linspace(0, 1, duration - 1))
             for trial in range(total_data_trials):
                 for t, c in zip(range(duration - 1), colors):
-                    ax.plot(
+                    plot_axes.plot(
                         t_L_per_trial[0, trial, t:t+2],
                         t_L_per_trial[1, trial, t:t+2],
-                        color=c
+                        color=c,
+                        alpha=t / duration
                     )
-                mean_point = np.mean(np.squeeze(t_L_per_trial[:, trial, :]), axis=1)
-                ax.scatter(
+                mean_point = np.mean(np.squeeze(t_L_per_trial[:2, trial, :]), axis=1)
+                plot_axes.scatter(
                     mean_point[0], mean_point[1], s=70, c='r', marker='+',
                     zorder=200
                 )
 
-        if False:
-            # Plot 3D:
+    if plot_3d:
+        # If not part of a subfigure, create one:
+        if not plot_axes:
             fig = plt.figure()
             plt.ion()
-            ax = fig.add_subplot(111, projection='3d')
-            plt.title(f'PCAL2 animal model {animal_model_id}, learning condition {learning_condition_id}')
+            plot_axes = fig.add_subplot(111, projection='3d')
+        plot_axes.set_title(f'Model {animal_model_id}, learning condition {learning_condition_id}')
+        # Stylize the 3d plot:
+        plot_axes.w_xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+        plot_axes.w_yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+        plot_axes.w_zaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+        plot_axes.set_xlabel('PC1')
+        plot_axes.set_ylabel('PC2')
+        plot_axes.set_zlabel('Time')
+        plot_axes.elev = 22.5
+        plot_axes.azim = 52.4
 
-            if klabels is not None:
-                labels = klabels.tolist()
-                nclusters = np.unique(klabels).size
-                colors = cm.Set2(np.linspace(0, 1, nclusters))
-                _, key_labels = np.unique(labels, return_index=True)
-                handles = []
-                for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
-                    x = t_L_per_trial[0][trial][:]
-                    y = t_L_per_trial[1][trial][:]
-                    handle, = ax.plot(x, y,
-                                      range(duration),
-                                      color=colors[label - 1],
-                                      label=f'Cluster {label}'
-                                      )
-                    if i in key_labels:
-                        handles.append(handle)
-                # Youmust group handles based on unique labels.
-                plt.legend(handles)
-            else:
-                colors = cm.viridis(np.linspace(0, 1, duration - 1))
-                for trial in range(total_data_trials):
-                    for t, c in zip(range(duration - 1), colors):
-                        ax.plot(
-                            t_L_per_trial[0][trial][t:t+2],
-                            t_L_per_trial[1][trial][t:t+2],
-                            [t, t+1], color=c
-                        )
+        if klabels is not None:
+            labels = klabels.tolist()
+            nclusters = np.unique(klabels).size
+            colors = cm.Set2(np.linspace(0, 1, nclusters))
+            _, key_labels = np.unique(labels, return_index=True)
+            handles = []
+            for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
+                x = t_L_per_trial[0][trial][:]
+                y = t_L_per_trial[1][trial][:]
+                handle = plot_axes.plot(x, y,
+                                  range(duration),
+                                  color=colors[label - 1],
+                                  label=f'Cluster {label}'
+                                  )
+                if i in key_labels:
+                    handles.append(handle)
+            # Youmust group handles based on unique labels.
+            plt.legend(handles)
+        else:
+            colors = cm.viridis(np.linspace(0, 1, duration - 1))
+            for trial in range(total_data_trials):
+                for t, c in zip(range(duration - 1), colors):
+                    plot_axes.plot(
+                        t_L_per_trial[0][trial][t:t+2],
+                        t_L_per_trial[1][trial][t:t+2],
+                        [t, t+1], color=c
+                    )
+        if not plot_axes:
             plt.show()
-
-
 
     return t_L_per_trial
 
@@ -1020,34 +1062,31 @@ def mu_bar(k_rbf=None, xs=None):
     m2, n2 = k_rbf.shape
     assert m == m2, 'mu_bar: Arrays have different dims!'
     x_mu_bar = np.multiply(k_rbf, xs).sum(axis=0) / k_rbf.sum()
-    return x_mu_bar.reshape(1,2)
+    return x_mu_bar.reshape(1, -1)
 
 def mean_shift(data=None, k=None, plot=False, **kwargs):
-    #ntrials = kwargs.get('ntrials', None)
-    ntrials = data.shape[1]
-    #TODO: do I consider more than two dims?
-    data_dim = 2  # kwargs.get('data_dim', None)
+
+    dims, ntrials, duration = data.shape
     #return [density_pts, sigma_hat]
     # k for the kmeans (how many clusters)
     # N are the number of trials (meanshift initial points)
     #N = properties.ntrials
-    # Collapse data to ndim points (2d):
-    new_len = data.shape[2]
-    pts = data.reshape(data_dim, ntrials * new_len, order='C')
+    # Collapse data to ndim points (dims):
+    pts = data.reshape(dims, ntrials * duration, order='C')
     # Take the average STD the cells in PCA space:
     sigma_hat = pts.std(axis=1)
     # TODO: make slices smaller, we need a rational size window (1sec?) to account for activity drifting.
     # TODO: to slicing den einai swsto gia C type arrays; prepei na to ftia3w, kai na bebaiw8w gia opou allou to xrisimopoiw!
     std_array = np.array([
         pts[:, slice_start:slice_end].std(axis=1)
-        for slice_start, slice_end in generate_slices(size=new_len, number=ntrials)
+        for slice_start, slice_end in generate_slices(size=duration, number=ntrials)
     ])
     sigma_hat = std_array.mean(axis=0).mean()
 
     if plot:
         fig, ax = plt.subplots()
         plt.ion()
-        ax.scatter(pts[0], pts[1], s=2, c='black')
+        ax.scatter(pts[0, :], pts[1, :], s=2, c='black')
         plt.xlabel('Principal component 1')
         plt.ylabel('Principal component 2')
         plt.show()
@@ -1114,12 +1153,17 @@ def ndpoints2array(points=None, **kwargs):
     pass
 
 def initialize_algorithm(data=None, k=None, plot=None, **kwargs):
-    # TODO: remove the None default, so to have exceptions flying around in case of an error:
-    # TODO: Do I consider more than two dimensions?
-    data_dim = 2 #kwargs.get('data_dim', None)
-    #ntrials = kwargs.get('ntrials', None)
-    ntrials = data.shape[1]
-    # return [J_k, label, dE_i_q, dM_i_q] = init_algo(X, m, plot_flag)
+    '''
+    This function initializes the k-means, performing a mean-shift first and,
+    clustering initially with the euclidean distance of the points from the
+    closest cluster center.
+    :param data:
+    :param k:
+    :param plot:
+    :param kwargs:
+    :return:
+    '''
+    dims, ntrials, duration = data.shape
 
     mean_shift_points, sigma_hat = mean_shift(data=data, k=k, plot=False, **kwargs)
     # TODO: check if I get this error and handle it:
@@ -1141,7 +1185,7 @@ def initialize_algorithm(data=None, k=None, plot=None, **kwargs):
         tmp_point = NDPoint(
             np.mean(
                 ndpoints2array([mean_shift_points[i], mean_shift_points[j]]),
-            axis=0).reshape(1, 2)
+            axis=0).reshape(1, -1)
         )
         mean_shift_points[i] = tmp_point
         mean_shift_points.pop(j)
@@ -1154,8 +1198,8 @@ def initialize_algorithm(data=None, k=None, plot=None, **kwargs):
             ndpoints2array(points=mean_shift_points, only_dim=1),
         s=10, c='red')
         # Collapse data to ndim points (2d):
-        new_len = data.shape[2]
-        pts = data.reshape(data_dim, ntrials * new_len, order='C')
+        duration = data.shape[2]
+        pts = data.reshape(dims, ntrials * duration, order='C')
         ax.scatter(pts[0], pts[1], s=2, c='black')
         plt.xlabel('Principal component 1')
         plt.ylabel('Principal component 2')
@@ -1377,13 +1421,13 @@ def test_for_overfit(klabels=None, data_pca=None, S=None, threshold=None):
 
 
 def determine_number_of_clusters(
-        input_NWBfiles, max_clusters=None, y_array=None, custom_range=None,
+        NWBfile_array, max_clusters=None, y_array=None, custom_range=None,
         **kwargs
     ):
     '''
     Return the optimal number of clusters, as per BIC:
 
-    :param input_NWBfiles:
+    :param NWBfile_array:
     :param max_clusters:
     :param y_array:
     :param custom_range:
@@ -1391,20 +1435,21 @@ def determine_number_of_clusters(
     :return:
     '''
 
-    nfiles = len(input_NWBfiles)
+    nfiles = len(NWBfile_array)
     if nfiles < 1:
-        raise ValueError('Got empty input_NWBfiles array!')
+        raise ValueError('Got empty NWBfile_array array!')
 
     #TODO: This is python's EAFP, but tide up a little bit please:
-    parameters = get_acquisition_parameters(input_NWBfiles[0], **kwargs)
-
     animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
     trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
-        getargs(
+    get_acquisition_parameters(
+        input_NWBfile=NWBfile_array[0],
+        requested_parameters=[
             'animal_model_id', 'learning_condition_id', 'ncells',
             'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
-            'correct_trials_idx', 'correct_trials_no', parameters
-        )
+            'correct_trials_idx', 'correct_trials_no'
+        ]
+    )
 
     total_trial_qs = trial_len / q_size
     one_sec_qs = 1000 / q_size
@@ -1413,95 +1458,101 @@ def determine_number_of_clusters(
     # Perform PCA to the binned network activity:
     # Analyze only each trial's last second:
     data_pca = pcaL2(
-        input_NWBfiles,
+        NWBfile_array,
         custom_range=(start_q, total_trial_qs),
         plot=False
     )
 
     dims, ntrials, duration = data_pca.shape
 
-    # move the means to the origin for each trial:
-    all_datapoints = np.zeros((dims, duration, ntrials))
-    for trial in range(data_pca.shape[1]):
-        trial_datapoints = np.squeeze(data_pca[:, trial, :]).T
-        mu = trial_datapoints.mean(axis=0)
-        all_datapoints[:, :, trial] = np.transpose(trial_datapoints - mu)
+    try:
+        # move the means to the origin for each trial:
+        #TODO: plot this, to see it:
+        all_datapoints = np.zeros((dims, duration, ntrials))
+        for trial in range(ntrials):
+            trial_datapoints = np.squeeze(data_pca[:, trial, :]).T
+            mu = trial_datapoints.mean(axis=0)
+            all_datapoints[:, :, trial] = np.transpose(trial_datapoints - mu)
 
-    # Compute this 'average' S (covariance).
-    S_all = np.cov(all_datapoints.reshape(dims, duration * ntrials))
+        # Compute this 'average' S (covariance).
+        S_all = np.cov(all_datapoints.reshape(dims, duration * ntrials))
 
 
-    #assert max_clusters <= ntrials, 'Cannot run kmeans with greater k than the data_pcapoints!'
-    if max_clusters > ntrials:
-        print('Cannot run kmeans with greater k than the data_pcapoints!')
-        max_clusters = ntrials
+        #assert max_clusters <= ntrials, 'Cannot run kmeans with greater k than the data_pcapoints!'
+        if max_clusters > ntrials:
+            print('Cannot run kmeans with greater k than the data_pcapoints!')
+            max_clusters = ntrials
 
-    kmeans_labels = np.zeros((max_clusters, ntrials), dtype=int)
-    J_k_all = [0] * max_clusters
-    BIC_all = [0] * max_clusters
-    md_params_all = [0] * max_clusters
-    # Calculate BIC for up to max_clusters:
-    for i, k in enumerate(range(1, max_clusters + 1)):
-        print(f'Clustering with {k} clusters.')
-        klabels, J_k, md_array, md_params_d = kmeans_clustering(
-            data=data_pca, k=k, max_iterations=100, **kwargs
-        )
-        # I need to check overfitting (clustering into multiple subclusters).
-        #  Since
-        # the BIC will BE better moving over greater k, we need to calculate a
-        # maximum k - over that some k cluster centroids will be so close,
-        # essentially belonging to the same cluster.
-        # So after each k means I need to check if centroids are so close.
-        #TODO: 8elw ena function pou 8a ypologizei ola me ola ta centroids
-        # kai 8a entopizei afta pou exoun MD mikroterh apo ena threshold.
-        # Afto 8a shmatodotei k to telos tou increase k, ka8ws einai quasi-
-        # Deterministic to k-means init (mean-shift) kai oso kai na synexizw
-        # den yparxei periptwsh na parw 'diaforetiko' syndyasmo apo labels.
-        #TODO: afto pou me apasxolei einai, 8a einai to BIC kalo ean apla to
-        # krathsw se afth th sta8erh timh?
-        k_means_overfit = test_for_overfit(
-            klabels=klabels, data_pca=data_pca, S=S_all, threshold=3.0
-        )
-        if k_means_overfit:
-            # Stop searching for fit of greater ks.
-            BIC_all[i:] = [BIC_all[i - 1]] * (max_clusters - i)
-            kmeans_labels[i:, :] = kmeans_labels[i - 1, :]
-            J_k_all[i:] = [J_k_all[i - 1]] * (max_clusters - i)
-            md_params_all[i:] = [md_params_all[i - 1]] * (max_clusters - i)
-            break
-        else:
-            BIC = evaluate_clustering(
-                klabels=klabels, md_array=md_array, md_params=md_params_d, **kwargs
+        kmeans_labels = np.zeros((max_clusters, ntrials), dtype=int)
+        J_k_all = [0] * max_clusters
+        BIC_all = [0] * max_clusters
+        md_params_all = [0] * max_clusters
+        # Calculate BIC for up to max_clusters:
+        for i, k in enumerate(range(1, max_clusters + 1)):
+            print(f'Clustering with {k} clusters.')
+            klabels, J_k, md_array, md_params_d = kmeans_clustering(
+                data=data_pca, k=k, max_iterations=100, **kwargs
             )
-            BIC_all[i] = BIC
-            kmeans_labels[i, :] = klabels.T
-            J_k_all[i] = J_k
-            md_params_all[i] = md_params_d
+            # I need to check overfitting (clustering into multiple subclusters).
+            #  Since
+            # the BIC will BE better moving over greater k, we need to calculate a
+            # maximum k - over that some k cluster centroids will be so close,
+            # essentially belonging to the same cluster.
+            # So after each k means I need to check if centroids are so close.
+            #TODO: 8elw ena function pou 8a ypologizei ola me ola ta centroids
+            # kai 8a entopizei afta pou exoun MD mikroterh apo ena threshold.
+            # Afto 8a shmatodotei k to telos tou increase k, ka8ws einai quasi-
+            # Deterministic to k-means init (mean-shift) kai oso kai na synexizw
+            # den yparxei periptwsh na parw 'diaforetiko' syndyasmo apo labels.
+            #TODO: afto pou me apasxolei einai, 8a einai to BIC kalo ean apla to
+            # krathsw se afth th sta8erh timh?
+            k_means_overfit = test_for_overfit(
+                klabels=klabels, data_pca=data_pca, S=S_all, threshold=3.0
+            )
+            if k_means_overfit:
+                print(f'@k:{k} k_means Overfit!!!')
+                # Stop searching for fit of greater ks.
+                BIC_all[i:] = [BIC_all[i - 1]] * (max_clusters - i)
+                kmeans_labels[i:, :] = kmeans_labels[i - 1, :]
+                J_k_all[i:] = [J_k_all[i - 1]] * (max_clusters - i)
+                md_params_all[i:] = [md_params_all[i - 1]] * (max_clusters - i)
+                break
+            else:
+                BIC = evaluate_clustering(
+                    klabels=klabels, md_array=md_array, md_params=md_params_d, **kwargs
+                )
+                BIC_all[i] = BIC
+                kmeans_labels[i, :] = klabels.T
+                J_k_all[i] = J_k
+                md_params_all[i] = md_params_d
 
-    K_star = np.zeros((y_array.size, 1), dtype=int)
-    K_labels = np.zeros((y_array.size, ntrials), dtype=int)
-    for i, y in enumerate(y_array):
-        if len(np.unique(BIC_all)) == 1:
-            # If all BIC values are the same, we overfitted on k=2. So we get
-            # the labels from k=1.
-            K_s_labelidx = 0
-            # and the K* is one:
-            optimal_k = 1
-        else:
-            # Compute K* as a variant of the rate distortion function, utilizing BIC:
-            K_s = np.argmax(np.diff(np.power(BIC_all, -y)))
-            # The idx of the kmeans_labels array (starts from 0 = one cluster):
-            K_s_labelidx = K_s + 1
-            # This directly corresponds to how many clusters:
-            optimal_k = K_s_labelidx + 1
+        K_star = np.zeros((y_array.size, 1), dtype=int)
+        K_labels = np.zeros((y_array.size, ntrials), dtype=int)
+        for i, y in enumerate(y_array):
+            if len(np.unique(BIC_all)) == 1:
+                # If all BIC values are the same, we overfitted on k=2. So we get
+                # the labels from k=1.
+                K_s_labelidx = 0
+                # and the K* is one:
+                optimal_k = 1
+            else:
+                # Compute K* as a variant of the rate distortion function, utilizing BIC:
+                K_s = np.argmax(np.diff(np.power(BIC_all, -y)))
+                # The idx of the kmeans_labels array (starts from 0 = one cluster):
+                K_s_labelidx = K_s + 1
+                # This directly corresponds to how many clusters:
+                optimal_k = K_s_labelidx + 1
 
-        # Add 1 to start counting from 1, then another, since we diff above:
-        # This is the optimal no of clusters:
-        K_star[i, 0] = optimal_k
-        # Store the klabels corresponding to each K*:
-        K_labels[i, :] = kmeans_labels[K_s_labelidx, :]
+            # Add 1 to start counting from 1, then another, since we diff above:
+            # This is the optimal no of clusters:
+            K_star[i, 0] = optimal_k
+            # Store the klabels corresponding to each K*:
+            K_labels[i, :] = kmeans_labels[K_s_labelidx, :]
 
-    return K_star, K_labels
+        return K_star, K_labels
+    except Exception as e:
+        raise e
+
 
 
 if __name__ == "__main__":
