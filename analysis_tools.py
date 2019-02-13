@@ -763,7 +763,7 @@ def pcaL2(
             _, key_labels = np.unique(labels, return_index=True)
             handles = []
             for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
-                print(f'Curently plotting trial: {trial}')
+                #print(f'Curently plotting trial: {trial}')
                 for t in range(duration - 1):
                     handle, = plot_axes.plot(
                         t_L_per_trial[0, trial, t:t+2],
@@ -1264,7 +1264,7 @@ def point2points_average_euclidean(point=None, points=None):
     )
     return np.mean(distance[:m])
 
-@time_it
+#@time_it
 def kmeans_clustering(data=None, k=2, max_iterations=100, plot=False, **kwargs):
     #return (labels_final, J_k_final, S_i)
     # Perform kmeans clustering.
@@ -1395,7 +1395,7 @@ def test_for_overfit(klabels=None, data_pca=None, S=None, threshold=None):
     unique_labels = np.unique(klabels)
     k = len(unique_labels)
     if k == 1:
-        print('We have only one cluster, so skipping test for overfit.')
+        #print('\tk=1, so skipping test for overfit.')
         return False
 
     dim, ntrial, duration = data_pca.shape
@@ -1489,7 +1489,7 @@ def determine_number_of_clusters(
         md_params_all = [0] * max_clusters
         # Calculate BIC for up to max_clusters:
         for i, k in enumerate(range(1, max_clusters + 1)):
-            print(f'Clustering with {k} clusters.')
+            #print(f'Clustering with {k} clusters.')
             klabels, J_k, md_array, md_params_d = kmeans_clustering(
                 data=data_pca, k=k, max_iterations=100, **kwargs
             )
@@ -1510,7 +1510,7 @@ def determine_number_of_clusters(
                 klabels=klabels, data_pca=data_pca, S=S_all, threshold=3.0
             )
             if k_means_overfit:
-                print(f'@k:{k} k_means Overfit!!!')
+                #print(f'@k:{k} k_means Overfit!!!')
                 # Stop searching for fit of greater ks.
                 BIC_all[i:] = [BIC_all[i - 1]] * (max_clusters - i)
                 kmeans_labels[i:, :] = kmeans_labels[i - 1, :]
