@@ -10,7 +10,14 @@ This code is pure python 3, although there are some recommendations to run it tr
 You can install a python 3.7 [anaconda distribution](https://www.anaconda.com/distribution/), that will contain most of the required packages. 
 
 
-### Setup
+### Setup python environment
+Using conda is recommended:
+```
+conda update -n base -c defaults conda
+conda create -n publication python=3.7
+activate publication
+```
+
 To run the code please:
 1. [Install git](https://git-scm.com/downloads) for your machine. 
 2. Clone this repository to your local working directory:

@@ -45,3 +45,27 @@ def is_significant(data=None, pthreshold=[0.05, 0.01]):
     else:
         return False
 
+def hide_axis_border(axis=None):
+    # Hide the right and top spines
+    for axis_loc in ['top', 'bottom', 'left', 'right']:
+        axis.spines[axis_loc].set_visible(False)
+        axis.spines[axis_loc].set_color(None)
+        axis.tick_params(axis=False)
+    axis.xaxis.set_ticks_position('none')
+    axis.yaxis.set_ticks_position('none')
+    axis.xaxis.set_ticklabels([])
+    axis.yaxis.set_ticklabels([])
+
+def axis_normal_plot(axis=None):
+    # Hide the right and top spines
+    axis.spines['right'].set_visible(False)
+    axis.spines['top'].set_visible(False)
+
+    # Only show ticks on the left and bottom spines
+    axis.yaxis.set_ticks_position('left')
+    axis.xaxis.set_ticks_position('bottom')
+    axis.spines['left'].set_position('zero')
+    axis.spines['bottom'].set_position('zero')
+
+    axis.tick_params(axis='both', which='major', labelsize=8)
+    axis.tick_params(axis='both', which='minor', labelsize=6)

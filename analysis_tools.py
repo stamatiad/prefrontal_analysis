@@ -10,6 +10,7 @@ import time
 from functools import wraps
 from collections import namedtuple
 from scipy.signal import savgol_filter
+from itertools import chain
 
 from datetime import datetime
 from pynwb import NWBFile
@@ -43,8 +44,9 @@ simulation_template = (
     '_AMPAb{ampa_bias:.3f}'
     '_{experiment_config}_simdur{sim_duration}').format
 
+#TODO: name them correctly:
 excitatory_validation_template = (
-    'vsoma_{condition}'
+    '{location}_{condition}'
     '_{currents}'
     '_{nmda_bias:0.1f}'
     '_{ampa_bias:0.1f}'
@@ -100,20 +102,22 @@ def load_nwb_file(**kwargs):
     nwbfile = NWBHDF5IO(str(filename), 'r').read()
     return nwbfile
 
-def read_timeseries_currents_validation(cellid=0, trialid=0, \
+def read_validation_potential(cellid=0, trialid=0, \
     inputdir=None, **kwargs
 ):
     # This function takes two required argumends and return a timeseries. To
     # be flexible, it accepts more specific kwargs, that are later removed
     # with the use of a partial.
-    condition, currents, nmda_bias, ampa_bias, synapse_activation = getargs(
-        'condition', 'currents', 'nmda_bias', 'ampa_bias',
-        'synapse_activation', kwargs
-    )
+    location, condition, currents, nmda_bias, ampa_bias, synapse_activation = \
+        getargs(
+            'location', 'condition', 'currents', 'nmda_bias', 'ampa_bias',
+            'synapse_activation', kwargs
+        )
     # Some args are specific/hardcoded, but always can be passed through the
     # kwargs list if wanted.
     inputfile = inputdir.joinpath(
         excitatory_validation_template(
+            location=location,
             condition=condition,
             currents=currents,
             nmda_bias=nmda_bias,
@@ -230,13 +234,19 @@ def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
                     'trial_len': 700, 'samples_per_ms': 10}
 
 
+    # Use partial to remove some of the kwargs that are the same:
+    read_somatic_potential = partial(
+        read_validation_potential,
+        inputdir=inputdir,
+        synapse_activation=synapse_activation,
+        location='vsoma'
+    ),
+
     # Load first batch:
     load_as_nwb_trials(
         nwbfile=nwbfile,
         read_function=partial(
-            read_timeseries_currents_validation,
-            inputdir=inputdir,
-            synapse_activation=synapse_activation,
+            read_somatic_potential,
             condition='normal',
             currents='NMDA+AMPA',
             nmda_bias=6.0,
@@ -251,9 +261,7 @@ def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
     load_as_nwb_trials(
         nwbfile=nwbfile,
         read_function=partial(
-            read_timeseries_currents_validation,
-            inputdir=inputdir,
-            synapse_activation=synapse_activation,
+            read_somatic_potential,
             condition='normal',
             currents='AMPA',
             nmda_bias=6.0,  # This is ignored since we have no NMDA!
@@ -268,15 +276,37 @@ def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
     load_as_nwb_trials(
         nwbfile=nwbfile,
         read_function=partial(
-            read_timeseries_currents_validation,
-            inputdir=inputdir,
-            synapse_activation=synapse_activation,
+            read_somatic_potential,
             condition='noMg',
             currents='NMDA+AMPA',
             nmda_bias=6.0,  # This is ignored since we have no NMDA!
             ampa_bias=1.0,
         ),
         timeseries_name='noMg_NMDA+AMPA',
+        timeseries_description='Validation',
+        **basic_kwargs
+    )
+
+
+    # Use partial to remove some of the kwargs that are the same:
+    read_dendritic_potential = partial(
+        read_validation_potential,
+        inputdir=inputdir,
+        synapse_activation=synapse_activation,
+        location='vdend'
+    ),
+
+    # Load dendritic potential:
+    load_as_nwb_trials(
+        nwbfile=nwbfile,
+        read_function=partial(
+            read_dendritic_potential,
+            condition='normal',
+            currents='NMDA+AMPA',
+            nmda_bias=6.0,
+            ampa_bias=1.0,
+        ),
+        timeseries_name='normal_NMDA+AMPA',
         timeseries_description='Validation',
         **basic_kwargs
     )
@@ -655,6 +685,216 @@ def get_acquisition_parameters(input_NWBfile=None, requested_parameters=[],
     except Exception as e:
         raise e
 
+def calculate_stimulus_isi(NWBfile=None):
+
+    animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+    trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+        get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=[
+                'animal_model_id', 'learning_condition_id', 'ncells',
+                'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+                'correct_trials_idx', 'correct_trials_no'
+            ]
+        )
+
+    # Compute ISI histograms of all the structured learning conditions' trials.
+    cells_with_spikes = nwb_iter(NWBfile.units['cell_id'])
+    spike_trains = nwb_iter(NWBfile.units['spike_times'])
+
+    stim_ISIs = []
+    stim_ISIs_CV = []
+    for trial in range(ntrials):
+        # Unpack stimulus start/stop.
+        _, stim_start_ms, stim_stop_ms, *_ = NWBfile.epochs[trial]
+
+        for cellid, spike_train in zip(cells_with_spikes, spike_trains):
+            # Get only spikes in the stimulus interval:
+            stim_spikes = [
+                spike
+                for spike in list(spike_train)
+                if stim_start_ms <= spike and spike < stim_stop_ms
+            ]
+            ISIs = np.diff(stim_spikes)
+            stim_ISIs.append(list(ISIs))
+            mu = ISIs.mean()
+            sigma = ISIs.std()
+            stim_ISIs_CV.append(sigma / mu)
+
+    return list(chain(*stim_ISIs)), stim_ISIs_CV
+
+def calculate_delay_isi(NWBfile=None):
+
+    animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+    trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+    get_acquisition_parameters(
+        input_NWBfile=NWBfile,
+        requested_parameters=[
+            'animal_model_id', 'learning_condition_id', 'ncells',
+            'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+            'correct_trials_idx', 'correct_trials_no'
+        ]
+    )
+
+    # Compute ISI histograms of all the structured learning conditions' trials.
+    cells_with_spikes = nwb_iter(NWBfile.units['cell_id'])
+    spike_trains = nwb_iter(NWBfile.units['spike_times'])
+
+    delay_ISIs = []
+    delay_ISIs_CV = []
+    for trial in range(ntrials):
+        # Unpack trial start/stop.
+        _, trial_start_ms, trial_stop_ms, *_= NWBfile.trials[trial]
+        # Unpack stimulus start/stop.
+        _, stim_start_ms, stim_stop_ms, *_ = NWBfile.epochs[trial]
+        # Get delay start/stop
+        delay_start_ms = stim_stop_ms
+        delay_stop_ms = trial_stop_ms
+
+        for cellid, spike_train in zip(cells_with_spikes, spike_trains):
+            # Get only spikes in the stimulus interval:
+            stim_spikes = [
+                spike
+                for spike in list(spike_train)
+                if delay_start_ms <= spike and spike < delay_stop_ms
+            ]
+            ISIs = np.diff(stim_spikes)
+            delay_ISIs.append(list(ISIs))
+            mu = ISIs.mean()
+            sigma = ISIs.std()
+            delay_ISIs_CV.append(sigma / mu)
+
+    return list(chain(*delay_ISIs)), delay_ISIs_CV
+
+def separate_trials(input_NWBfile=None, acquisition_name=None):
+    # Return an iterable of each trial acrivity.
+
+    #TODO: check if wrapped and unwrap:
+    raw_acquisition = input_NWBfile.acquisition[acquisition_name].data
+    trials = input_NWBfile.trials
+    #TODO: get samples_per_ms
+    f = 10
+    trial_activity = [
+        raw_acquisition[:, int(trial_start_t*f):int(trial_end_t*f) - 1]
+        for trialid, trial_start_t, trial_end_t in nwb_iter(trials)
+    ]
+    return trial_activity
+
+
+def plot_pca_in_3d(NWBfile=None, custom_range=None, smooth=False, \
+                   plot_axes=None, klabels=None):
+    #TODO: is this deterministic? Because some times I got an error in some
+    # matrix.
+    animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+    trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+        get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=[
+                'animal_model_id', 'learning_condition_id', 'ncells',
+                'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+                'correct_trials_idx', 'correct_trials_no'
+            ]
+        )
+
+    if correct_trials_no < 1:
+        raise ValueError('No correct trials were found in the NWBfile!')
+
+    # Use custom_range to compute PCA only on a portion of the original data:
+    if custom_range is not None:
+        if not isinstance(custom_range, tuple):
+            raise ValueError('Custom range must be a tuple!')
+        trial_slice_start = int(custom_range[0])
+        trial_slice_stop = int(custom_range[1])
+        duration = trial_slice_stop - trial_slice_start
+    else:
+        duration = trial_q_no
+
+    # Load binned acquisition (all trials together)
+    binned_network_activity = NWBfile. \
+                                  acquisition['binned_activity']. \
+                                  data[:pn_no, :]. \
+        reshape(pn_no, ntrials, trial_q_no)
+    # Slice out non correct trials and unwanted trial periods:
+    tmp = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
+    # Reshape in array with m=cells, n=time bins.
+    pool_array = tmp.reshape(pn_no, correct_trials_no * duration)
+
+    # how many PCA components
+    L = 3
+    pca = decomposition.PCA(n_components=L)
+    t_L = pca.fit_transform(pool_array.T).T
+    # Reshape PCA results into separate trials for plotting.
+    #TODO: do a more elegant way of splitting into trials:
+    total_data_trials = int(pool_array.shape[1]/duration)
+    t_L_per_trial = t_L.reshape(L, total_data_trials, duration, order='C')
+    #TODO: somewhere here I get a warning about a non-tuple sequence for
+    # multi dim indexing. Why?
+    if smooth:
+        for trial in range(total_data_trials):
+            for l in range(L):
+                t_L_per_trial[l, trial, :] = savgol_filter(t_L_per_trial[l, trial, :], 11, 3)
+
+
+    # If not part of a subfigure, create one:
+    if not plot_axes:
+        fig = plt.figure()
+        plt.ion()
+        plot_axes = fig.add_subplot(111, projection='3d')
+    #plot_axes.set_title(f'Model {animal_model_id}, learning condition {learning_condition_id}')
+    # Stylize the 3d plot:
+    plot_axes.w_xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+    plot_axes.w_yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+    plot_axes.w_zaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+    plot_axes.set_xlabel('PC1')
+    plot_axes.set_ylabel('PC2')
+    plot_axes.set_zlabel('PC3')
+    pca_axis_limits = (-10, 10)
+    plot_axes.set_xlim(pca_axis_limits)
+    plot_axes.set_ylim(pca_axis_limits)
+    plot_axes.set_zlim(pca_axis_limits)
+    plot_axes.set_xticks(pca_axis_limits)
+    plot_axes.set_yticks(pca_axis_limits)
+    plot_axes.set_zticks(pca_axis_limits)
+    plot_axes.elev = 22.5
+    plot_axes.azim = 52.4
+
+    if klabels is not None:
+        labels = klabels.tolist()
+        nclusters = np.unique(klabels).size
+        colors = cm.Set2(np.linspace(0, 1, nclusters))
+        _, key_labels = np.unique(labels, return_index=True)
+        handles = []
+        for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
+            x = t_L_per_trial[0][trial][:]
+            y = t_L_per_trial[1][trial][:]
+            z = t_L_per_trial[2][trial][:]
+            handle = plot_axes.plot(x, y, z,
+                                    color=colors[label - 1],
+                                    label=f'Cluster {label}'
+                                    )
+            if i in key_labels:
+                handles.append(handle)
+        # Youmust group handles based on unique labels.
+        plt.legend(handles)
+    else:
+        #TODO: Here cycle through sequential colormaps to point every diferent trial, but in time.
+        colors = cm.viridis(np.linspace(0, 1, duration - 1))
+        for trial in range(total_data_trials):
+            for t, c in zip(range(duration - 1), colors):
+                plot_axes.plot(
+                    t_L_per_trial[0][trial][t:t+2],
+                    t_L_per_trial[1][trial][t:t+2],
+                    t_L_per_trial[2][trial][t:t+2],
+                    color=c,
+                    linewidth=2
+                )
+    if not plot_axes:
+        plt.show()
+
+
+def q2sec(q_size=50, q_time=0):
+    return np.divide(q_time, (1000 / q_size))
+
 def pcaL2(
         NWBfile_array=[], plot_2d=False, plot_3d=False, custom_range=None,
         klabels=None, pca_components=5, smooth=False, plot_axes=None, **kwargs
@@ -751,6 +991,8 @@ def pcaL2(
                 plot_axes = fig.add_subplot(111)
 
             plot_axes.set_title(f'Model {animal_model_id}, learning condition {learning_condition_id}')
+            plot_axes.set_xlabel('PC1')
+            plot_axes.set_ylabel('PC2')
             # Format 3d plot:
             #plot_axes.axhline(linewidth=4)  # inc. width of x-axis and color it green
             #plot_axes.axvline(linewidth=4)
@@ -828,6 +1070,18 @@ def pcaL2(
         plot_axes.set_xlabel('PC1')
         plot_axes.set_ylabel('PC2')
         plot_axes.set_zlabel('Time')
+        pca_axis_limits = (-10, 10)
+        time_axis_limits = (0, duration)
+        #TODO: change the 20 with a proper variable (do I have one?)
+        time_axis_ticks = np.linspace(0, duration, (duration / 20) + 1)
+        time_axis_ticklabels = q2sec(q_time=time_axis_ticks)  #np.linspace(0, time_axis_limits[1], duration)
+        plot_axes.set_xlim(pca_axis_limits)
+        plot_axes.set_ylim(pca_axis_limits)
+        plot_axes.set_zlim(time_axis_limits)
+        plot_axes.set_xticks(pca_axis_limits)
+        plot_axes.set_yticks(pca_axis_limits)
+        plot_axes.set_zticks(time_axis_ticks)
+        plot_axes.set_zticklabels(time_axis_ticklabels)
         plot_axes.elev = 22.5
         plot_axes.azim = 52.4
 
@@ -862,6 +1116,234 @@ def pcaL2(
             plt.show()
 
     return t_L_per_trial
+
+def NNMF(
+        NWBfile_array=[], plot_2d=False, plot_3d=False, custom_range=None,
+        klabels=None, n_components=5, smooth=False, plot_axes=None, **kwargs
+):
+    '''
+    This function reads binned activity from a list of files and performs NNMF
+    with variable k on it.
+    :param NWBfile_array:
+    :param plot:
+    :param custom_range:
+    :param klabels:
+    :param smooth:
+    :param kwargs:
+    :return:
+    '''
+    #TODO: make more readable the whole function:
+    nfiles = len(NWBfile_array)
+    if nfiles < 1:
+        raise ValueError('Got empty NWBfile_array array!')
+
+    # Initialize pool_array:
+    pool_array = np.array([])
+    for input_NWBfile in NWBfile_array:
+        #TODO: is this deterministic? Because some times I got an error in some
+        # matrix.
+        animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+        trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+            get_acquisition_parameters(
+                input_NWBfile=input_NWBfile,
+                requested_parameters=[
+                    'animal_model_id', 'learning_condition_id', 'ncells',
+                    'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+                    'correct_trials_idx', 'correct_trials_no'
+                ]
+            )
+
+        if correct_trials_no < 1:
+            raise ValueError('No correct trials were found in the NWBfile!')
+
+        # Use custom_range to compute PCA only on a portion of the original data:
+        if custom_range is not None:
+            if not isinstance(custom_range, tuple):
+                raise ValueError('Custom range must be a tuple!')
+            trial_slice_start = int(custom_range[0])
+            trial_slice_stop = int(custom_range[1])
+            duration = trial_slice_stop - trial_slice_start
+        else:
+            duration = trial_q_no
+
+        # Load binned acquisition (all trials together)
+        binned_network_activity = input_NWBfile. \
+                                      acquisition['binned_activity']. \
+                                      data[:pn_no, :]. \
+            reshape(pn_no, ntrials, trial_q_no)
+        # Slice out non correct trials and unwanted trial periods:
+        tmp = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
+        # Reshape in array with m=cells, n=time bins.
+        tmp = tmp.reshape(pn_no, correct_trials_no * duration)
+        # Concatinate it the pool array:
+        if pool_array.size:
+            pool_array = np.concatenate((pool_array, tmp), axis=1)
+            pass
+        else:
+            pool_array = tmp
+
+    #TODO: check that this is NOT RANDOM and thus REPRODUCABLE!
+    estimator = decomposition.NMF(n_components=n_components, init='nndsvd',
+                                  tol=5e-3)
+    W = estimator.fit_transform(pool_array.T).T
+    H = estimator.components_
+    dist_from_original = np.linalg.norm(pool_array - (W.T @ H).T, ord='fro') / \
+                         np.sqrt(pool_array.size)
+
+    #plt.figure()
+    #plt.imshow(H)
+    #plt.show()
+
+    #TODO: do a more elegant way of splitting into trials:
+    total_data_trials = int(pool_array.shape[1]/duration)
+    components_per_trial = W.reshape(n_components, total_data_trials, duration, order='C')
+    #TODO: somewhere here I get a warning about a non-tuple sequence for
+    # multi dim indexing. Why?
+    if smooth:
+        for trial in range(total_data_trials):
+            for l in range(n_components):
+                components_per_trial[l, trial, :] = \
+                    savgol_filter(components_per_trial[l, trial, :], 11, 3)
+
+    if plot_2d:
+        # Plots the t_L_r as 2d timeseries per trial. Also to ease the cluster
+        # identification in the case of multiple learning conditions plots in
+        # addition a 2d scatterplot of the data.
+
+        # Scatterplot:
+        if klabels is not None:
+            # If not part of a subfigure, create one:
+            if not plot_axes:
+                fig = plt.figure()
+                plt.ion()
+                plot_axes = fig.add_subplot(111)
+
+            plot_axes.set_title(f'Model {animal_model_id}, learning condition {learning_condition_id}')
+            plot_axes.set_xlabel('PC1')
+            plot_axes.set_ylabel('PC2')
+            # Format 3d plot:
+            #plot_axes.axhline(linewidth=4)  # inc. width of x-axis and color it green
+            #plot_axes.axvline(linewidth=4)
+            for axis in ['top', 'bottom', 'left', 'right']:
+                plot_axes.spines[axis].set_linewidth(2)
+
+            labels = klabels.tolist()
+            nclusters = np.unique(klabels).size
+            colors = cm.Set2(np.linspace(0, 1, nclusters))
+            _, key_labels = np.unique(labels, return_index=True)
+            handles = []
+            for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
+                #print(f'Curently plotting trial: {trial}')
+                for t in range(duration - 1):
+                    handle, = plot_axes.plot(
+                        components_per_trial[0, trial, t:t+2],
+                        components_per_trial[1, trial, t:t+2],
+                        label=f'Cluster {label}',
+                        color=colors[label - 1],
+                        alpha=t / duration
+                    )
+                if i in key_labels:
+                    handles.append(handle)
+
+            for clusterid in range(nclusters):
+                #TODO: This comprehension is problematic, why?
+                # Plot each cluster mean (average of last second activity):
+                #cluster_trials = [
+                #    idx
+                #    for idx, label in enumerate(labels)
+                #    if label == clust + 1
+                #]
+                cluster_trials = []
+                for idx, label in enumerate(labels):
+                    if label == clusterid + 1:
+                        cluster_trials.append(idx)
+                mean_point = np.mean(
+                    components_per_trial[:2, cluster_trials, :]. \
+                        reshape(2, len(cluster_trials) * duration),
+                    axis=1
+                )
+                plot_axes.scatter(
+                    mean_point[0], mean_point[1], s=70, c='k', marker='+',
+                    zorder=20000
+                )
+
+        else:
+            plot_axes.set_title(f'Model {animal_model_id}, learning condition {learning_condition_id}')
+            colors = cm.Greens(np.linspace(0, 1, duration - 1))
+            for trial in range(total_data_trials):
+                for t, c in zip(range(duration - 1), colors):
+                    plot_axes.plot(
+                        components_per_trial[0, trial, t:t+2],
+                        components_per_trial[1, trial, t:t+2],
+                        color=c,
+                        alpha=t / duration
+                    )
+                mean_point = np.mean(np.squeeze(components_per_trial[:2, trial, :]), axis=1)
+                plot_axes.scatter(
+                    mean_point[0], mean_point[1], s=70, c='r', marker='+',
+                    zorder=200
+                )
+
+    if plot_3d:
+        # If not part of a subfigure, create one:
+        if not plot_axes:
+            fig = plt.figure()
+            plt.ion()
+            plot_axes = fig.add_subplot(111, projection='3d')
+        plot_axes.set_title(f'Model {animal_model_id}, learning condition {learning_condition_id}')
+        # Stylize the 3d plot:
+        plot_axes.w_xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+        plot_axes.w_yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+        plot_axes.w_zaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+        plot_axes.set_xlabel('PC1')
+        plot_axes.set_ylabel('PC2')
+        plot_axes.set_zlabel('Time')
+        pca_axis_limits = (-10, 10)
+        time_axis_limits = (0, duration)
+        #TODO: change the 20 with a proper variable (do I have one?)
+        time_axis_ticks = np.linspace(0, duration, (duration / 20) + 1)
+        time_axis_ticklabels = q2sec(q_time=time_axis_ticks)  #np.linspace(0, time_axis_limits[1], duration)
+        plot_axes.set_xlim(pca_axis_limits)
+        plot_axes.set_ylim(pca_axis_limits)
+        plot_axes.set_zlim(time_axis_limits)
+        plot_axes.set_xticks(pca_axis_limits)
+        plot_axes.set_yticks(pca_axis_limits)
+        plot_axes.set_zticks(time_axis_ticks)
+        plot_axes.set_zticklabels(time_axis_ticklabels)
+        plot_axes.elev = 22.5
+        plot_axes.azim = 52.4
+
+        if klabels is not None:
+            labels = klabels.tolist()
+            nclusters = np.unique(klabels).size
+            colors = cm.Set2(np.linspace(0, 1, nclusters))
+            _, key_labels = np.unique(labels, return_index=True)
+            handles = []
+            for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
+                x = components_per_trial[0][trial][:]
+                y = components_per_trial[1][trial][:]
+                handle = plot_axes.plot(x, y,
+                                        range(duration),
+                                        color=colors[label - 1],
+                                        label=f'Cluster {label}'
+                                        )
+                if i in key_labels:
+                    handles.append(handle)
+            # Youmust group handles based on unique labels.
+            plt.legend(handles)
+        else:
+            colors = cm.viridis(np.linspace(0, 1, duration - 1))
+            for trial in range(total_data_trials):
+                for t, c in zip(range(duration - 1), colors):
+                    plot_axes.plot(
+                        components_per_trial[0][trial][t:t+2],
+                        components_per_trial[1][trial][t:t+2],
+                        [t, t+1], color=c
+                    )
+        if not plot_axes:
+            plt.show()
+
+    return (components_per_trial, dist_from_original)
 
 def from_zero_to(x):
     '''
@@ -1241,18 +1723,15 @@ def mahalanobis_distance(idx_a=None, idx_b=None):
         fig, ax = plt.subplots(1,1)
         ax.scatter(point_data[:,0], point_data[:,1], s=50, c='r', marker='+')
         ax.scatter(np.squeeze(idx_b)[0,:], np.squeeze(idx_b)[1,:],s=20, c='r', marker='.')
-        ax.scatter(cluster_data[:,0], cluster_data[:,1],s=5, c='k', marker='.')
+        ax.scatter(cluster_data[:,0], cluster_data[:,1],s=5, c='g', marker='.')
         ax.scatter(mu[:,0], mu[:,1],s=50, c='k', marker='+')
 
-    try:
-        np.linalg.cholesky(S)
-    except np.linalg.LinAlgError as e:
-        raise e('Covariance matrix is not PD!')
     tmp = point_data - mu
+    # Covariance matrix must be positive, semi definite. Check that:
     try:
         MD = np.sqrt(tmp @ np.linalg.inv(S) @ tmp.T)
     except np.linalg.LinAlgError as e:
-        raise e
+        raise e('Covariance matrix must be positive semi definite!')
     return MD, MD_params(mu, S)
 
 def point2points_average_euclidean(point=None, points=None):
@@ -1553,6 +2032,73 @@ def determine_number_of_clusters(
     except Exception as e:
         raise e
 
+def determine_number_of_ensembles(
+        NWBfile_array, max_clusters=None, y_array=None, custom_range=None,
+        **kwargs
+):
+    '''
+    Same as deternime_number_of_clusters, but utilizes NNMF in search for
+    optimal number of distinct neuronal ensembles.
+
+    :param NWBfile_array:
+    :param max_clusters:
+    :param y_array:
+    :param custom_range:
+    :param kwargs:
+    :return:
+    '''
+
+    nfiles = len(NWBfile_array)
+    if nfiles < 1:
+        raise ValueError('Got empty NWBfile_array array!')
+
+    #TODO: This is python's EAFP, but tide up a little bit please:
+    animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+    trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+        get_acquisition_parameters(
+            input_NWBfile=NWBfile_array[0],
+            requested_parameters=[
+                'animal_model_id', 'learning_condition_id', 'ncells',
+                'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+                'correct_trials_idx', 'correct_trials_no'
+            ]
+        )
+
+    total_trial_qs = trial_len / q_size
+    one_sec_qs = 1000 / q_size
+    start_q = total_trial_qs - one_sec_qs
+
+    try:
+
+        kmeans_labels = np.zeros((max_clusters, ntrials), dtype=int)
+        J_k_all = [0] * max_clusters
+        # Calculate BIC for up to max_clusters:
+        for i, k in enumerate(range(1, max_clusters + 1)):
+            #print(f'Clustering with {k} clusters.')
+            data_reduced, J_k = NNMF(
+                NWBfile_array,
+                n_components=k,
+                custom_range=(start_q, total_trial_qs),
+                plot=False
+            )
+            J_k_all[i] = J_k
+
+        #TODO: how to detect overfitting here?
+        K_star = np.zeros((y_array.size, 1), dtype=int)
+        for i, y in enumerate(y_array):
+            # Compute K* as a variant of the rate distortion function,
+            # utilizing the distance:
+            K_s = np.argmax(np.diff(np.power(J_k_all, -y))) + 1
+            # This directly corresponds to how many clusters:
+            optimal_k = K_s + 1
+
+            # Add 1 to start counting from 1, then another, since we diff above:
+            # This is the optimal no of clusters:
+            K_star[i, 0] = optimal_k
+
+        return K_star
+    except Exception as e:
+        raise e
 
 
 if __name__ == "__main__":
