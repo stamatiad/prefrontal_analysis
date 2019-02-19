@@ -1310,7 +1310,7 @@ def pcaL2(
         if not plot_axes:
             plt.show()
 
-    return t_L_per_trial
+    return t_L_per_trial, pca.explained_variance_ratio_
 
 def NNMF(
         NWBfile_array=[], plot_2d=False, plot_3d=False, custom_range=None,
@@ -2195,7 +2195,7 @@ def determine_number_of_clusters(
 
     # Perform PCA to the binned network activity:
     # Analyze only each trial's last second:
-    data_pca = pcaL2(
+    data_pca, explained_variance = pcaL2(
         NWBfile_array,
         custom_range=(start_q, total_trial_qs),
         plot=False

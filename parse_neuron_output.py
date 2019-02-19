@@ -54,8 +54,8 @@ outputdir = Path(r'G:\Glia')
 
 # for structured condition:
 inputdir = Path(r'G:\Glia\structured')
-for animal_model in range(1, 5):
-    for learning_condition in range(1, 11):
+for animal_model in range(1, 2):
+    for learning_condition in range(1, 2):
         new_params = {
             **analysis_parameters,
             'excitation_bias': 1.75,
@@ -72,15 +72,15 @@ for animal_model in range(1, 5):
             analysis.create_nwb_file(
                 inputdir=inputdir,
                 outputdir=outputdir,
-                add_membrane_potential=False,
+                add_membrane_potential=True,
                 **new_params
             )
         except Exception as e:
             print(str(e))
             pass
 
-#print('Done and exiting.')
-#sys.exit()
+print('Done and exiting.')
+sys.exit()
 
 # for random condition:
 inputdir = Path(r'G:\Glia\random')

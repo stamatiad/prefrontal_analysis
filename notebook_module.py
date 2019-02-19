@@ -20,6 +20,13 @@ from scipy import stats
 import sys
 from pynwb import NWBHDF5IO
 
+def cm2inch(*tupl):
+    inch = 2.54
+    if isinstance(tupl[0], tuple):
+        return tuple(i/inch for i in tupl[0])
+    else:
+        return tuple(i/inch for i in tupl)
+
 def datasetName(id):
     return f'Animal {id}'
 
@@ -72,6 +79,13 @@ def axis_normal_plot(axis=None):
 
     for axis_loc in ['top', 'bottom', 'left', 'right']:
         axis.spines[axis_loc].set_linewidth(2)
+
+def mark_figure_letter(axis=None, letter=None):
+    axis.text(0.01, 0.99, f'{letter}       ',
+                  fontsize=14,
+                  horizontalalignment='right',
+                  verticalalignment='top',
+                  transform=axis.transAxes)
 
 
 def plot_trial_spiketrains(NWBfile=None, trialid=None, plot_axis=None):
