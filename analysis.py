@@ -15,7 +15,9 @@ import matplotlib.gridspec as gridspec
 # figures (to debug and test). Then copy the code to the jupyter notebook.
 # Do only figures that will probably not change much.
 simulations_dir = Path.cwd().joinpath('simulations')
+glia_dir = Path(r'G:\Glia')
 plt.rcParams.update({'font.family': 'Helvetica'})
+plt.rcParams["figure.figsize"] = (15, 15)
 
 y_array = np.linspace(0.1, 100, 1000)
 y_i = 500
@@ -29,9 +31,33 @@ def cm2inch(*tupl):
 #===============================================================================
 #===============================================================================
 # FIGURE 1 (PENDING)
+NWBfile = analysis.load_nwb_file(
+    animal_model=1,
+    learning_condition=1,
+    experiment_config='structured',
+    type='mp',
+    data_path=glia_dir
+    #type='bn',
+    #data_path=simulations_dir
+)
+
+
+#fig, plot_axis =plt.subplots(1,1)
+#plt.ion()
+#for cellid in range(250, 333):
+#    vsoma = analysis.get_acquisition_potential(
+#        NWBfile=NWBfile, cellid=cellid, trialid=7
+#    )
+#    plot_axis.plot(vsoma)
+#    plt.title(f'cellid {cellid}')
+#    plt.waitforbuttonpress()
+#    plt.cla()
+#G_axis_a = plt.subplot(1,1,1, projection='3d')
+#plt.ion()
+
 
 subplot_width = 4
-subplot_height = 2
+subplot_height = 3
 figure1 = plt.figure(figsize=plt.figaspect(subplot_height / subplot_width))
 plt.ion()
 gs1 = gridspec.GridSpec(2, 2, left=0.05, right=0.30, top=0.95, bottom=0.52, wspace=0.15, hspace=0.2)
@@ -40,12 +66,16 @@ A_axis_a = plt.subplot(gs1[0, 0])
 A_axis_b = plt.subplot(gs1[1, 0])
 B_axis_a = plt.subplot(gs1[0, 1])
 B_axis_b = plt.subplot(gs1[1, 1])
-gs2 = gridspec.GridSpec(2, 2, left=0.32, right=0.98, top=0.95, bottom=0.52, wspace=0.15, hspace=0.2)
+gs2 = gridspec.GridSpec(6, 2, left=0.32, right=0.98, top=0.95, bottom=0.52, wspace=0.15, hspace=0.2)
 #gs2.update(left=0.32, right=0.98, wspace=0.05)
 C_axis_a = plt.subplot(gs2[0, 0])
 C_axis_b = plt.subplot(gs2[1, 0])
-D_axis_a = plt.subplot(gs2[0, 1])
-D_axis_b = plt.subplot(gs2[1, 1])
+C_axis_c = plt.subplot(gs2[2, 0])
+C_axis_d = plt.subplot(gs2[3, 0])
+C_axis_e = plt.subplot(gs2[4, 0])
+C_axis_f = plt.subplot(gs2[5, 0])
+D_axis_a = plt.subplot(gs2[:2, 1])
+D_axis_b = plt.subplot(gs2[3:, 1])
 
 gs3 = gridspec.GridSpec(2, 2, left=0.05, right=0.48, top=0.48, bottom=0.05, wspace=0.2, hspace=0.2)
 #gs3.update(left=0.05, right=0.48, hspace=0.05)
@@ -60,6 +90,8 @@ F_axis_a = plt.subplot(gs4[0, 0])
 F_axis_b = plt.subplot(gs4[1, 0])
 G_axis_a = plt.subplot(gs4[0, 1], projection='3d')
 G_axis_b = plt.subplot(gs4[1, 1])
+
+
 
 
 sketch_structured = plt.imread('../Clustered_network_sketch.png')
@@ -78,6 +110,67 @@ sketch_interneuron = plt.imread('../Interneuron.png')
 B_axis_b.imshow(sketch_interneuron, interpolation="nearest")
 nb.hide_axis_border(axis=B_axis_b)
 
+# Figure C, D
+# Load a NWB file containing membrane potential:
+#TODO: remove with interpolation the extra steps per ms of membrane potential
+# in order to reduce NWB file size.
+NWBfile = analysis.load_nwb_file(
+    animal_model=1,
+    learning_condition=1,
+    experiment_config='structured',
+    type='mp',
+    data_path=glia_dir
+    #type='bn',
+    #data_path=simulations_dir
+)
+
+pyramidal_axes = [C_axis_a, C_axis_b, C_axis_c]
+interneuron_axes = [C_axis_d, C_axis_e, C_axis_f]
+exemplar_pyramidal_ids = [1, 6, 17]
+exemplar_interneurons_ids = [252, 257, 268]
+for id, axis_obj in zip(exemplar_pyramidal_ids, pyramidal_axes):
+    vsoma = analysis.get_acquisition_potential(
+        NWBfile=NWBfile, cellid=id, trialid=7
+    )
+    axis_obj.plot(vsoma, color='k')
+    nb.hide_axis_border(axis=axis_obj)
+
+for id, axis_obj in zip(exemplar_interneurons_ids, interneuron_axes):
+    vsoma = analysis.get_acquisition_potential(
+        NWBfile=NWBfile, cellid=id, trialid=7
+    )
+    axis_obj.plot(vsoma, color='k')
+    nb.hide_axis_border(axis=axis_obj)
+
+# Exemplar network rasterplot:
+nb.plot_trial_spiketrains(NWBfile=NWBfile, trialid=7, plot_axis=D_axis_a)
+
+# Dynamic network response:
+#TODO: if trial 0 has no PA, why is saved/accessed? When do I remove them?
+# Trials that have pa: 2, 6
+trial_inst_ff = analysis.trial_instantaneous_frequencies(
+    NWBfile=NWBfile, trialid=7, smooth=True
+)
+ff_threshold = 20  # Hz
+#fig, plot_axis =plt.subplots(1,1)
+#plt.ion()
+for cellid, inst_ff in trial_inst_ff:
+    if inst_ff.mean() > ff_threshold:
+        D_axis_b.plot(inst_ff)
+    #plt.title(f'cellid {cellid}')
+    #plt.waitforbuttonpress()
+    #plt.cla()
+D_axis_b.set_xlim([0.0, 5000])
+D_axis_b.set_ylim([0.0, 160])
+D_axis_b.spines['left'].set_position('zero')
+D_axis_b.spines['bottom'].set_position('zero')
+D_axis_b.axvspan(50.0, 1050.0, ymin=0, ymax=1, color='g', alpha=0.2)
+plt.show()
+
+
+
+
+# Figure Ea
 no_of_conditions = 3#10
 no_of_animals = 2#4
 stim_ISI_all = []
@@ -128,48 +221,73 @@ nb.axis_normal_plot(axis=E_axis_b)
 input_NWBfile = simulations_dir.joinpath('excitatory_validation.nwb')
 nwbfile = NWBHDF5IO(str(input_NWBfile), 'r').read()
 per_trial_activity = {}
-per_trial_activity['normal_NMDA+AMPA'] = separate_trials(
+per_trial_activity['soma_NMDA+AMPA'] = analysis.separate_trials(
     input_NWBfile=nwbfile, acquisition_name='normal_NMDA+AMPA'
 )
-per_trial_activity['normal_AMPA_only'] = separate_trials(
-    input_NWBfile=nwbfile, acquisition_name='normal_AMPA_only'
-)
-per_trial_activity['noMg_NMDA+AMPA'] = separate_trials(
-    input_NWBfile=nwbfile, acquisition_name='noMg_NMDA+AMPA'
+per_trial_activity['dend_NMDA+AMPA'] = analysis.separate_trials(
+    input_NWBfile=nwbfile, acquisition_name='vdend_normal_NMDA+AMPA'
 )
 
-for trace in per_trial_activity['normal_NMDA+AMPA']:
-    nmda_ampa_plot = figure3_axis[0, 0].plot(trace[0][500:5000], color='gray', label='NMDA+AMPA')
-for trace in per_trial_activity['normal_AMPA_only']:
-    ampa_only_plot = figure3_axis[0, 0].plot(trace[0][500:5000], color='C0', label='AMPA only')
-figure3_axis[0, 0].set_xlabel('Time (ms)')
-figure3_axis[0, 0].set_ylabel('Somatic depolarization (mV)')
-figure3_axis[0, 0].legend((nmda_ampa_plot[0], ampa_only_plot[0]), ['NMDA+AMPA', 'AMPA only'], loc='upper right')
+#TODO: why my data seems to be x4 times? This is also in the previous,somatic
+# data that I have plotted successfully.. It seems to be a problem with the
+# NWB file creation.
+soma_amplitude = [
+    trace[0][500:5000].max() - trace[0][400]
+    for trace in per_trial_activity['soma_NMDA+AMPA']
+]
+dend_amplitude = [
+    trace[0][500:5000].max() - trace[0][400]
+    for trace in per_trial_activity['dend_NMDA+AMPA']
+]
 
-for trace in per_trial_activity['normal_NMDA+AMPA']:
-    nmda_ampa_plot = figure3_axis[0, 1].plot(trace[0][500:5000], color='gray', label='NMDA+AMPA')
-for trace in per_trial_activity['noMg_NMDA+AMPA']:
-    nmda_nomg_plot = figure3_axis[0, 1].plot(trace[0][500:5000], color='C0', label='NMDA no Mg + AMPA')
-figure3_axis[0, 1].set_xlabel('Time (ms)')
-figure3_axis[0, 1].set_ylabel('Somatic depolarization (mV)')
-figure3_axis[0, 1].legend((nmda_ampa_plot[0], nmda_nomg_plot[0]), ['NMDA+AMPA', 'NMDA no Mg + AMPA'], loc='upper right')
+E_axis_c
+E_axis_c.plot(soma_amplitude, color='C0')
+E_axis_c.plot(dend_amplitude, color='C1')
+E_axis_c.set_xlabel('Stimulus intensity', fontsize=axis_label_font_size)
+E_axis_c.set_ylabel('Amplitude (mV)', fontsize=axis_label_font_size)
+nb.axis_normal_plot(axis=E_axis_c)
+#TODO: make ticks right!
 
 
 sketch_amplitude = plt.imread('../Amplitude_Nevian.png')
 E_axis_d.imshow(sketch_amplitude, interpolation="nearest")
+E_axis_d.margins(0.0)
 nb.hide_axis_border(axis=E_axis_d)
 
 # Figure 1G
+NWBfile = analysis.load_nwb_file(
+    animal_model=1,
+    learning_condition=2,
+    experiment_config='structured',
+    type='bn',
+    data_path=simulations_dir
+)
 trial_len, pn_no, ntrials, trial_q_no = analysis.get_acquisition_parameters(
     input_NWBfile=NWBfile,
     requested_parameters=['trial_len', 'pn_no', 'ntrials', 'trial_q_no']
 )
 custom_range = (0, int(trial_len / 50))
 
-analysis.plot_pca_in_3d(
+pca_net_activity = analysis.plot_pca_in_3d(
     NWBfile=NWBfile, custom_range=custom_range, smooth=True, plot_axes=G_axis_a
 )
+#azim, elev = G_axis_a.azim, G_axis_a.elev
+G_axis_a.view_init(elev=-109.4, azim=53.2)
 
+# Figure 1Gb:
+# Plot velocity from raw network activity:
+raw_net_activity = NWBfile. \
+                              acquisition['binned_activity']. \
+                              data[:pn_no, :]. \
+    reshape(pn_no, ntrials, trial_q_no)
+velocity = analysis.md_velocity(pca_data=raw_net_activity)
+G_axis_b.plot(velocity.T, color='gray', alpha=0.2)
+G_axis_b.plot(np.mean(velocity.T, axis=1), color='k', linewidth=2)
+G_axis_b.set_ylabel('Energy Velocity (Hz/s)')
+G_axis_b.set_xlabel('Time (ms)')
+nb.axis_normal_plot(axis=G_axis_b)
+
+print('blah')
 # Figure 1F
 # Load binned acquisition (all trials together)
 binned_network_activity = NWBfile. \
@@ -216,6 +334,8 @@ sketch_correlation = plt.imread('../Correlation_Murray.png')
 F_axis_b.imshow(sketch_correlation, interpolation="nearest")
 nb.hide_axis_border(axis=F_axis_b)
 
+
+
 plt.show()
 
 #===============================================================================
@@ -259,10 +379,6 @@ fig = plt.figure()
 plt.plot(K_star_array[0,1,:])
 plt.show()
 print('blah')
-
-
-#========================================================================
-#========================================================================
 # FIGURE 3 A, B
 
 
@@ -280,13 +396,13 @@ for idx in range(subplot_width):
 input_NWBfile = simulations_dir.joinpath('excitatory_validation.nwb')
 nwbfile = NWBHDF5IO(str(input_NWBfile), 'r').read()
 per_trial_activity = {}
-per_trial_activity['normal_NMDA+AMPA'] = separate_trials(
+per_trial_activity['normal_NMDA+AMPA'] = analysis.separate_trials(
     input_NWBfile=nwbfile, acquisition_name='normal_NMDA+AMPA'
 )
-per_trial_activity['normal_AMPA_only'] = separate_trials(
+per_trial_activity['normal_AMPA_only'] = analysis.separate_trials(
     input_NWBfile=nwbfile, acquisition_name='normal_AMPA_only'
 )
-per_trial_activity['noMg_NMDA+AMPA'] = separate_trials(
+per_trial_activity['noMg_NMDA+AMPA'] = analysis.separate_trials(
     input_NWBfile=nwbfile, acquisition_name='noMg_NMDA+AMPA'
 )
 

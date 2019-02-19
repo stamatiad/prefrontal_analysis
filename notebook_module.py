@@ -69,3 +69,63 @@ def axis_normal_plot(axis=None):
 
     axis.tick_params(axis='both', which='major', labelsize=8)
     axis.tick_params(axis='both', which='minor', labelsize=6)
+
+    for axis_loc in ['top', 'bottom', 'left', 'right']:
+        axis.spines[axis_loc].set_linewidth(2)
+
+
+def plot_trial_spiketrains(NWBfile=None, trialid=None, plot_axis=None):
+
+    animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+    trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+        analysis.get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=[
+                'animal_model_id', 'learning_condition_id', 'ncells',
+                'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+                'correct_trials_idx', 'correct_trials_no'
+            ]
+        )
+
+    network_spiketrains = analysis.get_acquisition_spikes(
+        NWBfile=NWBfile,
+        acquisition_name='membrane_potential',
+    )
+
+    # Unpack cell ids and their respective spike trains:
+    cell_ids, cell_spiketrains = zip(*[
+        cell_spiketrain
+        for cell_spiketrain in network_spiketrains[trialid]
+    ])
+
+    if not plot_axis:
+        fig, plot_axis = plt.subplots()
+        plt.ion()
+    plot_axis.eventplot(
+        cell_spiketrains,
+        lineoffsets=cell_ids,
+        colors='k'
+    )
+    plot_axis.set_xlim([-200.0, trial_len])
+    plot_axis.set_ylim([0.0, ncells])
+    plot_axis.margins(0.0)
+
+    plot_axis.yaxis.set_ticks_position('none')
+    plot_axis.yaxis.set_ticklabels([])
+
+    #TODO: compute stimulus interval!
+    plot_axis.spines['left'].set_position('zero')
+    plot_axis.spines['bottom'].set_position('zero')
+    #plot_axis.spines['left'].set_position(('axes', 0.6))
+
+    plot_axis.axvspan(50.0, 1050.0, ymin=0, ymax=1, color='g', alpha=0.2)
+    # Annotate excitatory/inhibitory population:
+    plot_axis.axvspan(-200.0, 0.0, ymin=0, ymax=250/333, color='b', alpha=0.2)
+    plot_axis.axvspan(-200.0, 0.0, ymin=250/333, ymax=1, color='r', alpha=0.2)
+
+    plot_axis.set(xlabel='Time (ms)', ylabel='Cell type')
+    plot_axis.set(title='Spike events')
+
+    if not plot_axis:
+        plt.show()
+

@@ -133,7 +133,7 @@ def read_validation_potential(cellid=0, trialid=0, \
     return timeseries
 
 
-def load_as_nwb_trials(nwbfile=None, read_function=None, **kwargs):
+def import_recordings_to_nwb(nwbfile=None, read_function=None, **kwargs):
     # Load files as different trials on a nwb file given.
     # Iteratively load each file and append it to the dataset. Create and
     # annotate trials and stimulus in the process.
@@ -160,6 +160,15 @@ def load_as_nwb_trials(nwbfile=None, read_function=None, **kwargs):
     # Create the base array, containing the cells x trials.
     membrane_potential = np.zeros((ncells, ntrials * nsamples))
 
+    #TODO: add a descriptor for each trial, to filter them at load time:
+    try:
+        nwbfile.add_trial_column(
+            'acquisition_name',
+            'The name of the acquisition that these trials belong'
+        )
+    except Exception as e:
+        print(str(e))
+
     # Iterate all cells and trials, loading each cell's activity and
     # concatenating trials:
     for trial, (trial_start, trial_end) in zip(range(ntrials),
@@ -175,10 +184,13 @@ def load_as_nwb_trials(nwbfile=None, read_function=None, **kwargs):
                 voltage_trace = read_function(cellid=cellid, trialid=trial)
                 membrane_potential[cellid, trial_start:trial_end] = \
                     voltage_trace[:nsamples]
+                #TODO: WRONG! You can not add trials with every import!
+                #TODO: How can you link trials with acquisitions?
                 # Add trial:
                 nwbfile.add_trial(
                     start_time=trial_start * samples2ms_factor,
                     stop_time=trial_end * samples2ms_factor,
+                    acquisition_name=timeseries_name
                 )
                 # Add stimulus epoch for that trial in ms:
                 nwbfile.add_epoch(
@@ -234,16 +246,16 @@ def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
                     'trial_len': 700, 'samples_per_ms': 10}
 
 
-    # Use partial to remove some of the kwargs that are the same:
+    # 'Freeze' some portion of the function, for a simplified one:
     read_somatic_potential = partial(
         read_validation_potential,
         inputdir=inputdir,
         synapse_activation=synapse_activation,
         location='vsoma'
-    ),
+    )
 
     # Load first batch:
-    load_as_nwb_trials(
+    import_recordings_to_nwb(
         nwbfile=nwbfile,
         read_function=partial(
             read_somatic_potential,
@@ -258,7 +270,7 @@ def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
     )
 
     # Rinse and repeat:
-    load_as_nwb_trials(
+    import_recordings_to_nwb(
         nwbfile=nwbfile,
         read_function=partial(
             read_somatic_potential,
@@ -273,7 +285,7 @@ def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
     )
 
     # Rinse and repeat:
-    load_as_nwb_trials(
+    import_recordings_to_nwb(
         nwbfile=nwbfile,
         read_function=partial(
             read_somatic_potential,
@@ -294,10 +306,10 @@ def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
         inputdir=inputdir,
         synapse_activation=synapse_activation,
         location='vdend'
-    ),
+    )
 
     # Load dendritic potential:
-    load_as_nwb_trials(
+    import_recordings_to_nwb(
         nwbfile=nwbfile,
         read_function=partial(
             read_dendritic_potential,
@@ -306,7 +318,7 @@ def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
             nmda_bias=6.0,
             ampa_bias=1.0,
         ),
-        timeseries_name='normal_NMDA+AMPA',
+        timeseries_name='vdend_normal_NMDA+AMPA',
         timeseries_description='Validation',
         **basic_kwargs
     )
@@ -535,6 +547,104 @@ def create_nwb_file(inputdir=None, outputdir=None, \
     print(f'Writing to NWBfile: {output_file}')
     with NWBHDF5IO(str(output_file), 'w') as io:
         io.write(nwbfile)
+
+def get_acquisition_potential(NWBfile=None, acquisition_name=None, cellid=None, trialid=None):
+    #TODO: make it trial informed and group the spike trains that way!
+    '''
+    Return a tuple of cellid and its spike train, per trial.
+    :param NWBfile:
+    :param acquisition_name:
+    :param group_per_trial: If true groups spike trains per trial. Use false if
+        you want to batch handle the spiketrains.
+    :return:
+    '''
+    animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+    trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+        get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=[
+                'animal_model_id', 'learning_condition_id', 'ncells',
+                'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+                'correct_trials_idx', 'correct_trials_no'
+            ]
+        )
+
+    total_trial_qs = trial_len / q_size
+    one_sec_qs = 1000 / q_size
+    start_q = total_trial_qs - one_sec_qs
+    samples_per_ms = NWBfile.acquisition['membrane_potential'].rate / 1000  # Sampling rate (Hz) / ms
+
+    trials = get_acquisition_trials(
+        NWBfile=NWBfile
+    )
+    # Unpack trial start/stop.
+    trialid, trial_start_ms, trial_stop_ms, *_ = trials[trialid]
+
+    potential = NWBfile.acquisition['membrane_potential']. \
+                    data[cellid, int(trial_start_ms * samples_per_ms): \
+                                 int(trial_stop_ms * samples_per_ms): \
+                                 int(samples_per_ms)]
+
+    return potential
+
+
+def get_acquisition_spikes(NWBfile=None, acquisition_name=None, group_per_trial=True):
+    #TODO: make it trial informed and group the spike trains that way!
+    '''
+    Return a tuple of cellid and its spike train, per trial.
+    :param NWBfile:
+    :param acquisition_name:
+    :param group_per_trial: If true groups spike trains per trial. Use false if
+        you want to batch handle the spiketrains.
+    :return:
+    '''
+    animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+    trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+        get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=[
+                'animal_model_id', 'learning_condition_id', 'ncells',
+                'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+                'correct_trials_idx', 'correct_trials_no'
+            ]
+        )
+
+    total_trial_qs = trial_len / q_size
+    one_sec_qs = 1000 / q_size
+    start_q = total_trial_qs - one_sec_qs
+
+    # Convert iterators to list, to avoid exhausting them!
+    cells_with_spikes = list(nwb_iter(NWBfile.units['cell_id']))
+    spike_trains = list(nwb_iter(NWBfile.units['spike_times']))
+
+    network_spiketrains = []
+    if group_per_trial:
+        # Create a list of lists:
+        trials = get_acquisition_trials(
+            NWBfile=NWBfile
+        )
+        network_spiketrains = [None] * ntrials
+        for trial in trials:
+            # Unpack trial start/stop.
+            trialid, trial_start_ms, trial_stop_ms, *_ = trial
+
+            network_spiketrains[trialid] = []
+            for cellid, spike_train in zip(cells_with_spikes, spike_trains):
+                # Get only spikes in the trial interval:
+                cell_spikes = [
+                    spike - trial_start_ms
+                    for spike in list(spike_train)
+                    if trial_start_ms <= spike and spike < trial_stop_ms
+                ]
+                network_spiketrains[trialid].append((cellid, cell_spikes))
+    else:
+        network_spiketrains=[
+            (cellid, spike_train)
+            for cellid, spike_train in zip(cells_with_spikes, spike_trains)
+        ]
+    return network_spiketrains
+
+
 
 def bin_activity(input_NWBfile, **kwargs):
     q_size = getargs('q_size', kwargs)
@@ -766,19 +876,78 @@ def calculate_delay_isi(NWBfile=None):
 
     return list(chain(*delay_ISIs)), delay_ISIs_CV
 
+def get_acquisition_trials(NWBfile=None, acquisition_name=None):
+    '''
+    Return the trials for the requested acquisition.
+    :param NWBfile:
+    :param acquisition_name: Optional, only if you want trials for a specific
+        acquisition.
+    :return:
+    '''
+    if acquisition_name:
+        acquisition_trials = [
+            trial
+            for idx, trial in enumerate(nwb_iter(NWBfile.trials))
+            if NWBfile.trials['acquisition_name'][idx] == acquisition_name
+        ]
+    else:
+        acquisition_trials = [
+            trial
+            for idx, trial in enumerate(nwb_iter(NWBfile.trials))
+        ]
+
+    return acquisition_trials
+
+
 def separate_trials(input_NWBfile=None, acquisition_name=None):
     # Return an iterable of each trial acrivity.
 
     #TODO: check if wrapped and unwrap:
     raw_acquisition = input_NWBfile.acquisition[acquisition_name].data
-    trials = input_NWBfile.trials
+
+    trials = get_acquisition_trials(
+        NWBfile=input_NWBfile,
+        acquisition_name=acquisition_name
+    )
+
     #TODO: get samples_per_ms
     f = 10
     trial_activity = [
         raw_acquisition[:, int(trial_start_t*f):int(trial_end_t*f) - 1]
-        for trialid, trial_start_t, trial_end_t in nwb_iter(trials)
+        for _, trial_start_t, trial_end_t, *_ in trials
     ]
     return trial_activity
+
+def md_velocity(pca_data=None):
+    # Should I do it in the original data and NOT only in the PCA/reduced ones?
+    # This function calculates the multidimensional velocity in distances of
+    # 50 ms.
+    ntrials = pca_data.shape[1]
+    #TODO: Get tne q_size correctly and NOT hard coded:
+
+    dt = 1000.0 / 50.0
+    # Get frobenius norm:
+    md_velocity = np.array([
+        np.linalg.norm(np.diff(pca_data[:, trial, :], axis=1), axis=0) / dt
+        for trial in range(ntrials)
+    ])
+
+    #dt = 1000/p.ws;
+    #fws = 4;
+    #b = (1/fws)*ones(1,fws);
+    #for c=1:size(scores,2)
+    #    if ~isempty(scores{r,c})
+    #        % calculate velocity (in all PC dims):
+    #        tmpdiff = diff(scores{r,c},1,1);
+    #        score_vel{gri,c} = zeros(size(tmpdiff,1),1);
+    #        for kk=1:size(tmpdiff,1)
+    #            % giati kanw norm edw?? (gia to euclidean distance
+    #            score_vel{gri,c}(kk,1) = norm(tmpdiff(kk,:))./ (dt);
+    #        end
+    #        score_vel{gri,c} = filter(b,1,score_vel{gri,c});
+    #    end
+    #end
+    return md_velocity
 
 
 def plot_pca_in_3d(NWBfile=None, custom_range=None, smooth=False, \
@@ -829,10 +998,11 @@ def plot_pca_in_3d(NWBfile=None, custom_range=None, smooth=False, \
     t_L_per_trial = t_L.reshape(L, total_data_trials, duration, order='C')
     #TODO: somewhere here I get a warning about a non-tuple sequence for
     # multi dim indexing. Why?
+    # Smooth more, since this is more for visualization purposes.
     if smooth:
         for trial in range(total_data_trials):
             for l in range(L):
-                t_L_per_trial[l, trial, :] = savgol_filter(t_L_per_trial[l, trial, :], 11, 3)
+                t_L_per_trial[l, trial, :] = savgol_filter(t_L_per_trial[l, trial, :], 31, 3)
 
 
     # If not part of a subfigure, create one:
@@ -848,13 +1018,34 @@ def plot_pca_in_3d(NWBfile=None, custom_range=None, smooth=False, \
     plot_axes.set_xlabel('PC1')
     plot_axes.set_ylabel('PC2')
     plot_axes.set_zlabel('PC3')
-    pca_axis_limits = (-10, 10)
-    plot_axes.set_xlim(pca_axis_limits)
-    plot_axes.set_ylim(pca_axis_limits)
-    plot_axes.set_zlim(pca_axis_limits)
-    plot_axes.set_xticks(pca_axis_limits)
-    plot_axes.set_yticks(pca_axis_limits)
-    plot_axes.set_zticks(pca_axis_limits)
+    # Also for visualization purposes, tight the axis limits
+    pc_lims_max = []
+    pc_lims_min = []
+    #TODO: this is the second not intended behaviour that I capture list
+    # comprehensions do. Is this deliberate? am I missing something here?
+    #UPDATE: running them interactively in the debugger, gives the error. BUT,
+    # running past by them (through the debugger again), removes the problem.
+    # So I lean towards a PyCharm issue, rather than undocumented python.
+    for pc in range(3):
+        pc_lims_max.append(np.array([
+            t_L_per_trial[pc][trial][:].max()
+            for trial in range(correct_trials_no)
+        ]).max())
+        pc_lims_min.append(np.array([
+            t_L_per_trial[pc][trial][:].min()
+            for trial in range(correct_trials_no)
+        ]).min())
+
+    pca_axis_lims = list(zip(pc_lims_min, pc_lims_max))
+    pca_xaxis_limits = pca_axis_lims[0]
+    pca_yaxis_limits = pca_axis_lims[1]
+    pca_zaxis_limits = pca_axis_lims[2]
+    plot_axes.set_xlim(pca_xaxis_limits)
+    plot_axes.set_ylim(pca_yaxis_limits)
+    plot_axes.set_zlim(pca_zaxis_limits)
+    plot_axes.set_xticks(pca_xaxis_limits)
+    plot_axes.set_yticks(pca_yaxis_limits)
+    plot_axes.set_zticks(pca_zaxis_limits)
     plot_axes.elev = 22.5
     plot_axes.azim = 52.4
 
@@ -878,18 +1069,22 @@ def plot_pca_in_3d(NWBfile=None, custom_range=None, smooth=False, \
         plt.legend(handles)
     else:
         #TODO: Here cycle through sequential colormaps to point every diferent trial, but in time.
-        colors = cm.viridis(np.linspace(0, 1, duration - 1))
+        colors = cm.summer(np.linspace(0, 1, duration - 1))
         for trial in range(total_data_trials):
+            #TODO: plot stimulus stop and final point
+            #_, stim_start_ms, stim_stop_ms, *_ = NWBfile.epochs[trial]
             for t, c in zip(range(duration - 1), colors):
                 plot_axes.plot(
                     t_L_per_trial[0][trial][t:t+2],
                     t_L_per_trial[1][trial][t:t+2],
                     t_L_per_trial[2][trial][t:t+2],
                     color=c,
-                    linewidth=2
+                    linewidth=3
                 )
     if not plot_axes:
         plt.show()
+
+    return t_L_per_trial
 
 
 def q2sec(q_size=50, q_time=0):
@@ -1360,6 +1555,70 @@ def from_one_to(x):
     :return:
     '''
     return range(1, x + 1)
+
+
+def trial_instantaneous_frequencies(NWBfile=None, trialid=None, smooth=False):
+    # Divide binned activity with the bin size:
+
+    animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+    trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+        get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=[
+                'animal_model_id', 'learning_condition_id', 'ncells',
+                'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+                'correct_trials_idx', 'correct_trials_no'
+            ]
+        )
+
+    total_trial_qs = trial_len / q_size
+    one_sec_qs = 1000 / q_size
+    start_q = total_trial_qs - one_sec_qs
+
+    network_spiketrains = get_acquisition_spikes(
+        NWBfile=NWBfile,
+        acquisition_name='membrane_potential',
+    )
+
+    # Unpack cell ids and their respective spike trains:
+    cell_ids, cell_spiketrains = zip(*[
+        cell_spiketrain
+        for cell_spiketrain in network_spiketrains[trialid]
+    ])
+
+    #trials = get_acquisition_trials(
+    #    NWBfile=NWBfile
+    #)
+    ## Unpack trial start/stop.
+    #_, trial_start_ms, trial_stop_ms, *_ = trials[trialid]
+
+    trial_inst_ff = []
+    for cell_id, cell_spiketrain in zip(cell_ids, cell_spiketrains):
+        if len(cell_spiketrain) > 1:
+            # Add a spike at the end to prolong the last isi:
+            spiketrain = np.array(cell_spiketrain)
+            isi = np.diff(spiketrain)
+            instantaneous_lambda = np.divide(1000.0, isi)
+            x_points = spiketrain[:-1] + isi / 2
+            instantaneous_firing_frequency = np.interp(
+                np.linspace(0, trial_len, int(trial_len)),
+                x_points,
+                instantaneous_lambda,
+                left=0.0,
+                right=0.0
+            )
+            if smooth:
+                instantaneous_firing_frequency = \
+                    savgol_filter(instantaneous_firing_frequency, 501, 3)
+                # Smoothing can introduce negative values:
+                instantaneous_firing_frequency[
+                    instantaneous_firing_frequency < 0
+                ] = 0
+
+            trial_inst_ff.append((cell_id, instantaneous_firing_frequency))
+
+    return trial_inst_ff
+
 
 def quick_spikes(
         voltage_trace=None, upper_threshold=None, lower_threshold=None,
