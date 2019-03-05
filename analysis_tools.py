@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 from sklearn import decomposition
 from scipy import spatial
+from scipy import sparse
 import time
 from functools import wraps
 from collections import namedtuple
@@ -19,6 +20,7 @@ from pynwb.form.backends.hdf5.h5_utils import H5DataIO
 from pynwb import TimeSeries
 from collections import defaultdict
 from functools import partial
+import matrix_utils as matu
 
 def time_it(function):
     @wraps(function)
@@ -29,6 +31,40 @@ def time_it(function):
         print(f'{function.__name__} took {toc-tic} seconds.')
         return result
     return runandtime
+
+def nwb_unique_rng(function):
+    @wraps(function)
+    def seed_rng(*args, **kwargs):
+        # Determine first the NWB file:
+        if kwargs.get('input_NWBfile', None):
+            NWBFile = kwargs.get('input_NWBfile', None)
+        elif kwargs.get('NWBfile_array', None):
+            NWBFile = kwargs.get('NWBfile_array', None)[0]
+        else:
+            raise ValueError('Input NWBfile is nonexistent!')
+
+        animal_model_id, learning_condition_id = \
+            get_acquisition_parameters(
+                input_NWBfile=NWBFile,
+                requested_parameters=[
+                    'animal_model_id', 'learning_condition_id'
+                ]
+            )
+        new_seed = animal_model_id * 4 + learning_condition_id
+        np.random.seed(new_seed)
+        print(f'{function.__name__} reseeds the RNG.')
+        return function(*args, **kwargs)
+    return seed_rng
+
+def exception_logger(function):
+    @wraps(function)
+    def safe_run(*args, **kwargs):
+        try:
+            result = function(*args, **kwargs)
+        except Exception as e:
+            print(f'Exception in {function.__name__}.')
+        return result
+    return safe_run
 
 experiment_config_filename = \
     'animal_model_{animal_model}_learning_condition_{learning_condition}_{type}_{experiment_config}.nwb'.format
@@ -86,6 +122,14 @@ def nwb_iter(sequencelike):
     ctr = 0
     while ctr < n:
         yield sequencelike[ctr]
+        ctr += 1
+
+def named_serial_no(name, n=1):
+    # Generates a size n iterable of strings, with name, followed by an
+    # increasing serial number:
+    ctr = 1
+    while ctr < n + 1:
+        yield f'{name} {ctr}'
         ctr += 1
 
 def load_nwb_file(**kwargs):
@@ -1090,9 +1134,10 @@ def plot_pca_in_3d(NWBfile=None, custom_range=None, smooth=False, \
 def q2sec(q_size=50, q_time=0):
     return np.divide(q_time, (1000 / q_size))
 
+@nwb_unique_rng
 def pcaL2(
         NWBfile_array=[], plot_2d=False, plot_3d=False, custom_range=None,
-        klabels=None, pca_components=5, smooth=False, plot_axes=None, **kwargs
+        klabels=None, pca_components=20, smooth=False, plot_axes=None, **kwargs
 ):
     '''
     This function reads binned activity from a list of files and performs PCA
@@ -1157,14 +1202,20 @@ def pcaL2(
 
 
     # how many PCA components
-    L = pca_components
+    # Use max pca components, then decide how many to keep based on threshold.
+    L = np.min(pool_array.shape)  # pca_components
     pca = decomposition.PCA(n_components=L)
     t_L = pca.fit_transform(pool_array.T).T
+    latent = pca.explained_variance_
+    tmp_latent = latent / latent.max()
+    blah = np.diff(tmp_latent / np.sum(tmp_latent))
+    L = np.nonzero(np.greater(blah, -0.02))[0][0] + 1
+    print(f'L found to be: {L}')
     # Reshape PCA results into separate trials for plotting.
     #t_L_per_trial = t_L.reshape(L, correct_trials_no, duration, order='C')
     #TODO: do a more elegant way of splitting into trials:
     total_data_trials = int(pool_array.shape[1]/duration)
-    t_L_per_trial = t_L.reshape(L, total_data_trials, duration, order='C')
+    t_L_per_trial = t_L[:L, :].reshape(L, total_data_trials, duration, order='C')
     #TODO: somewhere here I get a warning about a non-tuple sequence for
     # multi dim indexing. Why?
     if smooth:
@@ -1295,9 +1346,13 @@ def pcaL2(
                                   label=f'Cluster {label}'
                                   )
                 if i in key_labels:
-                    handles.append(handle)
+                    handles.append(handle[0])
             # Youmust group handles based on unique labels.
-            plt.legend(handles)
+            plot_axes.legend(
+                handles=handles,
+                labels=named_serial_no('State', len(key_labels)),
+                loc='upper right'
+            )
         else:
             colors = cm.viridis(np.linspace(0, 1, duration - 1))
             for trial in range(total_data_trials):
@@ -1310,15 +1365,192 @@ def pcaL2(
         if not plot_axes:
             plt.show()
 
-    return t_L_per_trial, pca.explained_variance_ratio_
+    return t_L_per_trial, L
+
+#TODO: I want this also to implement a Cross validation routine.
+# So: I need a list of M binary matrices that include a randomly sampled, sparse
+# part from the orignal matrix, A (with the constraints that apply).
+class NMF_HALS(object):
+
+    """ Base class for NMF algorithms
+    Specific algorithms need to be implemented by deriving from this class.
+    #TODO: this code is from https://github.com/kimjingu/nonnegfac-python/
+    under the BSD 3 license.
+
+    """
+    default_max_iter = 100
+    default_max_time = np.inf
+
+    def __init__(self, default_max_iter=100, default_max_time=np.inf):
+        self.eps = 1e-16
+        self.set_default(default_max_iter, default_max_time)
+
+    def initializer(self, W, H):
+        W, H, weights = matu.normalize_column_pair(W, H)
+        return W, H
+
+    def iter_solver(self, A, W, H, k, it):
+        AtW = A.T @ W
+        WtW = W.T @ W
+        for kk in iter(range(0, k)):
+            temp_vec = H[:, kk] + AtW[:, kk] - H @ WtW[:, kk]
+            H[:, kk] = np.maximum(temp_vec, self.eps)
+
+        AH = A @ H
+        HtH = H.T @ H
+        for kk in iter(range(0, k)):
+            temp_vec = W[:, kk] * HtH[kk, kk] + AH[:, kk] - W @ HtH[:, kk]
+            W[:, kk] = np.maximum(temp_vec, self.eps)
+            ss = np.linalg.norm(W[:, kk])
+            if ss > 0:
+                W[:, kk] = W[:, kk] / ss
+
+        return (W, H)
+
+    def set_default(self, default_max_iter, default_max_time):
+        self.default_max_iter = default_max_iter
+        self.default_max_time = default_max_time
+
+    def run(self, A, k, M=None, init=None, max_iter=None, max_time=None, verbose=0):
+        """ Run a NMF algorithm
+        Parameters
+        ----------
+        A : numpy.array or scipy.sparse matrix, shape (m,n)
+        M : numpy.array of the same size as A used as mask.
+        k : int - target lower rank
+        Optional Parameters
+        -------------------
+        init : (W_init, H_init) where
+                    W_init is numpy.array of shape (m,k) and
+                    H_init is numpy.array of shape (n,k).
+                    If provided, these values are used as initial values for NMF iterations.
+        max_iter : int - maximum number of iterations.
+                    If not provided, default maximum for each algorithm is used.
+        max_time : int - maximum amount of time in seconds.
+                    If not provided, default maximum for each algorithm is used.
+        verbose : int - 0 (default) - No debugging information is collected, but
+                                    input and output information is printed on screen.
+                        -1 - No debugging information is collected, and
+                                    nothing is printed on screen.
+                        1 (debugging/experimental purpose) - History of computation is
+                                        returned. See 'rec' variable.
+                        2 (debugging/experimental purpose) - History of computation is
+                                        additionally printed on screen.
+        Returns
+        -------
+        (W, H, rec)
+        W : Obtained factor matrix, shape (m,k)
+        H : Obtained coefficient matrix, shape (n,k)
+        rec : dict - (debugging/experimental purpose) Auxiliary information about the execution
+        """
+        #TODO: Give params like train/valid/test M:
+        info = {'k': k,
+                'alg': str(self.__class__),
+                'A_dim_1': A.shape[0],
+                'A_dim_2': A.shape[1],
+                'A_type': str(A.__class__),
+                'max_iter': max_iter if max_iter is not None else self.default_max_iter,
+                'verbose': verbose,
+                'max_time': max_time if max_time is not None else self.default_max_time}
+        if init != None:
+            W = init[0].copy()
+            H = init[1].copy()
+            info['init'] = 'user_provided'
+        else:
+            W = np.random.rand(A.shape[0], k)
+            H = np.random.rand(A.shape[1], k)
+            info['init'] = 'uniform_random'
+
+        if verbose >= 0:
+            print ('[NMF] Running: ')
+            #print (json.dumps(info, indent=4, sort_keys=True))
+
+        norm_A = matu.norm_fro(A)
+        total_time = 0
+
+        if verbose >= 1:
+            his = {'iter': [], 'elapsed': [], 'rel_error': []}
+
+        start = time.time()
+        # algorithm-specific initilization
+        (W, H) = self.initializer(W, H)
+        # If M binary mask provided, use it on A:
+        if M is not None:
+            A = A * M
+
+        for i in range(1, info['max_iter'] + 1):
+            start_iter = time.time()
+            # algorithm-specific iteration solver
+            (W, H) = self.iter_solver(A, W, H, k, i)
+            elapsed = time.time() - start_iter
+
+            if verbose >= 1:
+                rel_error = matu.norm_fro_err(A, W, H, norm_A) / norm_A
+                his['iter'].append(i)
+                his['elapsed'].append(elapsed)
+                his['rel_error'].append(rel_error)
+                if verbose >= 2:
+                    print ('iter:' + str(i) + ', elapsed:' + str(elapsed) + ', rel_error:' + str(rel_error))
+
+            total_time += elapsed
+            if total_time > info['max_time']:
+                break
+
+        W, H, weights = matu.normalize_column_pair(W, H)
+
+        final = {}
+        final['norm_A'] = norm_A
+        final['rel_error'] = matu.norm_fro_err(A, W, H, norm_A) / norm_A
+        final['iterations'] = i
+        final['elapsed'] = time.time() - start
+
+        rec = {'info': info, 'final': final}
+        if verbose >= 1:
+            rec['his'] = his
+
+        if verbose >= 0:
+            print ('[NMF] Completed: ')
+            #print (json.dumps(final, indent=4, sort_keys=True))
+        return (W, H, rec)
+
+
+def nnmf(A, k, M=None):
+    '''
+    Applies Non Negative Matrix Factorization in matrix A, with k components.
+    If optional M binary matrix is given, alternating minimization is performed
+    with zero values of M as missing values of A.
+
+    :param A: numpy.ndarray
+    :param k: int
+    :param M: numpy.ndarray, optional
+    :return:
+    '''
+
+    # Initialize W and H:
+    W = np.random.rand(A.shape[0], k) * 70
+    H = np.random.rand(k, A.shape[1])
+
+    if M is not None:
+        A = M * A
+    else:
+        M = np.ones(A.shape)
+
+    for iter in range(1000):
+        W = np.maximum(W * ((A @ H.T) / ((M * (W @ H)) @ H.T)), 1e-16)
+        H = np.maximum(H * ((W.T @ A) / (W.T @ (M * (W @ H)))), 1e-16)
+
+    return W, H
 
 def NNMF(
         NWBfile_array=[], plot_2d=False, plot_3d=False, custom_range=None,
-        klabels=None, n_components=5, smooth=False, plot_axes=None, **kwargs
+        klabels=None, n_components=5, smooth=False, plot_axes=None,
+        M=None, **kwargs
 ):
     '''
     This function reads binned activity from a list of files and performs NNMF
-    with variable k on it.
+    with k on it.
+    If optional M binary matrix, then it applies it during alternating
+    minimization.
     :param NWBfile_array:
     :param plot:
     :param custom_range:
@@ -1377,17 +1609,32 @@ def NNMF(
         else:
             pool_array = tmp
 
-    #TODO: check that this is NOT RANDOM and thus REPRODUCABLE!
-    estimator = decomposition.NMF(n_components=n_components, init='nndsvd',
-                                  tol=5e-3)
-    W = estimator.fit_transform(pool_array.T).T
-    H = estimator.components_
-    dist_from_original = np.linalg.norm(pool_array - (W.T @ H).T, ord='fro') / \
-                         np.sqrt(pool_array.size)
+    #TODO: replace randomization with proper cross-validation:
+    #M = np.random.rand(pool_array.shape[0], pool_array.shape[1])
+    #TODO: make analysis functions reproducable with rng wrappers. In what field
+    # to base the seed?
+    if n_components > np.min(pool_array.shape):
+        print('Must be k < min(n,m)!')
+        n_components = np.min(pool_array.shape)
 
-    #plt.figure()
-    #plt.imshow(H)
-    #plt.show()
+    W, H, info = NMF_HALS().run(pool_array, n_components, M=M)
+    #TODO: return the fit error and test error!
+    error_bar
+    error_train
+    print('Cross-validated!')
+    ##TODO: check that this is NOT RANDOM and thus REPRODUCABLE!
+    ## Randomize original data by permuting each row (observation).
+    #if randomize:
+    #    for row in range(pool_array.shape[1]):
+    #        row_data = pool_array[:, row]
+    #        pool_array[:, row] = np.random.permutation(row_data)
+
+    #estimator = decomposition.NMF(n_components=n_components, init='nndsvd',
+    #                              tol=5e-3)
+    #W = estimator.fit_transform(pool_array.T).T
+    #H = estimator.components_
+    #dist_from_original = np.linalg.norm(pool_array - (W.T @ H).T, ord='fro') / \
+    #                     np.sqrt(pool_array.size)
 
     #TODO: do a more elegant way of splitting into trials:
     total_data_trials = int(pool_array.shape[1]/duration)
@@ -1538,7 +1785,7 @@ def NNMF(
         if not plot_axes:
             plt.show()
 
-    return (components_per_trial, dist_from_original)
+    return (components_per_trial, error_bar, error_train)
 
 def from_zero_to(x):
     '''
@@ -1969,28 +2216,35 @@ def mahalanobis_distance(idx_a=None, idx_b=None):
     # Compute the MD of a trial average (idx_b) from the cluster centroid (idx_a):
     # Return also the mu and S for later use.
     #TODO: check again how to handle e.g. mean to return a matrix not a vector. It really mess up the multiplications..
-    dim, trials, t = idx_a.shape
-    if any(np.array(idx_a.shape) < 1):
-        return np.nan, MD_params(np.nan, np.nan)
-
-    cluster_data = idx_a.reshape(dim, t * trials, order='C').T
-    point_data = np.squeeze(idx_b).mean(axis=1).reshape(1, -1)
-    mu = cluster_data.mean(axis=0).reshape(1, -1)
-    S = np.cov(cluster_data.T)
-    # Debug/scatter
-    if False:
-        fig, ax = plt.subplots(1,1)
-        ax.scatter(point_data[:,0], point_data[:,1], s=50, c='r', marker='+')
-        ax.scatter(np.squeeze(idx_b)[0,:], np.squeeze(idx_b)[1,:],s=20, c='r', marker='.')
-        ax.scatter(cluster_data[:,0], cluster_data[:,1],s=5, c='g', marker='.')
-        ax.scatter(mu[:,0], mu[:,1],s=50, c='k', marker='+')
-
-    tmp = point_data - mu
-    # Covariance matrix must be positive, semi definite. Check that:
     try:
-        MD = np.sqrt(tmp @ np.linalg.inv(S) @ tmp.T)
-    except np.linalg.LinAlgError as e:
-        raise e('Covariance matrix must be positive semi definite!')
+        dim, trials, t = idx_a.shape
+        if any(np.array(idx_a.shape) < 1):
+            return np.nan, MD_params(np.nan, np.nan)
+
+        cluster_data = idx_a.reshape(dim, t * trials, order='C').T
+        point_data = idx_b[:, 0, :].mean(axis=1).reshape(1, -1)
+        mu = cluster_data.mean(axis=0).reshape(1, -1)
+        S = np.cov(cluster_data.T)
+        # Debug/scatter
+        if False:
+            fig, ax = plt.subplots(1,1)
+            ax.scatter(point_data[:,0], point_data[:,1], s=50, c='r', marker='+')
+            ax.scatter(np.squeeze(idx_b)[0,:], np.squeeze(idx_b)[1,:],s=20, c='r', marker='.')
+            ax.scatter(cluster_data[:,0], cluster_data[:,1],s=5, c='g', marker='.')
+            ax.scatter(mu[:,0], mu[:,1],s=50, c='k', marker='+')
+
+        tmp = point_data - mu
+        # Covariance matrix must be positive, semi definite. Check that:
+        try:
+            if S.shape == ():
+                MD = np.sqrt(tmp * (1/S) * tmp)
+            else:
+                MD = np.sqrt(tmp @ np.linalg.inv(S) @ tmp.T)
+        except np.linalg.LinAlgError as e:
+            raise e('Covariance matrix must be positive semi definite!')
+    except Exception as e:
+        print(str(e))
+        raise(e)
     return MD, MD_params(mu, S)
 
 def point2points_average_euclidean(point=None, points=None):
@@ -2091,8 +2345,6 @@ def kmeans_clustering(data=None, k=2, max_iterations=100, plot=False, **kwargs):
 def evaluate_clustering(klabels=None, md_array=None, md_params=None, **kwargs):
     # Calculate likelihood of each trial, given the cluster centroid:
     nclusters, ntrials = md_array.shape
-    #TODO: do I use more than two dims?
-    data_dim = 2  # kwargs.get('data_dim', None)
 
     ln_L = np.zeros((1, ntrials))
     ln_L.fill(np.nan)
@@ -2104,11 +2356,16 @@ def evaluate_clustering(klabels=None, md_array=None, md_params=None, **kwargs):
         S = md_params[cluster].S
         # Remove clusters without any points:
         try:
-            ln_L[0, trial] = \
-                np.exp(-1/2 * mdist) / \
-                np.sqrt((2*np.pi)**data_dim * np.linalg.det(S))
+            if S.shape == ():
+                ln_L[0, trial] = \
+                    np.exp(-1/2 * mdist) / \
+                    np.sqrt((2*np.pi)**nclusters * float(S))
+            else:
+                ln_L[0, trial] = \
+                    np.exp(-1/2 * mdist) / \
+                    np.sqrt((2*np.pi)**nclusters * np.linalg.det(S))
         except Exception as e:
-            print('Something went wrong!')
+            print('Something went wrong while evaluating BIC!')
             print(str(e))
     L_ln_hat = np.nansum(np.log(ln_L * 0.0001))
 
@@ -2149,7 +2406,10 @@ def test_for_overfit(klabels=None, data_pca=None, S=None, threshold=None):
         for j in range(offset, k):
             # Calculate the distance between clusters:
             xy_diff = cluster_mu[i] - cluster_mu[j]
-            MD = np.sqrt(xy_diff @ np.linalg.inv(S) @ xy_diff.T)
+            if S.shape == ():
+                MD = np.sqrt(xy_diff * (1/S) * xy_diff)
+            else:
+                MD = np.sqrt(xy_diff @ np.linalg.inv(S) @ xy_diff.T)
             # If MD is less that the threshold, then k-means overfits
             if MD < threshold:
                 return True
@@ -2158,8 +2418,9 @@ def test_for_overfit(klabels=None, data_pca=None, S=None, threshold=None):
     return False
 
 
+@nwb_unique_rng
 def determine_number_of_clusters(
-        NWBfile_array, max_clusters=None, y_array=None, custom_range=None,
+        NWBfile_array=[], max_clusters=None, y_array=None, custom_range=None,
         **kwargs
     ):
     '''
@@ -2195,8 +2456,8 @@ def determine_number_of_clusters(
 
     # Perform PCA to the binned network activity:
     # Analyze only each trial's last second:
-    data_pca, explained_variance = pcaL2(
-        NWBfile_array,
+    data_pca, no_optimal_L = pcaL2(
+        NWBfile_array=NWBfile_array,
         custom_range=(start_q, total_trial_qs),
         plot=False
     )
@@ -2214,8 +2475,11 @@ def determine_number_of_clusters(
 
         # Compute this 'average' S (covariance).
         S_all = np.cov(all_datapoints.reshape(dims, duration * ntrials))
+    except Exception as e:
+        print(f'Exception when calculating S!')
+        raise e
 
-
+    try:
         #assert max_clusters <= ntrials, 'Cannot run kmeans with greater k than the data_pcapoints!'
         if max_clusters > ntrials:
             print('Cannot run kmeans with greater k than the data_pcapoints!')
@@ -2275,9 +2539,12 @@ def determine_number_of_clusters(
                 optimal_k = 1
             else:
                 # Compute K* as a variant of the rate distortion function, utilizing BIC:
-                K_s = np.argmax(np.diff(np.power(BIC_all, -y)))
+                #K_s = np.argmax(np.diff(np.power(BIC_all, -y)))
+                #TODO: I argue that the BIC is already done, since I just have
+                # pick the smallest value:
+                K_s = np.argmin(BIC_all)
                 # The idx of the kmeans_labels array (starts from 0 = one cluster):
-                K_s_labelidx = K_s + 1
+                K_s_labelidx = K_s
                 # This directly corresponds to how many clusters:
                 optimal_k = K_s_labelidx + 1
 
@@ -2287,7 +2554,11 @@ def determine_number_of_clusters(
             # Store the klabels corresponding to each K*:
             K_labels[i, :] = kmeans_labels[K_s_labelidx, :]
 
-        return K_star, K_labels
+            # Calculate no of PC that cross the 70% variance:
+
+            #principal_components_no = np.nonzero(np.greater(np.cumsum(explained_variance), 0.7))[0][0] + 1
+
+        return K_star, K_labels, no_optimal_L
     except Exception as e:
         raise e
 
@@ -2298,6 +2569,11 @@ def determine_number_of_ensembles(
     '''
     Same as deternime_number_of_clusters, but utilizes NNMF in search for
     optimal number of distinct neuronal ensembles.
+    This function needs to perform NNMF. To decide about the number of
+    components a cross-validation method is used.
+    Parts of the A array are removed, randomly and then their reconstruction
+    error is assessed.
+    This function returns the best k estimate.
 
     :param NWBfile_array:
     :param max_clusters:
@@ -2323,41 +2599,101 @@ def determine_number_of_ensembles(
             ]
         )
 
+    # Check if you need to continue:
+    filename = Path(f'cross_valid_errors_rnd{animal_model_id}_{learning_condition_id}.hdf')
+    if filename.is_file():
+        return (1, 1, 1)
+
     total_trial_qs = trial_len / q_size
     one_sec_qs = 1000 / q_size
     start_q = total_trial_qs - one_sec_qs
 
-    try:
+    if correct_trials_no < 1:
+        raise ValueError('No correct trials were found in the NWBfile!')
 
-        kmeans_labels = np.zeros((max_clusters, ntrials), dtype=int)
-        J_k_all = [0] * max_clusters
-        # Calculate BIC for up to max_clusters:
-        for i, k in enumerate(range(1, max_clusters + 1)):
-            #print(f'Clustering with {k} clusters.')
-            data_reduced, J_k = NNMF(
-                NWBfile_array,
-                n_components=k,
-                custom_range=(start_q, total_trial_qs),
-                plot=False
-            )
-            J_k_all[i] = J_k
+    # Use custom_range to compute PCA only on a portion of the original data:
+    if custom_range is not None:
+        if not isinstance(custom_range, tuple):
+            raise ValueError('Custom range must be a tuple!')
+        trial_slice_start = int(custom_range[0])
+        trial_slice_stop = int(custom_range[1])
+        duration = trial_slice_stop - trial_slice_start
+    else:
+        duration = trial_q_no
 
-        #TODO: how to detect overfitting here?
-        K_star = np.zeros((y_array.size, 1), dtype=int)
-        for i, y in enumerate(y_array):
-            # Compute K* as a variant of the rate distortion function,
-            # utilizing the distance:
-            K_s = np.argmax(np.diff(np.power(J_k_all, -y))) + 1
-            # This directly corresponds to how many clusters:
-            optimal_k = K_s + 1
+    #TODO: handle single file or array, decide:
+    # Load binned acquisition (all trials together)
+    binned_network_activity = NWBfile_array[0]. \
+                                  acquisition['binned_activity']. \
+                                  data[:pn_no, :]. \
+        reshape(pn_no, ntrials, trial_q_no)
+    # Slice out non correct trials and unwanted trial periods:
+    tmp = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
+    # Reshape in array with m=cells, n=time bins.
+    data = tmp.reshape(pn_no, correct_trials_no * duration)
 
-            # Add 1 to start counting from 1, then another, since we diff above:
-            # This is the optimal no of clusters:
-            K_star[i, 0] = optimal_k
+    K = 10
+    np.random.seed(animal_model_id * 10 + learning_condition_id)
+    # Training error:
+    error_bar = np.zeros((K, max_clusters))
+    error_bar_rm = np.zeros((K, max_clusters))
+    # Test error:
+    error_test = np.zeros((K, max_clusters))
+    for n_components in range(1, max_clusters + 1):
+        print(f'No of components {n_components}')
+        # Divide data into K partitions:
+        #TODO: make sure this is always doable!
+        rnd_idx = np.random.permutation(data.size)
+        K_idx = np.zeros(data.size)
+        partition_size = int(np.floor(data.size / K))
+        for k, (start, end) in enumerate(generate_slices(size=partition_size, number=K)):
+            K_idx[rnd_idx[start:end]] = k
+        K_idx = K_idx.reshape(data.shape)
 
-        return K_star
-    except Exception as e:
-        raise e
+        # Run NNMF in a K-1 fashion:
+        for k in range(K):
+            print(f'k is {k}')
+            M_ = K_idx == k
+            M = np.logical_not(M_)
+            W, H = nnmf(data.T, n_components, M=M.T)
+            # ready made NNMF algo:
+            estimator = decomposition.NMF(n_components=n_components, init='nndsvd',
+                                          tol=5e-3)
+            W_rm = estimator.fit_transform(data.T)
+            H_rm = estimator.components_
+            error_bar_rm[k, n_components-1] = np.linalg.norm(M.T * (W_rm @ H_rm - data.T), ord='fro') / \
+                                           np.sqrt(partition_size * (K - 1))
+
+            error_bar[k, n_components-1] = np.linalg.norm(M.T * (W @ H - data.T), ord='fro') / \
+                        np.sqrt(partition_size * (K - 1))
+            error_test[k, n_components-1] = np.linalg.norm(M_.T * (W @ H - data.T), ord='fro') / \
+                np.sqrt(partition_size)
+
+            # This runs.
+            #W, H, info = NMF_HALS().run(data.T, n_components)
+
+        # Save the errors:
+
+    print(f'Saving CV errors for animal {animal_model_id}, lc {learning_condition_id}')
+    df = pd.DataFrame(error_bar)
+    df.to_hdf(str(filename), key='error_bar', mode='w')
+    df = pd.DataFrame(error_bar_rm)
+    df.to_hdf(str(filename), key='error_bar_rm')
+    df = pd.DataFrame(error_test)
+    df.to_hdf(str(filename), key='error_test')
+
+    ## Plot the errors to get the picture:
+    #fig = plt.figure()
+    #plt.plot(error_bar.T, color='C0', alpha=0.2)
+    #plt.plot(error_train.T, color='C1', alpha=0.2)
+    #plt.plot(error_bar.T.mean(axis=1), color='C0')
+    #plt.plot(error_train.T.mean(axis=1), color='C1')
+    #np.argmin(error_train.mean(axis=0))
+    #plt.show()
+
+    # This is the k with the least error after CV:
+    K_star = np.argmin(error_test.mean(axis=0))
+    return K_star, error_bar, error_test
 
 
 if __name__ == "__main__":
