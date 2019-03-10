@@ -1,10 +1,10 @@
-#%% [markdown]
+# <markdowncell>
 # # # Generate Figure 1
 # Single neuron and network responses following stimulation. A. Top: Schematic representation of the network model. Excitatory (E) connectivity profile was based on experimental data. The excitatory population was reciprocally connected with the Inhibitory (I) in a feedback way. Bottom: Random network connectivity changes only excitatory connectivity. B. Top: Cartoon morphology of the pyramidal model. Bottom: Same for fast-spiking interneuron. C. Top: three exemplar responses of pyramidals in a single trial. Bottom: Same for interneurons. D. Top: Network response activity raster plot of pyramidal (blue) and interneurons (red) to a 1 sec stimulus. Bottom: Same trial’s instantaneous firing frequencies of each pyramidal (> 20Hz), showing its highly dynamic response during delay period. E. Histograms of inter spike interval length (top) and Coefficient of Variation (bottom) of all the structured trials for the stimulus period (blue) and delay period (red). F. Top: Non-linear NMDA responses are generated in the basal dendrites of the pyramidal neurons (top) as in (Nevian et al. 2007b) (bottom). Somatic (blue) and dendritic (red) depolarization from resting potential in response to increasing stimulus intensity. G. Overall network response energy (mean firing rate; top) and multidimensional velocity (bottom) aligned on stimulus period onset. H. Top: Cross correlation of network states between the stimulus period and the delay period over time (aligned on stimulus onset, 1 s stimulus). Bottom: Experimentally reported correlation from (Murray et al. 2017). I.  Network responses for 10 trials, under one learning condition, reduced to their first three principal components. Colormap denotes time.
-#%% [markdown]
+# <markdowncell>
 # Import necessary modules:
 
-#%%
+# <codecell>
 import notebook_module as nb
 import analysis_tools as analysis
 import numpy as np
@@ -19,10 +19,10 @@ from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 import matplotlib.font_manager as fm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-#%% [markdown]
-# # Create figure 1. 
+# <markdowncell>
+# # Create figure 1.
 
-#%%
+# <codecell>
 simulations_dir = Path.cwd().joinpath('simulations')
 glia_dir = Path(r'G:\Glia')
 plt.rcParams.update({'font.family': 'Helvetica'})
@@ -371,7 +371,7 @@ plt.draw()
 plt.show()
 
 
-#%%
+# <codecell>
 figure1.savefig('Figure_1.svg')
 figure1.savefig('Figure_1.png')
 print('Tutto pronto!')

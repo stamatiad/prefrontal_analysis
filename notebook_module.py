@@ -7,7 +7,7 @@ import analysis_tools as analysis
 from analysis_tools import from_zero_to, from_one_to
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import cm
+from matplotlib import cm, axes
 from pathlib import Path
 import pandas as pd
 import h5py
@@ -19,6 +19,8 @@ from collections import defaultdict
 from scipy import stats
 import sys
 from pynwb import NWBHDF5IO
+from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
+import matplotlib.font_manager as fm
 
 def cm2inch(*tupl):
     inch = 2.54
@@ -26,9 +28,6 @@ def cm2inch(*tupl):
         return tuple(i/inch for i in tupl[0])
     else:
         return tuple(i/inch for i in tupl)
-
-def datasetName(id):
-    return f'Animal {id}'
 
 def statisticalAnnotation(columns=None, datamax=None, axobj=None):
     # statistical annotation
@@ -63,7 +62,30 @@ def hide_axis_border(axis=None):
     axis.xaxis.set_ticklabels([])
     axis.yaxis.set_ticklabels([])
 
-def axis_normal_plot(axis=None):
+def adjust_spines(ax, spines, blowout=10):
+    for loc, spine in ax.spines.items():
+        if loc in spines:
+            spine.set_position(('outward', blowout))  # outward by 10 points
+            spine.set_smart_bounds(True)
+        else:
+            spine.set_color('none')  # don't draw spine
+
+    # turn off ticks where there is no spine
+    if 'left' in spines:
+        ax.yaxis.set_ticks_position('left')
+    else:
+        pass
+        # no yaxis ticks
+        #ax.yaxis.set_ticks([])
+
+    if 'bottom' in spines:
+        ax.xaxis.set_ticks_position('bottom')
+    else:
+        pass
+        # no xaxis ticks
+        #ax.xaxis.set_ticks([])
+
+def axis_normal_plot(axis=None, xlim=None):
     # Hide the right and top spines
     axis.spines['right'].set_visible(False)
     axis.spines['top'].set_visible(False)
@@ -71,17 +93,48 @@ def axis_normal_plot(axis=None):
     # Only show ticks on the left and bottom spines
     axis.yaxis.set_ticks_position('left')
     axis.xaxis.set_ticks_position('bottom')
-    axis.spines['left'].set_position('zero')
-    axis.spines['bottom'].set_position('zero')
+    #axis.spines['left'].set_position('zero')
+    #axis.spines['bottom'].set_position('zero')
 
     axis.tick_params(axis='both', which='major', labelsize=8)
     axis.tick_params(axis='both', which='minor', labelsize=6)
+    axis.xaxis.set_tick_params(width=2)
+    axis.yaxis.set_tick_params(width=2)
 
-    for axis_loc in ['top', 'bottom', 'left', 'right']:
+    for axis_loc in ['bottom', 'left']:
         axis.spines[axis_loc].set_linewidth(2)
+    if xlim:
+        axis.set_xlim(xlim[0], xlim[1])
+        axis.spines['left'].set_position(xlim[0])
+
+def axis_box_plot(axis=None, ylim=None):
+    axis.spines['right'].set_visible(False)
+    axis.spines['top'].set_visible(False)
+    axis.spines['bottom'].set_visible(False)
+    axis.xaxis.set_ticks_position('none')
+    axis.spines['left'].set_linewidth(2)
+    axis.yaxis.set_tick_params(width=2)
+
+def plot_clear_abscissa(axis=None):
+    axis.spines['bottom'].set_visible(False)
+    axis.spines['bottom'].set_color(None)
+    axis.tick_params(axis=False)
+    axis.xaxis.set_ticks_position('none')
+    axis.xaxis.set_ticklabels([])
 
 def mark_figure_letter(axis=None, letter=None):
-    axis.text(0.01, 0.99, f'{letter}       ',
+    #TODO: why is this a problem? Since its of that class, how comes the
+    # class is nonexistent?
+    #if isinstance(ax, axes._subplots.Axes3DSubplot)
+
+    if isinstance(axis, Axes3D):
+        axis.text2D(0.01, 0.99, f'{letter}       ',
+                      fontsize=14,
+                      horizontalalignment='right',
+                      verticalalignment='top',
+                      transform=axis.transAxes)
+    else:
+        axis.text(0.01, 0.99, f'{letter}       ',
                   fontsize=14,
                   horizontalalignment='right',
                   verticalalignment='top',
@@ -143,3 +196,41 @@ def plot_trial_spiketrains(NWBfile=None, trialid=None, plot_axis=None):
     if not plot_axis:
         plt.show()
 
+
+def setBoxAttribtes(boxplot_handles, colors):
+    for bplot in boxplot_handles:
+        for patch, color in zip(bplot['boxes'], colors):
+            patch.set_color(color)
+            patch.set_facecolor(color)
+            patch.set_linewidth(2)
+        for line in bplot['medians']:
+            line.set_linewidth(2)
+        for line in bplot['whiskers']:
+            line.set_linewidth(2)
+        for line in bplot['fliers']:
+            line.set_linewidth(2)
+        for line in bplot['caps']:
+            line.set_linewidth(2)
+
+def set_horizontal_scalebar(axis=None, label=None, relativesize=None,
+                            distfromx=0.1, distfromy=0.1):
+
+    scalebar = AnchoredSizeBar(
+        transform=axis.transData,
+        size=relativesize,
+        label=label,
+        loc='lower left',
+        pad=0.1,
+        borderpad=0.1,
+        color='black',
+        frameon=False,
+        label_top=False,
+        size_vertical=relativesize/100,
+        fontproperties=fm.FontProperties(size=8),
+        bbox_to_anchor=(distfromy, -distfromx),
+        bbox_transform=axis.transAxes
+    )
+    #scalebar.size_bar.get_children()[0].fill = True
+    axis.add_artist(scalebar)
+
+    pass

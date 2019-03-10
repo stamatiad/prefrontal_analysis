@@ -1,10 +1,10 @@
-#%% [markdown]
+# <markdowncell>
 # # # Generate Figure 3
 # The catalytic role of NMDA nonlinearities in the creation of stable states. A. Removing the NMDA synaptic conductance and compensating by increasing AMPA conductance, results in loss of both the non-linear jump and the depolarizing plateau, for increasing synaptic drive. B. Same as A, but now after removal of the Mg blockage component (see Methods) only the non-linear jump is removed, with the depolarizing plateau retained. C. Removing either the non-linear jump or the depolarizing plateau from the network excitatory connections, eliminates  WM state space stable states number. D. This reduced states number is also produced if the structured connection configuration is replaced by a random one. 
-#%% [markdown]
+# <markdowncell>
 # Import necessary modules:
 
-#%%
+# <codecell>
 import notebook_module as nb
 import analysis_tools as analysis
 import numpy as np
@@ -16,10 +16,10 @@ from pynwb import NWBHDF5IO
 from itertools import chain
 import matplotlib.gridspec as gridspec
 
-#%% [markdown]
+# <markdowncell>
 # ## Create figure 2
 
-#%%
+# <codecell>
 simulations_dir = Path.cwd().joinpath('simulations')
 glia_dir = Path(r'G:\Glia')
 plt.rcParams.update({'font.family': 'Helvetica'})
@@ -289,7 +289,7 @@ plt.subplots_adjust(top=0.92, bottom=0.15, left=0.10, right=0.95, hspace=0.25,
 plt.show()
 
 
-#%%
+# <codecell>
 figure3.savefig('Figure_3.png')
 figure3.savefig('Figure_3.svg')
 print('Tutto pronto!')

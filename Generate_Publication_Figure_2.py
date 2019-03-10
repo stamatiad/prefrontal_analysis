@@ -1,10 +1,10 @@
-#%% [markdown]
+# <markdowncell>
 # # # Generate Figure 2
 # Network distinct response states, in response to different input. A.  Exemplar population activity (n=10 stimuli) reduced in two principal components (PCAL2) over time for n=3 different synaptic reconfigurations (learning conditions). Only delay period is plotted. Time is in seconds. B. Same procedure (population PCAL2 activity) for two structured network instances, with all learning conditions (n=10) pooled together, each responding with K* > n. Clusters identified as in A. C. Boxplot of optimal number of clusters (K*) after k-means (see Methods) for each n=4 structured network instances of n=10 synaptic reshufflings (learning conditions), for n=10 stimuli.
-#%% [markdown]
+# <markdowncell>
 # Import necessary modules:
 
-#%%
+# <codecell>
 import notebook_module as nb
 import analysis_tools as analysis
 import numpy as np
@@ -20,10 +20,10 @@ import scipy.stats
 import seaborn as sb
 import math
 
-#%% [markdown]
-# # Create figure 2. 
+# <markdowncell>
+# # Create figure 2.
 
-#%%
+# <codecell>
 simulations_dir = Path.cwd().joinpath('simulations')
 glia_dir = Path(r'G:\Glia')
 plt.rcParams.update({'font.family': 'Helvetica'})
@@ -35,7 +35,7 @@ y_i = 500
 no_of_conditions = 10
 no_of_animals = 4
 
-#%%
+
 subplot_width = 3
 subplot_height = 2
 figure2 = plt.figure(figsize=plt.figaspect(0.5))
@@ -220,6 +220,7 @@ for idx, animal_model in enumerate([2]):
     #)
 
     # Plot the annotated clustering results:
+    #TODO: are these correctly labeled?
     K_labels = np.matlib.repmat(np.arange(1, len(NWBfiles) + 1), ntrials, 1) \
         .T.reshape(ntrials, -1).reshape(1, -1)[0]
     analysis.pcaL2(
@@ -237,7 +238,7 @@ plt.subplots_adjust(top=0.92, bottom=0.15, left=0.10, right=0.95, hspace=0.25,
 
 
 
-#%%
+# <codecell>
 figure2.savefig('Figure_2.svg')
 figure2.savefig('Figure_2.png')
 print('Tutto pronto!')

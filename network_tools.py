@@ -71,7 +71,7 @@ def with_reproducible_rng(class_method):
     def reset_rng(*args, **kwargs):
         # this translates to self.serial_no ar runtime
         np.random.seed(args[0].serial_no)
-        print(f'{class_method.__name__} reseeds the NRG.')
+        print(f'{class_method.__name__} reseeds the RNG.')
         return class_method(*args, **kwargs)
     return reset_rng
 

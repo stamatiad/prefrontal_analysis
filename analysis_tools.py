@@ -1247,7 +1247,7 @@ def pcaL2(
 
             labels = klabels.tolist()
             nclusters = np.unique(klabels).size
-            colors = cm.Set2(np.linspace(0, 1, nclusters))
+            colors = cm.Set3(np.linspace(0, 1, nclusters))
             _, key_labels = np.unique(labels, return_index=True)
             handles = []
             for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
@@ -1263,6 +1263,10 @@ def pcaL2(
                 if i in key_labels:
                     handles.append(handle)
 
+            #TODO: in multiple NWB files case, with external labels (afto paei
+            # ston caller k oxi edw ston callee, alla anyways) discarded
+            # trials have labels and loops get out of index.
+            '''
             for clusterid in range(nclusters):
                 #TODO: This comprehension is problematic, why?
                 # Plot each cluster mean (average of last second activity):
@@ -1284,6 +1288,7 @@ def pcaL2(
                     mean_point[0], mean_point[1], s=70, c='k', marker='+',
                     zorder=20000
                 )
+                '''
 
         else:
             plot_axes.set_title(f'Model {animal_model_id}, learning condition {learning_condition_id}')
@@ -1617,10 +1622,11 @@ def NNMF(
         print('Must be k < min(n,m)!')
         n_components = np.min(pool_array.shape)
 
-    W, H, info = NMF_HALS().run(pool_array, n_components, M=M)
+    W, H, info = NMF_HALS().run(pool_array.T, n_components, M=M)
+    H = H.T
     #TODO: return the fit error and test error!
-    error_bar
-    error_train
+    error_bar = None
+    error_train = None
     print('Cross-validated!')
     ##TODO: check that this is NOT RANDOM and thus REPRODUCABLE!
     ## Randomize original data by permuting each row (observation).
@@ -1638,7 +1644,7 @@ def NNMF(
 
     #TODO: do a more elegant way of splitting into trials:
     total_data_trials = int(pool_array.shape[1]/duration)
-    components_per_trial = W.reshape(n_components, total_data_trials, duration, order='C')
+    components_per_trial = W.T.reshape(n_components, total_data_trials, duration, order='C')
     #TODO: somewhere here I get a warning about a non-tuple sequence for
     # multi dim indexing. Why?
     if smooth:
@@ -2490,6 +2496,7 @@ def determine_number_of_clusters(
         BIC_all = [0] * max_clusters
         md_params_all = [0] * max_clusters
         # Calculate BIC for up to max_clusters:
+        #TODO: remove the y since you dont use it anymore!
         for i, k in enumerate(range(1, max_clusters + 1)):
             #print(f'Clustering with {k} clusters.')
             klabels, J_k, md_array, md_params_d = kmeans_clustering(
@@ -2512,7 +2519,7 @@ def determine_number_of_clusters(
                 klabels=klabels, data_pca=data_pca, S=S_all, threshold=3.0
             )
             if k_means_overfit:
-                #print(f'@k:{k} k_means Overfit!!!')
+                print(f'@k:{k} k_means Overfit!!!')
                 # Stop searching for fit of greater ks.
                 BIC_all[i:] = [BIC_all[i - 1]] * (max_clusters - i)
                 kmeans_labels[i:, :] = kmeans_labels[i - 1, :]
