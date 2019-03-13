@@ -16,10 +16,13 @@ import h5py
 import time
 import os
 import sys
+from itertools import chain
 from functools import wraps
 import pandas as pd
 import pkg_resources
 from pkg_resources import DistributionNotFound, VersionConflict
+from contextlib import contextmanager
+import copy
 
 def check_requirements():
     # Check that user is running a supported python version and necessary packages:
@@ -75,6 +78,43 @@ def with_reproducible_rng(class_method):
         return class_method(*args, **kwargs)
     return reset_rng
 
+class UPair:
+    # This is a tuple representing the unordered pairs of neurons in the network
+    # Named tuples are immutable, yet this might prevent unwanted errors.
+    # UPair = namedtuple('UPair', ['a', 'b', 'distance', 'type_cells', 'type_conn', 'prob_f'])
+    @property
+    def ucoord(self):
+        return self._ucoord
+
+    def __init__(self, a, b, distance, type_cells, type_conn=None, prob_f=None):
+        self.a = a
+        self.b = b
+        self.distance = distance
+        self.type_cells = type_cells
+        self.type_conn = type_conn
+        self.prob_f = prob_f
+        # 'Privatly' set the ucoordinates:
+        if a > b:
+            self._ucoord = (b, a)
+        else:
+            self._ucoord = (a, b)
+
+    def __repr__(self):
+        return f'UPair({self.a}, {self.b}, {self.distance}, {self.type_cells})'
+
+    def __eq__(self, other):
+        # UPair equality only compares the LOCATION!
+        if isinstance(other, UPair):
+            return set([self.a, self.b]) == set([other.a, other.b])
+        else:
+            return False
+
+    def __hash__(self):
+        #return hash(self.__repr__())
+        # A None hash should return TypeError, when accessed:
+        return None
+
+
 class Network:
     @property
     def serial_no(self):
@@ -83,7 +123,7 @@ class Network:
     @serial_no.setter
     def serial_no(self, serial_no):
         if serial_no < 1:
-            raise ValueError("Only positive serian numbers allowed!")
+            raise ValueError("Only positive serial numbers allowed!")
         self._serial_no = serial_no
 
     @property
@@ -215,10 +255,60 @@ class Network:
             raise ValueError('Stimulated cells matrix can not be empty!')
         self._stimulated_cells = mat
 
-    # This is a tuple representing the unordered pairs of neurons in the network
-    UPair = namedtuple('UPair', ['a', 'b', 'distance', 'type_cells', 'type_conn', 'prob_f'])
-    # This is a utility tuple, just to get probability functions also (when needed)
-    #CPair = namedtuple('CPair', ['a', 'b', 'type_code', 'prob_f'])
+    # The upairs are acquired with copy, to avoid mutations. This is
+    # communicated with a context manager, so the user will know how to
+    # handle them.
+    @property
+    def upairs_d(self):
+        # Return a copy of the dict, to avoid errors due to accidental mutation.
+        return copy.deepcopy(self._upairs_d)
+
+    @upairs_d.setter
+    def upairs_d(self, val):
+        if not isinstance(val, dict):
+            raise ValueError('upairs_d is not a dict!')
+        # Copy again to avoid accidental mutation:
+        self._upairs_d = copy.deepcopy(val)
+
+    @contextmanager
+    def get_upairs(self, cell_type=None):
+        # This context manager is essentially non-necessary, yet in directly
+        # communicates that there is some implicit acquire/release taking place
+        # and also provides a handy function to select specific cell pair type.
+
+        # Code to acquire resource, e.g.:
+        #resource = acquire_resource(*args, **kwds)
+        if cell_type:
+            upairs = [
+                upair
+                for upair in self.upairs_d.values()
+                if upair.type_cells == cell_type
+            ]
+        else:
+            upairs = list(self.upairs_d.values())
+        try:
+            yield upairs
+        finally:
+            # Code to release resource, e.g.:
+            #release_resource(resource)
+            # Save the upairs list (above) inside the object, to always maintain
+            # a current dict of all the upairs in the network.
+            # Save the updated upairs to the network object:
+            self.update_upairs(upair_list=upairs)
+
+    def update_upairs(self, upair_list=None):
+        '''
+        Updates the mutated upairs to the network object.
+        :param upair_list:
+        :return:
+        '''
+        # Get a snapshot of the network upairs:
+        tmp_network_upairs = self.upairs_d
+        # Update the upair:
+        for upair in upair_list:
+            tmp_network_upairs[upair.ucoord] = upair
+        # Save the updated upairs to the network object:
+        self.upairs_d = tmp_network_upairs
 
     def __init__(self, serial_no, pc_no, pv_no):
         ''' Initialize network class.
@@ -278,8 +368,8 @@ class Network:
         cb_offset_mat = cb_offset[np.subtract(cb_offest_pos,1)]
 
         dist_wrapped_vect = np.zeros(int(self.cell_no*(self.cell_no-1)/2))
-        # Instead of a list of tuples, use a dict. This will make recalling much faster:
-        #self.upairs = list()
+
+        upairs_list = []
         ctr = 0
         start = 1
         for i in range(self.cell_no):
@@ -294,10 +384,13 @@ class Network:
                 # Add also neuronal pair to list:
                 #self.upairs.append(self.UPair(a=i, b=j, type_cells=get_pair_type(i, j), distance=dist, type_conn=None))
                 # Maintain a dict with (upper triangular) coordinates of upairs (j always greater than i).
-                self.upairs_d[self.to_ucoord(i, j)] \
-                    = self.UPair(a=i, b=j, distance=dist, type_cells=get_pair_type(i, j), type_conn=None, prob_f=None)
+                upairs_list.append(
+                    UPair(a=i, b=j, distance=dist, type_cells=get_pair_type(i, j))
+                )
                 ctr += 1
             start += 1
+        # Write the upairs to the network:
+        self.update_upairs(upair_list=upairs_list)
 
         # Set network intersomatic distance matrix:
         self.dist_mat = distance.squareform(dist_wrapped_vect)
@@ -337,7 +430,7 @@ class Network:
         # Define connectivity probability functions (distance dependent):
         # Neuronal pairs are unordered {A,B}, considering their type.
         # For each  pair we have three distinct, distance-dependend connection probabilities:
-        # 1) reciprocal
+        # 1) A <-> B (reciprocal)
         # 2) A -> B
         # 3) B -> A
         # Other/custom connectivity functions can be used as well in the same framework, in order to connect different
@@ -389,6 +482,7 @@ class Network:
             = lambda x: np.multiply(np.ones(x.shape), 0.0675)
 
 
+        @time_it
         def connect_all_pairs(upairs, connection_protocol=None, export_probabilities=False):
             '''
             Connect (or not) the given pair, based on connections probabilities.
@@ -402,7 +496,7 @@ class Network:
             # Unfortunately python's function call overhead is huge, so we need to become more array friendly
             # utilizing numpy efficient functions. Unfortunately this affects the readability of the code:
             #cpairs = [None]*len(upairs)
-            new_upairs = [None]*len(upairs)
+            #new_upairs = [None]*len(upairs)
             prev_i = 0
             query_pair_types = sorted(set(x.type_cells for x in upairs))
             # Sort the set (since its order is random!), to get reproducible RNG results!
@@ -422,15 +516,92 @@ class Network:
                 blah2 = np.nonzero(blah)[0]
                 blah3 = np.arange(0, prob_arr_flat.size, len(connection_protocol)+1)
                 conn_code_arr = np.subtract(blah2, blah3[:-1])
-                for i, (upair, conn_code) in enumerate(zip(matching_upairs, conn_code_arr), prev_i):
-                    tmp_d = upair._asdict()
-                    tmp_d['type_conn'] = connection_protocol.get(conn_code, 'none')
+                #TODO: now that upair is an object I can just update it:
+                for i, (upair, conn_code) in enumerate(zip(matching_upairs, conn_code_arr)):
+                    #tmp_d = upair._asdict()
+                    #tmp_d['type_conn'] = connection_protocol.get(conn_code, 'none')
+                    #if export_probabilities:
+                    #    tmp_d['prob_f'] = np.append(prob_arr[:, i-prev_i], 1)
+                    #new_upairs[i] = UPair(**tmp_d)
+                    upair.type_conn = connection_protocol.get(conn_code, 'none')
                     if export_probabilities:
-                        tmp_d['prob_f'] = np.append(prob_arr[:, i-prev_i], 1)
-                    new_upairs[i] = self.UPair(**tmp_d)
-                prev_i += len(matching_upairs)
-            return new_upairs
+                        upair.prob_f = np.append(prob_arr[:, i-prev_i], 1)
 
+                prev_i += len(matching_upairs)
+
+            return upairs
+
+
+        def randomize_connection_type(upairs, available_types=None):
+            '''
+            Randomize the connection type of the Upair/Upairs given.
+            :param available_types: optional
+            :return:
+            '''
+            #TODO: make this function get all connection types from outside?
+            if not available_types:
+                available_types = ['none', 'A2B', 'B2A', 'reciprocal']
+
+            type_len = len(available_types)
+
+            # Keep your RNG the one of numpy, for reproducability:
+            rnd_idx = np.random.randint(type_len, size=len(upairs))
+            at = np.array(available_types)
+            upair_types = at[(rnd_idx),]
+
+            # Update the connection type of the immutable namedtuples:
+            #updated_upairs = []
+            # Mutate the original upairs, since this is now the workflow:
+            for upair, connection_type in zip(upairs, upair_types):
+                upair.type_conn = connection_type
+                #tmp_d = upair._asdict()
+                #tmp_d['type_conn'] = connection_type
+                #updated_upairs.append(self.UPair(**tmp_d))
+
+            return upairs
+
+        def reduce_reciprocals(upairs, percentage=None):
+            '''
+            Replace reciprocal connections in upairs with unidirectional ones,
+            to match the percentage of the originals. I.e. if the original
+            network have 50% reciprocals and percentage is 50, then
+            the returned connectivity will have 0.5 * 0.5 = 0.25 reciprocal
+            connections.
+            :param upairs:
+            :param percentage:
+            :return:
+            '''
+
+            # Check that only PN2PN upairs are given:
+            if len(set(x.type_cells for x in upairs)) > 1:
+                raise ValueError('Please provide only PN2PN pairs!')
+
+            #TODO: remap reciprocal connections; get reciprocal and non
+            # connected and remap them.
+            reciprocal_upairs = np.array([x for x in upairs if x.type_conn == 'reciprocal'])
+            nonconnected_upairs = np.array([x for x in upairs if x.type_conn == 'none'])
+            # Random permute the lists:
+            idx_reciprocal = np.random.permutation(reciprocal_upairs.size)
+            idx_nonconnected = np.random.permutation(nonconnected_upairs.size)
+            # Replace % of the reciprocal pairs with non connected:
+            percentage_no = int(reciprocal_upairs.size * percentage)
+            upairs_to_randomize = chain(
+                reciprocal_upairs[idx_reciprocal[:percentage_no]].tolist(),
+                nonconnected_upairs[idx_nonconnected[:percentage_no]].tolist()
+            )
+            updated_upairs = randomize_connection_type(
+                list(upairs_to_randomize),
+                available_types=['A2B', 'B2A']
+            )
+
+            #non_changed_upairs = set(upairs) - set(updated_upairs)
+            #all_upairs = non_changed_upairs | updated_upairs
+
+            #return list(all_upairs)
+
+
+
+        @time_it
         def upairs2mat(upairs):
             '''
             Creates a connectivity matrix from upairs.
@@ -479,28 +650,7 @@ class Network:
                     raise ValueError('Connectivity rule not implemented for this type of connections!')
             return mat
 
-        # Initially connect only non PN to PN pairs (but due to performance and code readability issues connect the PN
-        # to PN pairs also; unordered pairs must lie on a square matrix!):
-        print(f'Random initially {np.random.rand(1)[0]}')
-        connectivity_mat = np.full((self.cell_no, self.cell_no), False)
-        # use a dict to instruct what connections you need:
-        # This is the distance dependent connection types from Perin et al., 2011:
-        based_on_distance = {0: 'reciprocal', 1: 'A2B', 2: 'B2A'}
-        # reuse the generated connectivity for PN_PV and PV_PV pairs that never changes again:
-        all_upairs = [pair for pair in self.upairs_d.values()]
-        connected_upairs = connect_all_pairs(all_upairs, connection_protocol=based_on_distance)
-        # Get the connectivity matrix:
-        connectivity_mat = upairs2mat(connected_upairs)
-        # Update upairs in object. Then generate theconnectivity matrix
-        for upair in connected_upairs:
-            self.upairs_d[self.to_ucoord(upair.a, upair.b)] = upair
-        print(f'Random finally {np.random.rand(1)[0]}')
-        with open('connblah1.txt', 'w') as f:
-            for element in connectivity_mat[-1, :]:
-                f.write(f'{element}\n')
-
-        # Now if configuration is random, update the PN to PN connectivity matrix part and return:
-        if self.configuration_alias is 'random':
+        def perform_random_connectivity():
             # if a uniform connection probability is given, update the default.
             # Calculate unidirectional probability for the uniform / random network:
             # This is p = sqrt(overall + 1) - 1
@@ -516,17 +666,28 @@ class Network:
                 = lambda x: np.multiply(np.ones(x.shape), uniform_prob_unidirectional)
             # Utilize only the uniform type of connection:
             uniform = {0: 'uniform_reciprocal', 1: 'uniform_A2B', 2: 'uniform_B2A'}
-            pn_upairs = [pair for pair in self.upairs_d.values() if pair.type_cells == ('PN_PN')]
-            # Update the connectivity matrix only over PN to PN connections:
-            connected_upairs = connect_all_pairs(pn_upairs, connection_protocol=uniform)
-            connectivity_mat[:self.pc_no, :self.pc_no] = upairs2mat(connected_upairs)
-            # Update upairs in object. Then generate theconnectivity matrix
-            for upair in connected_upairs:
-                self.upairs_d[self.to_ucoord(upair.a, upair.b)] = upair
 
-        # if configuration is structured,
-        if self.configuration_alias is 'structured':
+            with self.get_upairs(cell_type='PN_PN') as pn_upairs:
+                # Get the connectivity matrix:
+                # Update the connectivity matrix only over PN to PN connections:
+                connected_upairs = connect_all_pairs(
+                    pn_upairs, connection_protocol=uniform
+                )
+
+            return upairs2mat(connected_upairs)
+
+
+        def perform_reduce_reciprocals(percentage=50):
+            with self.get_upairs(cell_type='PN_PN') as pn_upairs:
+                reduce_reciprocals(
+                    pn_upairs, percentage=percentage
+                )
+
+
+        def perform_structured_connectivity():
             #TODO: einai ta reciprocals sxedon ta misa?
+            # Get a copy of the network's upairs to calculate overall
+            # connection probabilities:
             # Filter out non PN cell pairs:
             pn_upairs = [pair for pair in self.upairs_d.values() if pair.type_cells == ('PN_PN')]
             # use a dict to instruct what connections you need:
@@ -534,16 +695,109 @@ class Network:
             based_on_distance = {0: 'reciprocal', 1: 'A2B', 2: 'B2A'}
             # Get the connectivity matrix:
             #connectivity_mat[:self.pc_no, :self.pc_no] = upairs2mat(connect_all_pairs(pn_upairs, connection_protocol=based_on_distance))
+            # Connect pairs based on total PN to PN probability:
+            # use a dict to instruct what connections you need:
+            # This is the overall (total) connection probability, also distance dependend (perin et al., 2011):
+            overall_probability = {0: 'total'}
+            # Get probabilities instead of the connectivity matrix:
+            Pd_upairs = connect_all_pairs(
+                pn_upairs,
+                connection_protocol=overall_probability,
+                export_probabilities=True
+            )
+            # Get type '0' connection probability for each pair (this is the total/overall probability):
+            prob_f_list = [upair.prob_f[1] for upair in Pd_upairs]
+            Pd = np.asmatrix(distance.squareform(prob_f_list))
+            sumPd = Pd.sum()
+            # run iterative rearrangement:
+            f_prob = np.zeros((self.pc_no, self.pc_no, rearrange_iterations))
+            cn_prob = np.zeros((self.pc_no, self.pc_no, rearrange_iterations))
+            cc = np.zeros((1,rearrange_iterations))
 
-            # Plot to see the validated results of the connectivity routines:
+            #TODO: this is the connmat of the create_connections. MAKE IT RIGHT!
+            #reformed_conn_mat = connectivity_mat[:self.pc_no, :self.pc_no]
+            with self.get_upairs(cell_type='PN_PN') as pn_upairs:
+                # Get network connectivity matrix:
+                reformed_conn_mat = upairs2mat(pn_upairs)
+                for t in range(1, rearrange_iterations):
+                    print('@iteration {}'.format(t))
+                    # TODO check clust_coeff function.
+                    # giati to C bgainei olo mhden??
+                    _, cc[0, t], _ = clust_coeff(reformed_conn_mat)
+                    # compute common neighbors for each pair:
+                    ncn = self.common_neighbors(reformed_conn_mat)
+                    cn_prob = ncn / ncn.max()
+                    # Scale the probabilities of connection by the common neighbor bias:
+                    f_prob = np.multiply(cn_prob, Pd)
+                    f_prob = f_prob * (sumPd / f_prob.sum())
+                    # To allocate connections based on their relative type (unidirectional, reciprocals), compute a distance
+                    # estimate and use it with the existing probability functions, to get the connectivity:
+                    distance_estimate = (np.log(0.22) - np.log(f_prob)) / 0.0052
+                    distance_estimate[distance_estimate < 0] = 0
+                    distance_estimate = self.zero_diagonal(distance_estimate)
+                    #TODO: this is not working. Why?
+                    distance_estimate_vect = distance.squareform(distance_estimate)
+                    # squareform works row-wise, also the Pd upairs, wo we can zip() them:
+                    for upair, d in zip(pn_upairs, distance_estimate_vect):
+                        upair.distance = d
+
+                    # Now you can use this 'distance' estimate to reallocate the connections to unidirectional and reciprocal:
+                    #TODO: why you need to assign to temp _next variable?
+                    new_upairs = connect_all_pairs(
+                        pn_upairs,
+                        connection_protocol=based_on_distance
+                    )
+                    reformed_conn_mat = upairs2mat(new_upairs)
+
+                #TODO: the context manager will update the upairs: are the
+                # distances correct? Fix them?
+
+            # Plot
+            if plot:
+                fig, ax = plt.subplots()
+                cax = ax.plot(cc[0])
+                ax.set_title('Clustering Coefficient')
+                plt.xlabel('Iterations')
+                plt.ylabel('Clustering Coefficient')
+                plt.savefig('Network_sn{}_clustering_coefficient.png'.format(self.serial_no))
+                plt.show()
+
+            # Save connectivity to the network:
+            return reformed_conn_mat
+
+
+        # Initially connect only non PN to PN pairs (but due to performance and code readability issues connect the PN
+        # to PN pairs also; unordered pairs must lie on a square matrix!):
+        print(f'Random initially {np.random.rand(1)[0]}')
+        connectivity_mat = np.full((self.cell_no, self.cell_no), False)
+        # use a dict to instruct what connections you need:
+        # This is the distance dependent connection types from Perin et al., 2011:
+        based_on_distance = {0: 'reciprocal', 1: 'A2B', 2: 'B2A'}
+        # reuse the generated connectivity for PN_PV and PV_PV pairs that never changes again:
+        with self.get_upairs() as all_upairs:
+            # Get the connectivity matrix:
+            connectivity_mat = upairs2mat(
+                connect_all_pairs(
+                    all_upairs, connection_protocol=based_on_distance
+                )
+            )
+        connectivity_mat = upairs2mat(self.upairs_d.values())
+
+        #print(f'Random finally {np.random.rand(1)[0]}')
+        #with open('connblah1.txt', 'w') as f:
+        #    for element in connectivity_mat[-1, :]:
+        #        f.write(f'{element}\n')
+
+        # Plot to see the validated results of the connectivity routines:
+        if plot:
             plt.ion()
             plot_reciprocal_across_distance(connectivity_mat[:self.pc_no, :self.pc_no],
                                             self.dist_mat[:self.pc_no, :self.pc_no],
                                             connection_functions_d['PN_PN']['reciprocal'],
                                             plot=True)
             plot_unidirectional_across_distance(connectivity_mat[:self.pc_no, :self.pc_no],
-                                            self.dist_mat[:self.pc_no, :self.pc_no],
-                                            connection_functions_d['PN_PN']['unidirectional'],
+                                                self.dist_mat[:self.pc_no, :self.pc_no],
+                                                connection_functions_d['PN_PN']['unidirectional'],
                                                 plot=True)
             plot_pn2pv_unidirectional_across_distance(mat_pn_pv=connectivity_mat[:self.pc_no, self.pc_no:],
                                                       mat_pv_pn=connectivity_mat[self.pc_no:, :self.pc_no],
@@ -556,79 +810,36 @@ class Network:
                                                       ground_truth=connection_functions_d['PN_PV']['B2A'],
                                                       plot=True)
             plot_pn_pv_reciprocal_across_distance(connectivity_mat[:self.pc_no, self.pc_no:],
-                                                      connectivity_mat[self.pc_no:, :self.pc_no],
-                                                self.dist_mat[:self.pc_no, self.pc_no:],
-                                                connection_functions_d['PN_PV']['reciprocal'])
+                                                  connectivity_mat[self.pc_no:, :self.pc_no],
+                                                  self.dist_mat[:self.pc_no, self.pc_no:],
+                                                  connection_functions_d['PN_PV']['reciprocal'])
 
 
-            # Connect pairs based on total PN to PN probability:
-            # use a dict to instruct what connections you need:
-            # This is the overall (total) connection probability, also distance dependend (perin et al., 2011):
-            overall_probability = {0: 'total'}
-            # Get probabilities instead of the connectivity matrix:
-            Pd_upairs = connect_all_pairs(pn_upairs, connection_protocol=overall_probability, export_probabilities=True)
-            # Get type '0' connection probability for each pair (this is the total/overall probability):
-            prob_f_list = [upair.prob_f[1] for upair in Pd_upairs]
-            Pd = np.asmatrix(distance.squareform(prob_f_list))
+        # Now if configuration is random, update the PN to PN connectivity matrix part and return:
+        if self.configuration_alias is 'random':
+            excitatory_conn_mat = perform_random_connectivity()
+
+        # if configuration is structured,
+        if self.configuration_alias is 'structured':
+            excitatory_conn_mat = perform_structured_connectivity()
 
 
-            # run iterative rearrangement:
-            f_prob = np.zeros((self.pc_no, self.pc_no, rearrange_iterations))
-            cn_prob = np.zeros((self.pc_no, self.pc_no, rearrange_iterations))
-            cc = np.zeros((1,rearrange_iterations))
+        if self.configuration_alias is 'structured_half_reciprocals':
+            perform_structured_connectivity()
+            perform_reduce_reciprocals(percentage=50)
+            excitatory_conn_mat = upairs2mat(self.upairs_d.values())
 
-            reformed_conn_mat = connectivity_mat[:self.pc_no, :self.pc_no]
-            sumPd = Pd.sum()
-            for t in range(1, rearrange_iterations):
-                print('@iteration {}'.format(t))
-                # TODO check clust_coeff function. Maby separate module?
-                # giati to C bgainei olo mhden??
-                _, cc[0, t], _ = clust_coeff(reformed_conn_mat)
-                # compute common neighbors for each pair:
-                ncn = self.common_neighbors(reformed_conn_mat)
-                cn_prob = ncn / ncn.max()
-                # Scale the probabilities of connection by the common neighbor bias:
-                f_prob = np.multiply(cn_prob, Pd)
-                f_prob = f_prob * (sumPd / f_prob.sum())
-                # To allocate connections based on their relative type (unidirectional, reciprocals), compute a distance
-                # estimate and use it with the existing probability functions, to get the connectivity:
-                distance_estimate = (np.log(0.22) - np.log(f_prob)) / 0.0052
-                distance_estimate[distance_estimate < 0] = 0
-                distance_estimate = self.zero_diagonal(distance_estimate)
-                distance_estimate_vect = distance.squareform(distance_estimate)
-                # squareform works row-wise, also the Pd upairs, wo we can zip() them:
-                dist_estimate_upairs = [None]* len(Pd_upairs)
-                for i, (upair, d) in enumerate(zip(Pd_upairs, distance_estimate_vect)):
-                    tmp_d = upair._asdict()
-                    tmp_d['distance'] = d
-                    dist_estimate_upairs[i] = self.UPair(**tmp_d)
-
-                # Now you can use this 'distance' estimate to reallocate the connections to unidirectional and reciprocal:
-                reformed_conn_mat_next = upairs2mat(connect_all_pairs(dist_estimate_upairs, connection_protocol=based_on_distance))
-                reformed_conn_mat = reformed_conn_mat_next
-
-            # Save connectivity to the network:
-            connectivity_mat[:self.pc_no, :self.pc_no] = reformed_conn_mat
-
-            # Plot
-            if plot:
-                fig, ax = plt.subplots()
-                cax = ax.plot(cc[0])
-                ax.set_title('Clustering Coefficient')
-                plt.xlabel('Iterations')
-                plt.ylabel('Clustering Coefficient')
-                plt.savefig('Network_sn{}_clustering_coefficient.png'.format(self.serial_no))
-                plt.show()
-
+        # Save resulting connectivity matrix to the network:
+        connectivity_mat[:self.pc_no, :self.pc_no] = excitatory_conn_mat
+        self.connectivity_mat = connectivity_mat
         # Plot if you want:
         if plot:
             fig, ax = plt.subplots()
-            cax = ax.imshow(connectivity_mat, interpolation='nearest', cmap=cm.afmhot)
+            cax = ax.imshow(self.connectivity_mat, interpolation='nearest', cmap=cm.afmhot)
             ax.set_title('Network_sn{}_connectivity matrix of {}'.format(self.serial_no, self.configuration_alias))
             plt.savefig('Network_sn{}_connectivity_matrix_{}.png'.format(self.serial_no, self.configuration_alias))
             plt.show()
 
-        self.connectivity_mat = connectivity_mat
         return
 
     @with_reproducible_rng
@@ -645,18 +856,6 @@ class Network:
         ## Sort stimulated cells' list:
         #self.stimulated_cells = np.sort(self.stimulated_cells, axis=1)
 
-
-    def to_ucoord(self, a, b):
-        '''
-        Returns the coordinates for a undirected pair. Only upper part of connectivity matrix.
-        :param a:
-        :param b:
-        :return:
-        '''
-        if a > b:
-            return (b, a)
-        else:
-            return (a, b)
 
     def common_neighbors(self, adjmat):
         adj = np.logical_or(adjmat, adjmat.getT())
@@ -798,7 +997,7 @@ class Network:
         df.to_hdf(filename, key='connectivity_mat')
         df = pd.DataFrame(self.weights_mat)
         df.to_hdf(filename, key='weights_mat')
-        df = pd.DataFrame(self.upairs_d)
+        df = pd.DataFrame(self.upairs_d, index=[0])
         df.to_hdf(filename, key='upairs_d')
         df = pd.DataFrame(self.stats, index=[0])
         df.to_hdf(filename, key='stats')
