@@ -284,7 +284,7 @@ def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
     # Partially automate the loading with the aid of a reading function;
     # use a generic reading function that you make specific with partial and
     # then just load all the trials:
-    synapse_activation = list(range(5, 200, 10))
+    synapse_activation = list(range(1, 150, 5))
     basic_kwargs = {'ncells': 1, 'ntrials': len(synapse_activation), \
                     'stim_start_offset': 100, 'stim_stop_offset': 140,
                     'trial_len': 700, 'samples_per_ms': 10}
@@ -320,7 +320,7 @@ def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
             read_somatic_potential,
             condition='normal',
             currents='AMPA',
-            nmda_bias=6.0,  # This is ignored since we have no NMDA!
+            nmda_bias=0.0,
             ampa_bias=50.0,
         ),
         timeseries_name='normal_AMPA_only',
@@ -335,7 +335,7 @@ def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
             read_somatic_potential,
             condition='noMg',
             currents='NMDA+AMPA',
-            nmda_bias=6.0,  # This is ignored since we have no NMDA!
+            nmda_bias=6.0,
             ampa_bias=1.0,
         ),
         timeseries_name='noMg_NMDA+AMPA',
@@ -969,6 +969,7 @@ def md_velocity(pca_data=None):
     ntrials = pca_data.shape[1]
     #TODO: Get tne q_size correctly and NOT hard coded:
 
+    # TODO: check again the values!
     dt = 1000.0 / 50.0
     # Get frobenius norm:
     md_velocity = np.array([
@@ -2607,7 +2608,7 @@ def determine_number_of_ensembles(
         )
 
     # Check if you need to continue:
-    filename = Path(f'cross_valid_errors_rnd{animal_model_id}_{learning_condition_id}.hdf')
+    filename = Path(f'cross_valid_errors_structured{animal_model_id}_{learning_condition_id}.hdf')
     if filename.is_file():
         return (1, 1, 1)
 

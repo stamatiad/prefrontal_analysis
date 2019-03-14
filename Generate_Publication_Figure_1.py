@@ -32,8 +32,8 @@ y_array = np.linspace(0.1, 100, 1000)
 y_i = 500
 plt.ion()
 axis_label_font_size = 10
-no_of_conditions = 3#10
-no_of_animals = 2#4
+no_of_conditions = 10
+no_of_animals = 4
 #===============================================================================
 #===============================================================================
 # FIGURE 1 (PENDING)
@@ -281,7 +281,10 @@ trial_len, pn_no, ntrials, trial_q_no = analysis.get_acquisition_parameters(
 custom_range = (0, int(trial_len / 50))
 
 # Plot velocity from raw network activity:
-raw_net_activity = NWBfile.                        acquisition['binned_activity'].                        data[:pn_no, :].     reshape(pn_no, ntrials, trial_q_no)
+#TODO: all the data and how many Ls in PCA? Must be all!
+# This is Hz/Sec.
+raw_net_activity = NWBfile.acquisition['binned_activity'].data[:pn_no, :].\
+    reshape(pn_no, ntrials, trial_q_no)
 velocity = analysis.md_velocity(pca_data=raw_net_activity)
 G_axis_a.plot(velocity.T, color='gray', alpha=0.2)
 G_axis_a.plot(np.mean(velocity.T, axis=1), color='k', linewidth=2)
