@@ -14,7 +14,7 @@ You can install a python 3.7 [anaconda distribution](https://www.anaconda.com/di
 Using conda is recommended:
 ```
 conda update -n base -c defaults conda
-conda create -n publication python=3.7
+conda create -n publication python=3.7.0
 activate publication
 ```
 
@@ -23,7 +23,7 @@ To run the code please:
 2. Clone this repository to your local working directory:
 ```
 mkdir prefrontal_analysis && cd prefrontal_analysis
-git clone git@github.com:stamatiad/prefrontal_analysis.git
+git clone https://github.com/stamatiad/prefrontal_analysis.git
 ```
 This *might take a while*, since repo contains parts of the simulations (~200MB).
 > !!! Since this is work in progress, please change from master to the review branch!
