@@ -18,6 +18,8 @@ import matplotlib.gridspec as gridspec
 
 # <markdowncell>
 # ## Create figure 2
+#TODO: This becomes Figure 2
+#TODO: Na to network na einai to idio me to Fig 1 H!
 
 # <codecell>
 simulations_dir = Path.cwd().joinpath('simulations')
