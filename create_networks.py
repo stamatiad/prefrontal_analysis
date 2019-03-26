@@ -23,7 +23,9 @@ net_structured = nt.Network(serial_no=serial_no, pc_no=pn_no, pv_no=pv_no)
 net_structured.populate_network(cube_side_len=cube_side_length, plot=False)
 
 # Create both structured and random configurations:
-net_structured.create_connections(alias='structured', rearrange_iterations=1000, plot=False)
+net_structured.create_connections(
+    alias='structured_half_reciprocals', rearrange_iterations=1000, plot=False
+)
 
 net_structured.create_weights()
 net_structured.create_network_stats()
@@ -48,7 +50,9 @@ for serial_no in range(1, 5):
     net_structured.populate_network(cube_side_len=cube_side_length, plot=False)
 
     # Create both structured and random configurations:
-    net_structured.create_connections(alias='structured', rearrange_iterations=1000, plot=False)
+    net_structured.create_connections(
+        alias='structured', rearrange_iterations=1000, plot=False
+    )
 
     net_structured.create_weights()
     net_structured.create_network_stats()
@@ -73,7 +77,9 @@ for serial_no in range(1, 5):
     # Change random net connectivity and weights:
     overall_conn_prob = net_structured.stats['averageConnectivity']
     # Create a random/uniform connected network, with the same overall connection probability as the structured one.
-    net_random.create_connections(alias='random', average_conn_prob=overall_conn_prob, plot=False)
+    net_random.create_connections(
+        alias='random', average_conn_prob=overall_conn_prob, plot=False
+    )
 
     net_random.create_weights()
     net_random.create_network_stats()
