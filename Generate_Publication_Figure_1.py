@@ -18,6 +18,7 @@ import matplotlib.gridspec as gridspec
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 import matplotlib.font_manager as fm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from scipy import stats
 
 # <markdowncell>
 # # Create figure 1.
@@ -100,6 +101,7 @@ B_axis_a = plt.subplot(gs1[0, 1])
 B_axis_b = plt.subplot(gs1[1, 1])
 nb.mark_figure_letter(B_axis_a, 'B')
 
+#TODO: Keep only the structured PLUS input vectors to show the simulation protocol.
 sketch_structured = plt.imread('../Clustered_network_sketch.png')
 B_axis_a.imshow(sketch_structured, interpolation="nearest")
 nb.hide_axis_border(axis=B_axis_a)
@@ -201,6 +203,20 @@ delay_isi_hist, *_ = np.histogram(delay_ISI, bins=bins_isi)
 stim_isi_cv_hist, *_ = np.histogram(stim_ISI_CV, bins=bins_cv)
 delay_isi_cv_hist, *_ = np.histogram(delay_ISI_CV, bins=bins_cv)
 
+# Do Kruskar Wallis test on distributions:
+kruskal_result_cv = stats.kruskal(stim_ISI_CV, delay_ISI_CV, nan_policy='omit')
+kruskal_result_isi = stats.kruskal(stim_ISI, delay_ISI, nan_policy='omit')
+
+average_stim_isi = np.mean(stim_ISI)
+average_delay_isi = np.mean(delay_ISI)
+average_stim_cv = np.nanmean(stim_ISI_CV)
+average_delay_cv = np.nanmean(delay_ISI_CV)
+
+std_stim_isi = np.std(stim_ISI)
+std_delay_isi = np.std(delay_ISI)
+std_stim_cv = np.nanstd(stim_ISI_CV)
+std_delay_cv = np.nanstd(delay_ISI_CV)
+
 D_axis_a.plot(stim_isi_hist / len(stim_ISI), color='C0')
 D_axis_a.axvline(np.mean(stim_ISI) / step_isi, color='C0', linestyle='--')
 D_axis_a.plot(delay_isi_hist / len(delay_ISI), color='C1')
@@ -253,6 +269,8 @@ nb.adjust_spines(E_axis_b, ['left', 'bottom'])
 #E_axis_b.spines['left'].set_position('zero')
 #E_axis_b.spines['bottom'].set_position('zero')
 E_axis_b.axvspan(50.0, 1050.0, ymin=0, ymax=1, color='g', alpha=0.2)
+E_axis_b.set_xlabel('Time (ms)')
+E_axis_b.set_ylabel('Firing Frequency (Hz)')
 
 
 gs4 = gridspec.GridSpec(4, 2, left=0.56, right=0.98, top=0.43, bottom=0.05, wspace=0.2, hspace=0.2)
@@ -286,6 +304,7 @@ custom_range = (0, int(trial_len / 50))
 raw_net_activity = NWBfile.acquisition['binned_activity'].data[:pn_no, :].\
     reshape(pn_no, ntrials, trial_q_no)
 velocity = analysis.md_velocity(pca_data=raw_net_activity)
+G_axis_a.cla()
 G_axis_a.plot(velocity.T, color='gray', alpha=0.2)
 G_axis_a.plot(np.mean(velocity.T, axis=1), color='k', linewidth=2)
 G_axis_a.set_ylabel('Energy Velocity (Hz/s)')
@@ -294,14 +313,11 @@ nb.axis_normal_plot(axis=G_axis_a)
 nb.adjust_spines(G_axis_a, ['left', 'bottom'])
 
 # Figure 1I:
-pca_net_activity, *_ = analysis.pcaL2(
-    NWBfile_array=[NWBfile],
-    custom_range=custom_range,
-    pca_components=20
-)
-velocity = analysis.md_velocity(pca_data=pca_net_activity)
+velocity = analysis.energy(pca_data=raw_net_activity)
+I_axis_a.cla()
 I_axis_a.plot(velocity.T, color='gray', alpha=0.2)
-I_axis_a.plot(np.mean(velocity.T, axis=1), color='k', linewidth=2)
+tmp = np.mean(velocity.T, axis=1)
+I_axis_a.plot(tmp[1:], color='k', linewidth=2)
 I_axis_a.set_ylabel('MD Velocity (Hz/s)')
 I_axis_a.set_xlabel('Time (ms)')
 nb.axis_normal_plot(axis=I_axis_a)

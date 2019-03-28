@@ -962,6 +962,21 @@ def separate_trials(input_NWBfile=None, acquisition_name=None):
     ]
     return trial_activity
 
+def energy(pca_data=None):
+    # 50 ms.
+    ntrials = pca_data.shape[1]
+    #TODO: Get tne q_size correctly and NOT hard coded:
+
+    # TODO: check again the values!
+    dt = 1000.0 / 50.0
+    # Get frobenius norm:
+    #TODO: na balw swsta to 50 (q_size):
+    energy = np.array([
+        np.sum(pca_data[:, trial, :] * dt, axis=0) / 50
+        for trial in range(ntrials)
+    ])
+    return energy
+
 def md_velocity(pca_data=None):
     # Should I do it in the original data and NOT only in the PCA/reduced ones?
     # This function calculates the multidimensional velocity in distances of
@@ -972,8 +987,9 @@ def md_velocity(pca_data=None):
     # TODO: check again the values!
     dt = 1000.0 / 50.0
     # Get frobenius norm:
+    #TODO: na balw swsta to 50 (q_size):
     md_velocity = np.array([
-        np.linalg.norm(np.diff(pca_data[:, trial, :], axis=1), axis=0) / dt
+        np.linalg.norm(np.diff(pca_data[:, trial, :] * dt, axis=1), axis=0) / 50
         for trial in range(ntrials)
     ])
 

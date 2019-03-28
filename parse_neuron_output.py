@@ -37,18 +37,18 @@ analysis_parameters['total_qs'] = \
 
 
 # for structured condition:
-#inputdir = Path(r'G:\Glia\publication_validation\excitatory_validation')
-#outputdir = Path(r'G:\Glia')
-#try:
-#    analysis.create_nwb_validation_file(
-#        inputdir=inputdir,
-#        outputdir=outputdir
-#    )
-#except Exception as e:
-#    print(str(e))
-#
-#print('Done converting validation params and exiting.')
-#sys.exit()
+inputdir = Path(r'G:\Glia\publication_validation\excitatory_validation')
+outputdir = Path(r'G:\Glia')
+try:
+    analysis.create_nwb_validation_file(
+        inputdir=inputdir,
+        outputdir=outputdir
+    )
+except Exception as e:
+    print(str(e))
+
+print('Done converting validation params and exiting.')
+sys.exit()
 
 outputdir = Path(r'G:\Glia')
 
