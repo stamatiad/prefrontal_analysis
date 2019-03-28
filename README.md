@@ -14,7 +14,7 @@ You can install a python 3.7 [anaconda distribution](https://www.anaconda.com/di
 Using conda is recommended:
 ```
 conda update -n base -c defaults conda
-conda create -n publication python=3.7
+conda create -n publication python=3.7.0
 activate publication
 ```
 

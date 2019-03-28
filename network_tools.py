@@ -576,28 +576,22 @@ class Network:
             if len(set(x.type_cells for x in upairs)) > 1:
                 raise ValueError('Please provide only PN2PN pairs!')
 
-            #TODO: remap reciprocal connections; get reciprocal and non
-            # connected and remap them.
+            #TODO: remap reciprocal connections; get reciprocal only, to not
+            # change the overall connection probability, and remap them.
             reciprocal_upairs = np.array([x for x in upairs if x.type_conn == 'reciprocal'])
-            nonconnected_upairs = np.array([x for x in upairs if x.type_conn == 'none'])
+            # nonconnected_upairs = np.array([x for x in upairs if x.type_conn == 'none'])
             # Random permute the lists:
             idx_reciprocal = np.random.permutation(reciprocal_upairs.size)
-            idx_nonconnected = np.random.permutation(nonconnected_upairs.size)
+            # idx_nonconnected = np.random.permutation(nonconnected_upairs.size)
             # Replace % of the reciprocal pairs with non connected:
             percentage_no = int(reciprocal_upairs.size * percentage)
-            upairs_to_randomize = chain(
-                reciprocal_upairs[idx_reciprocal[:percentage_no]].tolist(),
-                nonconnected_upairs[idx_nonconnected[:percentage_no]].tolist()
-            )
-            updated_upairs = randomize_connection_type(
+            upairs_to_randomize = reciprocal_upairs[idx_reciprocal[:percentage_no]].tolist()
+            # The updated pairs will be saved since this is called inside
+            # a context mananger, so no need to return anything.
+            randomize_connection_type(
                 list(upairs_to_randomize),
                 available_types=['A2B', 'B2A']
             )
-
-            #non_changed_upairs = set(upairs) - set(updated_upairs)
-            #all_upairs = non_changed_upairs | updated_upairs
-
-            #return list(all_upairs)
 
 
 
@@ -827,7 +821,12 @@ class Network:
         if self.configuration_alias is 'structured_half_reciprocals':
             perform_structured_connectivity()
             perform_reduce_reciprocals(percentage=50)
-            excitatory_conn_mat = upairs2mat(self.upairs_d.values())
+            pn_upairs = [
+                pair 
+                for pair in self.upairs_d.values() 
+                if pair.type_cells == ('PN_PN')
+                ]
+            excitatory_conn_mat = upairs2mat(pn_upairs)
 
         # Save resulting connectivity matrix to the network:
         connectivity_mat[:self.pc_no, :self.pc_no] = excitatory_conn_mat

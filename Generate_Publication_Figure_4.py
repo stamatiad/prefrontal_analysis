@@ -1,6 +1,17 @@
 # <markdowncell>
 # # # Generate Figure 4
-# Population activity in neuronal pattern space, shows that different neuronal assemblies are active for each population activity trajectories. A. Smoothed single neuron activity for 0.5 sec of stimulus (green area) and 0.5 sec of delay epoch. B. Same population activity as in A, but now reduced with NNMF to 3 components (assembly space). The dynamic and highly irregular single neuron activity, appears smooth in the assembly space. Also the change from the stimulus to delay epoch is evident. C. Activity of 7 trials with delay epoch response (out of 10), colored as three k-means identified states, presented each time with respect to an assembly activity. It is evident that stable population states that cluster in state space (similar colors), appear to correspond to activity of a specific assembly. D. Same data as C, now plotted in assembly space.
+# Population activity in neuronal pattern space, shows that different neuronal 
+# assemblies are active for each population activity trajectories. A. Smoothed 
+# single neuron activity for 0.5 sec of stimulus (green area) and 0.5 sec of 
+# delay epoch. B. Same population activity as in A, but now reduced with NNMF 
+# to 3 components (assembly space). The dynamic and highly irregular single 
+# neuron activity, appears smooth in the assembly space. Also the change from 
+# the stimulus to delay epoch is evident. C. Activity of 7 trials with delay 
+# epoch response (out of 10), colored as three k-means identified states, 
+# presented each time with respect to an assembly activity. It is evident 
+# that stable population states that cluster in state space (similar colors), 
+# appear to correspond to activity of a specific assembly. D. Same data as C, 
+# now plotted in assembly space.
 # <markdowncell>
 # Import necessary modules:
 
@@ -16,12 +27,14 @@ from pynwb import NWBHDF5IO
 from itertools import chain
 import matplotlib.gridspec as gridspec
 from matplotlib import cm
+import pandas as pd
 
 # <markdowncell>
 # ## Create figure 4
 
 # <codecell>
 simulations_dir = Path.cwd().joinpath('simulations')
+data_dir = Path(r'\\139.91.162.90\cluster\stefanos\Documents\GitHub\prefrontal_analysis\prefrontal_analysis')
 glia_dir = Path(r'G:\Glia')
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
@@ -31,6 +44,7 @@ y_nnmf_array = np.linspace(0.1, 1, 2000)
 y_i = 500
 no_of_conditions = 10
 no_of_animals = 4
+dataset_name = lambda x : f'Network {x}'
 
 simulations_dir = Path.cwd().joinpath('simulations')
 plt.rcParams.update({'font.family': 'Helvetica'})
@@ -51,17 +65,23 @@ subplot_width = 4
 subplot_height = 1
 figure4 = plt.figure(figsize=plt.figaspect(subplot_height / subplot_width))
 
-gs1 = gridspec.GridSpec(1, 1, left=0.05, right=0.15, top=0.95, bottom=0.50, wspace=0.35, hspace=0.0)
+gs1 = gridspec.GridSpec(
+    1, 1, left=0.05, right=0.15, top=0.95, bottom=0.50, wspace=0.35, hspace=0.0
+)
 A_axis_a = plt.subplot(gs1[:, 0])
 nb.mark_figure_letter(A_axis_a, 'A')
 
-gs1b = gridspec.GridSpec(3, 1, left=0.05, right=0.15, top=0.40, bottom=0.15, wspace=0.35, hspace=0.0)
+gs1b = gridspec.GridSpec(
+    3, 1, left=0.05, right=0.15, top=0.40, bottom=0.15, wspace=0.35, hspace=0.0
+)
 B_axis_a = plt.subplot(gs1b[0, 0])
 B_axis_b = plt.subplot(gs1b[1, 0])
 B_axis_c = plt.subplot(gs1b[2, 0])
 nb.mark_figure_letter(B_axis_a, 'B')
 
-gs2 = gridspec.GridSpec(3, 1, left=0.25, right=0.50, top=0.95, bottom=0.15, wspace=0.35, hspace=0.2)
+gs2 = gridspec.GridSpec(
+    3, 1, left=0.25, right=0.50, top=0.95, bottom=0.15, wspace=0.35, hspace=0.2
+)
 C_axis_a = plt.subplot(gs2[0, 0])
 C_axis_b = plt.subplot(gs2[1, 0])
 C_axis_c = plt.subplot(gs2[2, 0])
@@ -191,7 +211,9 @@ nb.adjust_spines(C_axis_c, ['left', 'bottom'])
 #D_axis_b.spines['bottom'].set_position('zero')
 #D_axis_b.axvspan(50.0, 1050.0, ymin=0, ymax=1, color='g', alpha=0.2)
 
-gs3 = gridspec.GridSpec(1, 1, left=0.55, right=0.75, top=0.95, bottom=0.02, wspace=0.35, hspace=0.2)
+gs3 = gridspec.GridSpec(
+    1, 1, left=0.55, right=0.75, top=0.95, bottom=0.02, wspace=0.35, hspace=0.2
+)
 D_axis_a = plt.subplot(gs3[0, 0], projection='3d')
 #nb.mark_figure_letter(D_axis_a, 'D')
 
@@ -248,6 +270,103 @@ plot_axes.legend(handles=handles, labels=['State 1', 'State 2', 'State 3'])
 
 #TODO: na pros8eseis ena graph. h timh sto text pou na leei to cosine dist
 # aftwn twn vectors.
+
+gs4 = gridspec.GridSpec(
+    1, 1, left=0.75, right=0.95, top=0.95, bottom=0.02, wspace=0.35, hspace=0.2
+)
+E_axis_a = plt.subplot(gs3[0, 0])
+
+K_star_mat = np.zeros((no_of_animals, no_of_conditions), dtype=int)
+for animal_model in range(1, no_of_animals + 1):
+    for learning_condition in range(1, no_of_conditions + 1):
+        print(f'NT:{animal_model}, LC:{learning_condition}')
+        inputfile = data_dir.joinpath(
+            f'cross_valid_errors_structured{animal_model}_{learning_condition}.hdf'
+        )
+        # Read CV results.
+        try:
+            attribs = pd.read_hdf(inputfile, key='attributes').to_dict()
+            K = attribs['K'][0]
+            max_clusters = attribs['max_clusters'][0]
+            rng_max_iters = attribs['rng_max_iters'][0]
+            error_bar = pd.read_hdf(inputfile, key='error_bar') \
+                .values.reshape(max_clusters, K, rng_max_iters) \
+                    .mean(axis=2)
+            error_test = pd.read_hdf(inputfile, key='error_test') \
+                .values.reshape(max_clusters, K, rng_max_iters) \
+                    .mean(axis=2)
+            K_str_cv = np.argmin(error_test.mean(axis=1))
+            K_star_mat[animal_model - 1, learning_condition - 1] = K_str_cv
+
+        except Exception as e:
+            print(f'Exception! {str(e)}')
+            pass
+
+# TODO: Plot number of clusters per animal/condition (na dw)
+# Run for every learning condition and animal the k-means clustering:
+optimal_clusters_of_group = defaultdict(partial(np.ndarray, 0))
+for animal_model in range(1, no_of_animals + 1):
+    # Pool together no of clusters for one animal model:
+    K_star_over_trials = np.ones((no_of_conditions, 2))
+    for learning_condition in range(1, no_of_conditions + 1):
+        # Lazy load the data as a NWB file. Easy to pass around and
+        # encapsulates info like trial length, stim times etc.
+        #TODO: this might raised some exceptions. Investigate!
+        nwbfile = analysis.load_nwb_file(
+            animal_model=animal_model,
+            learning_condition=learning_condition,
+            experiment_config='structured',
+            type='bn',
+            data_path=simulations_dir
+        )
+
+        trial_len = analysis.get_acquisition_parameters(
+            input_NWBfile=nwbfile,
+            requested_parameters=['trial_len']
+        )
+
+        # TODO: Where is custom range needed? determine a global way
+        # of passing it around...
+        custom_range = (20, int(trial_len / 50))
+
+        K_star, K_labels, pcno = analysis.determine_number_of_clusters(
+            NWBfile_array=[nwbfile],
+            max_clusters=no_of_conditions,
+            y_array=y_array,
+            custom_range=custom_range
+        )
+
+        K_star_over_trials[learning_condition - 1, :] = \
+            [K_star[y_i], pcno]
+
+    optimal_clusters_of_group[dataset_name(animal_model)] = \
+        K_star_over_trials
+
+
+E_axis_a.cla()
+#E_axis_a.set_title('Optimal no of clusters')
+K_s = []
+K_s_CV = []
+models_list = range(1, no_of_animals + 1)
+for pos, animal in enumerate(models_list):
+    K_s.append(list(optimal_clusters_of_group[dataset_name(animal)][:,0]))
+    K_s_CV.append(list(optimal_clusters_of_group[dataset_name(animal)][:,1]))
+
+sb.regplot(x=list(chain(*K_s)), y=list(chain(*PC_no)), ax=E_axis_a, marker='.', color='C0')
+scipy.stats.pearsonr(list(chain(*K_s)), list(chain(*PC_no)))
+xlim = (1 - 0.2, np.array(list(chain(*K_s))).max() + 0.2)
+ylim = (1 - 0.2, np.array(list(chain(*PC_no))).max() + 0.2)
+E_axis_a.set_xlim(xlim[0], xlim[1])
+E_axis_a.set_ylim(ylim[0], ylim[1])
+E_axis_a.set_xticks(list(range(math.ceil(xlim[0]), int(xlim[1]) + 1)))
+E_axis_a.set_yticks(list(range(math.ceil(ylim[0]), int(ylim[1]) + 1)))
+E_axis_a.set_xlabel('K*')
+E_axis_a.set_ylabel('#PCA components')
+nb.mark_figure_letter(E_axis_a, 'D')
+nb.axis_normal_plot(E_axis_a)
+nb.adjust_spines(E_axis_a, ['left', 'bottom'])
+
+nb.mark_figure_letter(E_axis_a, 'E')
 
 figure4.savefig('Figure_4.png')
 figure4.savefig('Figure_4.svg')
