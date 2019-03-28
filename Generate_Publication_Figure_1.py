@@ -156,13 +156,13 @@ for id, axis_obj in zip(exemplar_interneurons_ids, interneuron_axes):
     nb.hide_axis_border(axis=axis_obj)
 
 
-nb.set_horizontal_scalebar(
-    axis=C_axis_f,
-    label='1 second',
-    relativesize=1000,
-    distfromy=0.01,
-    distfromx=0.4
-)
+#nb.set_horizontal_scalebar(
+#    axis=C_axis_f,
+#    label='1 second',
+#    relativesize=1000,
+#    distfromy=0.01,
+#    distfromx=0.4
+#)
 
 D_axis_a = plt.subplot(gs2[:2, 4:])
 D_axis_b = plt.subplot(gs2[3:, 4:])
@@ -240,7 +240,7 @@ nb.axis_normal_plot(axis=D_axis_b)
 nb.adjust_spines(D_axis_b, ['left', 'bottom'])
 
 
-gs3 = gridspec.GridSpec(2, 2, left=0.05, right=0.50, top=0.43, bottom=0.05, wspace=0.2, hspace=0.35)
+gs3 = gridspec.GridSpec(2, 2, left=0.05, right=0.50, top=0.43, bottom=0.1, wspace=0.2, hspace=0.35)
 E_axis_a = plt.subplot(gs3[0, :])
 E_axis_b = plt.subplot(gs3[1, :])
 nb.mark_figure_letter(E_axis_a, 'E')
@@ -273,7 +273,7 @@ E_axis_b.set_xlabel('Time (ms)')
 E_axis_b.set_ylabel('Firing Frequency (Hz)')
 
 
-gs4 = gridspec.GridSpec(4, 2, left=0.56, right=0.98, top=0.43, bottom=0.05, wspace=0.2, hspace=0.2)
+gs4 = gridspec.GridSpec(4, 2, left=0.56, right=0.98, top=0.43, bottom=0.1, wspace=0.2, hspace=0.2)
 F_axis_a = plt.subplot(gs4[:3, 0])
 G_axis_a = plt.subplot(gs4[3:, 0])
 H_axis_a = plt.subplot(gs4[:3, 1], projection='3d')
@@ -309,6 +309,8 @@ G_axis_a.plot(velocity.T, color='gray', alpha=0.2)
 G_axis_a.plot(np.mean(velocity.T, axis=1), color='k', linewidth=2)
 G_axis_a.set_ylabel('Energy Velocity (Hz/s)')
 G_axis_a.set_xlabel('Time (ms)')
+#TODO: use proper values, not hardcoded!
+G_axis_a.axvspan(50.0 / 50, 1050.0 /50 , ymin=0, ymax=1, color='g', alpha=0.2)
 nb.axis_normal_plot(axis=G_axis_a)
 nb.adjust_spines(G_axis_a, ['left', 'bottom'])
 
@@ -320,6 +322,8 @@ tmp = np.mean(velocity.T, axis=1)
 I_axis_a.plot(tmp[1:], color='k', linewidth=2)
 I_axis_a.set_ylabel('MD Velocity (Hz/s)')
 I_axis_a.set_xlabel('Time (ms)')
+#TODO: use proper values, not hardcoded!
+I_axis_a.axvspan(50.0 / 50, 1050.0 /50 , ymin=0, ymax=1, color='g', alpha=0.2)
 nb.axis_normal_plot(axis=I_axis_a)
 nb.adjust_spines(I_axis_a, ['left', 'bottom'])
 
@@ -370,8 +374,16 @@ figure1.colorbar(im, orientation='horizontal', fraction=0.05,
                  cax=cax)
 
 # Figure 1H:
+K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+    NWBfile_array=[NWBfile],
+    max_clusters=no_of_conditions,
+    y_array=y_array,
+    custom_range=custom_range
+)
+
 analysis.plot_pca_in_3d(
-    NWBfile=NWBfile, custom_range=custom_range, smooth=True, plot_axes=H_axis_a
+    NWBfile=NWBfile, custom_range=custom_range, smooth=True, plot_axes=H_axis_a,
+    klabels=K_labels[0, :].T
 )
 #azim, elev = H_axis_a.azim, H_axis_a.elev
 print((H_axis_a.azim, H_axis_a.elev))
