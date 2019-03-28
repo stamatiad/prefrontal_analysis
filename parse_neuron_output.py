@@ -52,6 +52,36 @@ analysis_parameters['total_qs'] = \
 
 outputdir = Path(r'G:\Glia')
 
+# for structured half reciprocals condition:
+inputdir = Path(r'\\139.91.162.90\cluster\stefanos\Documents\Glia')
+outputdir = inputdir
+for animal_model in range(1, 2):
+    for learning_condition in range(1, 11):
+        new_params = {
+            **analysis_parameters,
+            'excitation_bias': 1.75,
+            'inhibition_bias': 1.5,
+            'nmda_bias': 6.0,
+            'ampa_bias': 1.0,
+            'sim_duration': 5,
+            'trial_len': 5000,
+            'animal_model': animal_model,
+            'learning_condition': learning_condition,
+            'experiment_config': 'structured_half_reciprocals'
+        }
+        try:
+            analysis.create_nwb_file(
+                inputdir=inputdir,
+                outputdir=outputdir,
+                **new_params
+            )
+        except Exception as e:
+            print(str(e))
+            pass
+
+print('Done and exiting.')
+sys.exit()
+
 # for structured condition:
 inputdir = Path(r'G:\Glia\structured')
 for animal_model in range(1, 2):

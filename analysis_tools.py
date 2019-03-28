@@ -492,12 +492,12 @@ def create_nwb_file(inputdir=None, outputdir=None, \
                 membrane_potential = np.concatenate((membrane_potential, vsoma), axis=1)
             else:
                 membrane_potential = vsoma
+            print(f'Trial {trial}, processed successfully.')
         else:
-            print('NEURON file is missing!')
+            print(f'Trial {trial} NEURON file is missing!\n\t{str(inputfile)}')
             # Inform next trials to skip the ms of the missing file
             trial_offset_samples += nsamples
 
-        print(f'Trial {trial}, processed.')
 
     if add_membrane_potential:
         # Chunk and compress the data:
@@ -1004,6 +1004,71 @@ def md_velocity(pca_data=None):
     #end
     return md_velocity
 
+
+def sparsness(NWBfile, custom_range):
+    # Treves - Rolls metric of population sparsness:
+    # function sparsness = S_tr(r)
+    # r is the population rates: a matrix MxN of M neurons and N trials
+    # stamatiad.st@gmail.com
+    # S_T = @(r,N) (sum(r/N))^2 / (sum(r.^2/N));
+
+    animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+    trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+        get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=[
+                'animal_model_id', 'learning_condition_id', 'ncells',
+                'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+                'correct_trials_idx', 'correct_trials_no'
+            ]
+        )
+
+    if correct_trials_no < 1:
+        raise ValueError('No correct trials were found in the NWBfile!')
+
+    # Use custom_range to compute PCA only on a portion of the original data:
+    if custom_range is not None:
+        if not isinstance(custom_range, tuple):
+            raise ValueError('Custom range must be a tuple!')
+        trial_slice_start = int(custom_range[0])
+        trial_slice_stop = int(custom_range[1])
+        duration = trial_slice_stop - trial_slice_start
+    else:
+        duration = trial_q_no
+
+    # Load binned acquisition (all trials together)
+    binned_network_activity = NWBfile. \
+                                  acquisition['binned_activity']. \
+                                  data[:pn_no, :]. \
+        reshape(pn_no, ntrials, trial_q_no)
+    # Slice out non correct trials and unwanted trial periods:
+    tmp = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
+    trial_rates = np.median(tmp, axis=2)
+
+    M, N = trial_rates.shape
+    # N = size(r,1);
+    # M = size(r,2);
+    S_TR = np.power(np.sum(trial_rates / ntrials, axis=1), 2) / \
+        np.sum(np.power(trial_rates, 2) / N, axis=1)
+
+    #TODO: check that it works!
+    return 1 - S_TR
+
+def make_colormap(seq):
+    """Return a LinearSegmentedColormap
+    seq: a sequence of floats and RGB-tuples. The floats should be increasing
+    and in the interval (0,1).
+    """
+    seq = [(None,) * 3, 0.0] + list(seq) + [1.0, (None,) * 3]
+    cdict = {'red': [], 'green': [], 'blue': []}
+    for i, item in enumerate(seq):
+        if isinstance(item, float):
+            r1, g1, b1 = seq[i - 1]
+            r2, g2, b2 = seq[i + 1]
+            cdict['red'].append([item, r1, r2])
+            cdict['green'].append([item, g1, g2])
+            cdict['blue'].append([item, b1, b2])
+    return mcolors.LinearSegmentedColormap('CustomMap', cdict)
 
 def plot_pca_in_3d(NWBfile=None, custom_range=None, smooth=False, \
                    plot_axes=None, klabels=None):

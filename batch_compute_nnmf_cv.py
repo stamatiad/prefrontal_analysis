@@ -16,7 +16,7 @@ plt.rcParams["figure.figsize"] = (15, 15)
 # Do only figures that will probably not change much.
 plt.rcParams.update({'font.family': 'Helvetica'})
 
-no_of_conditions = 4
+no_of_conditions = 10
 no_of_animals = 4
 param_pairs = []
 for animal_model in range(1, no_of_animals + 1):
@@ -57,6 +57,7 @@ def compute_nnmf_cv(inputs):
 if __name__ == '__main__':
     #cwd = Path(r'C:\Users\steve\Documents\analysis\Python')
     cwd = Path.cwd()
+    data_dir = Path(r'\\139.91.162.90\cluster\stefanos\Documents\GitHub\prefrontal_analysis\prefrontal_analysis')
     compute = False
     parallel = False
 
@@ -77,10 +78,10 @@ if __name__ == '__main__':
         #compute_nnmf_cv(param_pairs[1])
         #TODO: Load the CV results an plot them to see if correct
         fig = plt.figure()
-        for animal_model in range(3, no_of_animals + 1):
-            for learning_condition in range(3, no_of_conditions + 1):
+        for animal_model in range(1, no_of_animals + 1):
+            for learning_condition in range(1, no_of_conditions + 1):
                 print(f'NT:{animal_model}, LC:{learning_condition}')
-                inputfile = cwd.joinpath(
+                inputfile = data_dir.joinpath(
                     f'cross_valid_errors_structured{animal_model}_{learning_condition}.hdf'
                 )
                 # Read CV results.
@@ -100,11 +101,11 @@ if __name__ == '__main__':
                     plt.plot(error_test, color='C1', alpha=0.2)
                     plt.plot(error_bar.mean(axis=1), color='C0')
                     plt.plot(error_test.mean(axis=1), color='C1')
-                    K_str_cv = np.argmin(error_test.mean(axis=0))
+                    K_str_cv = np.argmin(error_test.mean(axis=1))
                     plt.title(f'NT:{animal_model}, LC:{learning_condition}, K*cv:{K_str_cv}')
                     #plt.show()
                     #plt.waitforbuttonpress()
-                    plt.savefig(str(cwd.joinpath(f'NT{animal_model} LC{learning_condition} K_cv{K_str_cv}_structured.png')), format='png')
+                    plt.savefig(str(data_dir.joinpath(f'NT{animal_model} LC{learning_condition} K_cv{K_str_cv}_structured.png')), format='png')
                     plt.cla()
                     # Giati einai toso mikrotero to test error? Mipws ginetai kati me ta data
                     # kai to train blepei to test?
