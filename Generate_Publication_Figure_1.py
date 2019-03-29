@@ -307,11 +307,12 @@ custom_range = (0, int(trial_len / 50))
 # This is Hz/Sec.
 net_activity = analysis.get_correct_trials(NWBfile)
 # Filter only trials with PA
-velocity = analysis.velocity(data=net_activity)
+energy = analysis.energy(data=net_activity)
 G_axis_a.cla()
-G_axis_a.plot(velocity.T, color='gray', alpha=0.2)
-G_axis_a.plot(np.mean(velocity.T, axis=1), color='k', linewidth=2)
-G_axis_a.set_ylabel('Velocity (Hz/s)')
+G_axis_a.plot(energy.T, color='gray', alpha=0.2)
+tmp = np.mean(energy.T, axis=1)
+G_axis_a.plot(tmp[1:], color='k', linewidth=2)
+G_axis_a.set_ylabel('Energy (Hz/s)')
 G_axis_a.set_xlabel('Time (ms)')
 #TODO: use proper values, not hardcoded!
 G_axis_a.axvspan(50.0 / 50, 1050.0 /50 , ymin=0, ymax=1, color='g', alpha=0.2)
@@ -319,11 +320,10 @@ nb.axis_normal_plot(axis=G_axis_a)
 nb.adjust_spines(G_axis_a, ['left', 'bottom'])
 
 # Figure 1I:
-energy = analysis.energy(data=net_activity)
+velocity = analysis.velocity(data=net_activity)
 I_axis_a.cla()
-I_axis_a.plot(energy.T, color='gray', alpha=0.2)
-tmp = np.mean(energy.T, axis=1)
-I_axis_a.plot(tmp[1:], color='k', linewidth=2)
+I_axis_a.plot(velocity.T, color='gray', alpha=0.2)
+I_axis_a.plot(np.mean(velocity.T, axis=1), color='k', linewidth=2)
 I_axis_a.set_ylabel('Energy (Hz/s)')
 I_axis_a.set_xlabel('Time (ms)')
 #TODO: use proper values, not hardcoded!
