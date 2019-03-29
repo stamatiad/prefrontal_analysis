@@ -29,8 +29,6 @@ glia_dir = Path(r'G:\Glia')
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
 
-y_array = np.linspace(0.1, 100, 1000)
-y_i = 500
 
 axis_label_font_size = 10
 no_of_conditions = 10
@@ -43,10 +41,14 @@ plt.ion()
 figure4 = plt.figure(figsize=plt.figaspect(0.5))
 figure4_axis = np.zeros((subplot_height, subplot_width), dtype=object)
 dataset_name = lambda x : f'Network {x}'
+plt.show(block=False)
 
 # Fig 4B:
 B_axis = figure4.add_subplot(
     subplot_height, subplot_width, 2
+)
+C_axis = figure4.add_subplot(
+    subplot_height, subplot_width, 3
 )
 if False:
     # Plot what happens with no NMDA, no Mg:
@@ -74,54 +76,107 @@ if False:
 
                     # Determine the optimal number of clusters for all trials of a single animal
                     # model/learning condition.
-                    K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+                    K_star, K_labels, BIC_val, _ = \
+                        analysis.determine_number_of_clusters(
                         NWBfile_array=[NWBfile],
                         max_clusters=10,
-                        y_array=y_array,
                         custom_range=custom_range
                     )
 
-                    K_star_over_trials[learning_condition - 1, config_id] =                     K_star[y_i]
+                    K_star_over_trials[learning_condition - 1, config_id] = \
+                        K_star
                 except Exception as e:
                     print(f'Got Exception during analysis {str(e)}')
 
-        optimal_clusters_of_group[dataset_name(animal_model)] =         K_star_over_trials
+        optimal_clusters_of_group[dataset_name(animal_model)] = \
+            K_star_over_trials
 
 # For no NMDA case:
-for animal_model in range(1, 1 + 1):
-    try:
-        # Pool together no of clusters for one animal model:
-        # Lazy load the data as a NWB file. Easy to pass around and encapsulates info like trial length, stim times etc.
-        NWBfiles = [
-            analysis.load_nwb_file(
-                animal_model=animal_model,
-                learning_condition=learning_condition,
-                experiment_config='structured_nonmda',
-                type='bn',
-                data_path=simulations_dir
+cases = ['structured_nonmda', 'structured_nomg']
+case_axes = [B_axis, C_axis]
+for case, axis in zip(cases, case_axes):
+    for animal_model in range(1, 1 + 1):
+        try:
+            # Pool together no of clusters for one animal model:
+            # Lazy load the data as a NWB file. Easy to pass around and encapsulates info like trial length, stim times etc.
+            NWBfiles = [
+                analysis.load_nwb_file(
+                    animal_model=animal_model,
+                    learning_condition=learning_condition,
+                    experiment_config=case,
+                    type='bn',
+                    data_path=simulations_dir
+                )
+                for learning_condition in range(1, 5 + 1)
+            ]
+
+            print('Done loading!')
+
+            trial_len, ntrials = analysis.get_acquisition_parameters(
+                input_NWBfile=NWBfiles[0],
+                requested_parameters=['trial_len', 'ntrials']
             )
-            for learning_condition in range(1, 5 + 1)
-        ]
+            custom_range = (20, int(trial_len / 50))
 
-        trial_len, ntrials = analysis.get_acquisition_parameters(
-            input_NWBfile=NWBfiles[0],
-            requested_parameters=['trial_len', 'ntrials']
-        )
-        custom_range = (20, int(trial_len / 50))
 
-        # Plot the annotated clustering results:
-        #TODO: are these correctly labeled?
-        K_labels = np.matlib.repmat(np.arange(1, len(NWBfiles) + 1), ntrials, 1) \
-            .T.reshape(ntrials, -1).reshape(1, -1)[0]
-        analysis.pcaL2(
-            NWBfile_array=NWBfiles,
-            klabels=K_labels,
-            custom_range=custom_range,
-            smooth=True, plot_2d=True,
-            plot_axes=B_axis
-        )
-    except Exception as e:
-        print(f'Got Exception during analysis {str(e)}')
+            #TODO: san an mou fainetai oti exoun diaforetika properties, Mallon
+            # ienai ta correct no of trials, allana to 3anadw.. DEN EINAI AFTA!!!
+            #For all the synaptic rearangements:
+            for synarr in range(5):
+                try:
+                    # Check binned activity for the differences:
+                    animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+                    trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+                        analysis.get_acquisition_parameters(
+                            input_NWBfile=NWBfiles[synarr],
+                            requested_parameters=[
+                                'animal_model_id', 'learning_condition_id', 'ncells',
+                                'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+                                'correct_trials_idx', 'correct_trials_no'
+                            ]
+                    )
+                    # Use custom_range to compute PCA only on a portion of the original data:
+                    if custom_range is not None:
+                        if not isinstance(custom_range, tuple):
+                            raise ValueError('Custom range must be a tuple!')
+                        trial_slice_start = int(custom_range[0])
+                        trial_slice_stop = int(custom_range[1])
+                        duration = trial_slice_stop - trial_slice_start
+                    else:
+                        duration = trial_q_no
+
+                    binned_network_activity = NWBfiles[synarr]. \
+                                                acquisition['binned_activity']. \
+                                                data[:pn_no, :]. \
+                        reshape(pn_no, ntrials, trial_q_no)
+                    # Slice out non correct trials and unwanted trial periods:
+                    tmp = binned_network_activity[:, correct_trials_idx, \
+                        trial_slice_start:trial_slice_stop]
+                    # Reshape in array with m=cells, n=time bins.
+                    tmp = tmp.reshape(pn_no, correct_trials_no * duration)
+                    fig,ax = plt.subplots(1,1)
+                    ax.imshow(tmp)
+                    fig.savefig(f'binact_{case}_{synarr}_{animal_model}.png')
+                except Exception as e:
+                    print(f'WHAT HAPPENED??? \n\n\n\t{str(e)}')
+
+
+
+
+            # Plot the annotated clustering results:
+            #TODO: are these correctly labeled?
+            K_labels = np.matlib.repmat(np.arange(1, len(NWBfiles) + 1), ntrials, 1) \
+                .T.reshape(ntrials, -1).reshape(1, -1)[0]
+            analysis.pcaL2(
+                NWBfile_array=NWBfiles,
+                klabels=K_labels,
+                custom_range=custom_range,
+                smooth=True, plot_2d=True,
+                plot_axes=axis
+            )
+        except Exception as e:
+            print(f'Got Exception during analysis {str(e)}')
+    axis.set_title(case)
 
 
 
@@ -161,18 +216,18 @@ for animal_model in range(1, no_of_animals + 1):
 
                 # Determine the optimal number of clusters for all trials of a single animal
                 # model/learning condition.
-                K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+                K_star, K_labels, BIC_val, _ = \
+                    analysis.determine_number_of_clusters(
                     NWBfile_array=[NWBfile],
                     max_clusters=10,
-                    y_array=y_array,
                     custom_range=custom_range
                 )
 
-                K_star_over_trials[learning_condition - 1, config_id] =                     K_star[y_i]
+                K_star_over_trials[learning_condition - 1, config_id] = K_star
             except Exception as e:
                 print(f'Got Exception during analysis {str(e)}')
 
-    optimal_clusters_of_group[dataset_name(animal_model)] =         K_star_over_trials
+    optimal_clusters_of_group[dataset_name(animal_model)] = K_star_over_trials
 
 # Use histogram instead of boxplot:
 tmp = [
@@ -191,10 +246,16 @@ kstar_str_hist, *_ = np.histogram(K_stars_structured, bins=bins_str)
 bins_rnd = np.arange(1, np.max(K_stars_random) + 2, 1)
 kstar_rnd_hist, *_ = np.histogram(K_stars_random, bins=bins_rnd)
 
-A_axis.plot(kstar_str_hist / len(K_stars_structured), color='C0')
-A_axis.axvline(np.mean(K_stars_structured), color='C0', linestyle='--')
-A_axis.plot(kstar_rnd_hist / len(K_stars_random), color='C1')
-A_axis.axvline(np.mean(K_stars_random), color='C1', linestyle='--')
+A_axis.bar(
+    bins_str[:-1],kstar_str_hist / len(K_stars_structured), color='C0', 
+    alpha=0.5
+)
+#A_axis.axvline(np.mean(K_stars_structured), color='C0', linestyle='--')
+A_axis.bar(
+    bins_rnd[:-1],kstar_rnd_hist / len(K_stars_random), color='C1', 
+    alpha=0.5
+)
+#A_axis.axvline(np.mean(K_stars_random), color='C1', linestyle='--')
 A_axis.set_xticks(range(bins_str.size + 1))
 A_axis.set_xticklabels(np.round(bins_str, 1))
 A_axis.set_xlabel('K*', fontsize=axis_label_font_size)

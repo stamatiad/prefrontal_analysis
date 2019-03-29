@@ -29,9 +29,6 @@ glia_dir = Path(r'G:\Glia')
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
 
-y_array = np.linspace(0.1, 100, 1000)
-y_i = 500
-
 axis_label_font_size = 10
 no_of_conditions = 10
 no_of_animals = 4
@@ -72,19 +69,22 @@ for axis, (idx, learning_condition) in zip(condition_axes, enumerate(conditions)
     custom_range = (20, int(trial_len / 50))
 
     # This should be reproducable with the call above:
-    K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+    K_star, K_labels, BIC_val, _ = analysis.determine_number_of_clusters(
         NWBfile_array=[NWBfile],
         max_clusters=no_of_conditions,
-        y_array=y_array,
         custom_range=custom_range
     )
-    print(f'LC:{learning_condition}: K*:{K_star[y_i]}')
+    print(f'LC:{learning_condition}: K*:{K_star}')
+
+    TR_sp = analysis.sparsness(NWBfile, custom_range)
+    nb.report_value(f'Fig 3{idx+1}: BIC', BIC_val)
+    nb.report_value(f'Fig 3{idx+1}: Sparsness', TR_sp)
 
     # Plot the annotated clustering results:
     axis.cla()
     analysis.pcaL2(
         NWBfile_array=[NWBfile],
-        klabels=K_labels[y_i, :].T,
+        klabels=K_labels,
         custom_range=custom_range,
         smooth=True, plot_3d=True,
         plot_axes=axis
@@ -119,15 +119,14 @@ for animal_model in range(1, no_of_animals + 1):
         # of passing it around...
         custom_range = (20, int(trial_len / 50))
 
-        K_star, K_labels, pcno = analysis.determine_number_of_clusters(
+        K_star, K_labels, BIC_val, pcno = analysis.determine_number_of_clusters(
             NWBfile_array=[nwbfile],
             max_clusters=no_of_conditions,
-            y_array=y_array,
             custom_range=custom_range
         )
 
         K_star_over_trials[learning_condition - 1, :] = \
-            [K_star[y_i], pcno]
+            [K_star, pcno]
 
     optimal_clusters_of_group[dataset_name(animal_model)] = \
         K_star_over_trials
@@ -175,10 +174,11 @@ K_stars = list(chain(*tmp))
 bins = np.arange(1, np.max(K_stars) + 2, 1)
 kstar_hist, *_ = np.histogram(K_stars, bins=bins)
 
-C_axis.plot(kstar_hist / len(K_stars), color='C0')
-C_axis.axvline(np.mean(K_stars), color='C0', linestyle='--')
+C_axis.bar(bins[:-1], kstar_hist / len(K_stars), color='C0')
+#TODO: kane bar plot!na ftia3w ta labels (-1)
+#C_axis.axvline(np.mean(K_stars) - 1, color='C0', linestyle='--')
 C_axis.set_xticks(range(bins.size + 1))
-C_axis.set_xticklabels(np.round(bins, 1))
+C_axis.set_xticklabels(range(bins.size))
 C_axis.set_xlabel('K*', fontsize=axis_label_font_size)
 C_axis.set_ylabel('Relative Frequency', fontsize=axis_label_font_size)
 nb.axis_normal_plot(axis=C_axis)
@@ -238,7 +238,6 @@ for idx, animal_model in enumerate([2]):
     #K_star, K_labels, *_ = analysis.determine_number_of_clusters(
     #    NWBfile_array=NWBfiles,
     #    max_clusters=no_of_conditions * ntrials,
-    #    y_array=y_array,
     #    custom_range=custom_range
     #)
 

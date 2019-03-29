@@ -973,9 +973,9 @@ def separate_trials(input_NWBfile=None, acquisition_name=None):
     ]
     return trial_activity
 
-def energy(pca_data=None):
+def energy(data=None):
     # 50 ms.
-    ntrials = pca_data.shape[1]
+    ntrials = data.shape[1]
     #TODO: Get tne q_size correctly and NOT hard coded:
 
     # TODO: check again the values!
@@ -983,24 +983,25 @@ def energy(pca_data=None):
     # Get frobenius norm:
     #TODO: na balw swsta to 50 (q_size):
     energy = np.array([
-        np.sum(pca_data[:, trial, :] * dt, axis=0) / 50
+        np.sum(data[:, trial, :] * dt, axis=0) / 50
         for trial in range(ntrials)
     ])
     return energy
 
-def md_velocity(pca_data=None):
+def velocity(data=None):
     # Should I do it in the original data and NOT only in the PCA/reduced ones?
     # This function calculates the multidimensional velocity in distances of
     # 50 ms.
-    ntrials = pca_data.shape[1]
+    ntrials = data.shape[1]
     #TODO: Get tne q_size correctly and NOT hard coded:
 
     # TODO: check again the values!
     dt = 1000.0 / 50.0
     # Get frobenius norm:
+    #TODO: DOUBLE CHECK
     #TODO: na balw swsta to 50 (q_size):
-    md_velocity = np.array([
-        np.linalg.norm(np.diff(pca_data[:, trial, :] * dt, axis=1), axis=0) / 50
+    velocity = np.array([
+        np.linalg.norm(np.diff(data[:, trial, :] * dt, axis=1), axis=0) / 50
         for trial in range(ntrials)
     ])
 
@@ -1019,16 +1020,10 @@ def md_velocity(pca_data=None):
     #        score_vel{gri,c} = filter(b,1,score_vel{gri,c});
     #    end
     #end
-    return md_velocity
+    return velocity
 
-
-def sparsness(NWBfile, custom_range):
-    # Treves - Rolls metric of population sparsness:
-    # function sparsness = S_tr(r)
-    # r is the population rates: a matrix MxN of M neurons and N trials
-    # stamatiad.st@gmail.com
-    # S_T = @(r,N) (sum(r/N))^2 / (sum(r.^2/N));
-
+def get_correct_trials(NWBfile, custom_range=None):
+    # Return only trials with persistent activity (see text).
     animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
     trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
         get_acquisition_parameters(
@@ -1051,6 +1046,9 @@ def sparsness(NWBfile, custom_range):
         trial_slice_stop = int(custom_range[1])
         duration = trial_slice_stop - trial_slice_start
     else:
+        #TODO: SE OLA EINAI LA8OS. Prepei na exw ta trial start stop.
+        trial_slice_start = 0
+        trial_slice_stop = trial_q_no
         duration = trial_q_no
 
     # Load binned acquisition (all trials together)
@@ -1059,7 +1057,20 @@ def sparsness(NWBfile, custom_range):
                                   data[:pn_no, :]. \
         reshape(pn_no, ntrials, trial_q_no)
     # Slice out non correct trials and unwanted trial periods:
-    tmp = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
+    response_array = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
+
+    return response_array
+
+
+def sparsness(NWBfile, custom_range):
+    # Treves - Rolls metric of population sparsness:
+    # function sparsness = S_tr(r)
+    # r is the population rates: a matrix MxN of M neurons and N trials
+    # stamatiad.st@gmail.com
+    # S_T = @(r,N) (sum(r/N))^2 / (sum(r.^2/N));
+
+    tmp = get_correct_trials(NWBfile)
+
     trial_rates = np.median(tmp, axis=2)
 
     M, N = trial_rates.shape
@@ -1091,37 +1102,7 @@ def plot_pca_in_3d(NWBfile=None, custom_range=None, smooth=False, \
                    plot_axes=None, klabels=None):
     #TODO: is this deterministic? Because some times I got an error in some
     # matrix.
-    animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
-    trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
-        get_acquisition_parameters(
-            input_NWBfile=NWBfile,
-            requested_parameters=[
-                'animal_model_id', 'learning_condition_id', 'ncells',
-                'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
-                'correct_trials_idx', 'correct_trials_no'
-            ]
-        )
-
-    if correct_trials_no < 1:
-        raise ValueError('No correct trials were found in the NWBfile!')
-
-    # Use custom_range to compute PCA only on a portion of the original data:
-    if custom_range is not None:
-        if not isinstance(custom_range, tuple):
-            raise ValueError('Custom range must be a tuple!')
-        trial_slice_start = int(custom_range[0])
-        trial_slice_stop = int(custom_range[1])
-        duration = trial_slice_stop - trial_slice_start
-    else:
-        duration = trial_q_no
-
-    # Load binned acquisition (all trials together)
-    binned_network_activity = NWBfile. \
-                                  acquisition['binned_activity']. \
-                                  data[:pn_no, :]. \
-        reshape(pn_no, ntrials, trial_q_no)
-    # Slice out non correct trials and unwanted trial periods:
-    tmp = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
+    tmp = get_correct_trials(NWBfile)
     # Reshape in array with m=cells, n=time bins.
     pool_array = tmp.reshape(pn_no, correct_trials_no * duration)
 
@@ -1700,37 +1681,7 @@ def NNMF(
     for input_NWBfile in NWBfile_array:
         #TODO: is this deterministic? Because some times I got an error in some
         # matrix.
-        animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
-        trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
-            get_acquisition_parameters(
-                input_NWBfile=input_NWBfile,
-                requested_parameters=[
-                    'animal_model_id', 'learning_condition_id', 'ncells',
-                    'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
-                    'correct_trials_idx', 'correct_trials_no'
-                ]
-            )
-
-        if correct_trials_no < 1:
-            raise ValueError('No correct trials were found in the NWBfile!')
-
-        # Use custom_range to compute PCA only on a portion of the original data:
-        if custom_range is not None:
-            if not isinstance(custom_range, tuple):
-                raise ValueError('Custom range must be a tuple!')
-            trial_slice_start = int(custom_range[0])
-            trial_slice_stop = int(custom_range[1])
-            duration = trial_slice_stop - trial_slice_start
-        else:
-            duration = trial_q_no
-
-        # Load binned acquisition (all trials together)
-        binned_network_activity = input_NWBfile. \
-                                      acquisition['binned_activity']. \
-                                      data[:pn_no, :]. \
-            reshape(pn_no, ntrials, trial_q_no)
-        # Slice out non correct trials and unwanted trial periods:
-        tmp = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
+        tmp = get_correct_trials(input_NWBfile)
         # Reshape in array with m=cells, n=time bins.
         tmp = tmp.reshape(pn_no, correct_trials_no * duration)
         # Concatinate it the pool array:
@@ -2552,7 +2503,7 @@ def test_for_overfit(klabels=None, data_pca=None, S=None, threshold=None):
 
 @nwb_unique_rng
 def determine_number_of_clusters(
-        NWBfile_array=[], max_clusters=None, y_array=None, custom_range=None,
+        NWBfile_array=[], max_clusters=None, custom_range=None,
         **kwargs
     ):
     '''
@@ -2560,7 +2511,6 @@ def determine_number_of_clusters(
 
     :param NWBfile_array:
     :param max_clusters:
-    :param y_array:
     :param custom_range:
     :param kwargs:
     :return:
@@ -2622,7 +2572,6 @@ def determine_number_of_clusters(
         BIC_all = [0] * max_clusters
         md_params_all = [0] * max_clusters
         # Calculate BIC for up to max_clusters:
-        #TODO: remove the y since you dont use it anymore!
         for i, k in enumerate(range(1, max_clusters + 1)):
             #print(f'Clustering with {k} clusters.')
             klabels, J_k, md_array, md_params_d = kmeans_clustering(
@@ -2661,37 +2610,37 @@ def determine_number_of_clusters(
                 J_k_all[i] = J_k
                 md_params_all[i] = md_params_d
 
-        K_star = np.zeros((y_array.size, 1), dtype=int)
-        K_labels = np.zeros((y_array.size, ntrials), dtype=int)
-        for i, y in enumerate(y_array):
-            if len(np.unique(BIC_all)) == 1:
-                # If all BIC values are the same, we overfitted on k=2. So we get
-                # the labels from k=1.
-                K_s_labelidx = 0
-                # and the K* is one:
-                optimal_k = 1
-            else:
-                # Compute K* as a variant of the rate distortion function, utilizing BIC:
-                #K_s = np.argmax(np.diff(np.power(BIC_all, -y)))
-                #TODO: I argue that the BIC is already done, since I just have
-                # pick the smallest value:
-                K_s = np.argmin(BIC_all)
-                # The idx of the kmeans_labels array (starts from 0 = one cluster):
-                K_s_labelidx = K_s
-                # This directly corresponds to how many clusters:
-                optimal_k = K_s_labelidx + 1
+        #TODO: remove the y since you dont use it anymore!
+        if len(np.unique(BIC_all)) == 1:
+            # If all BIC values are the same, we overfitted on k=2. So we get
+            # the labels from k=1.
+            K_s_labelidx = 0
+            # and the K* is one:
+            optimal_k = 1
+        else:
+            # Compute K* as a variant of the rate distortion function, utilizing BIC:
+            #K_s = np.argmax(np.diff(np.power(BIC_all, -y)))
+            #TODO: I argue that the BIC is already done, since I just have
+            # pick the smallest value:
+            K_s = np.argmin(BIC_all)
+            # The idx of the kmeans_labels array (starts from 0 = one cluster):
+            K_s_labelidx = K_s
+            # This directly corresponds to how many clusters:
+            optimal_k = K_s_labelidx + 1
 
-            # Add 1 to start counting from 1, then another, since we diff above:
-            # This is the optimal no of clusters:
-            K_star[i, 0] = optimal_k
-            # Store the klabels corresponding to each K*:
-            K_labels[i, :] = kmeans_labels[K_s_labelidx, :]
+        # Add 1 to start counting from 1, then another, since we diff above:
+        # This is the optimal no of clusters:
+        K_star = optimal_k
+        # Store the klabels corresponding to each K*:
+        K_labels = kmeans_labels[K_s_labelidx, :]
 
-            # Calculate no of PC that cross the 70% variance:
+        # Get BIC value:
+        BIC_value = np.min(BIC_all)
+        # Calculate no of PC that cross the 70% variance:
 
-            #principal_components_no = np.nonzero(np.greater(np.cumsum(explained_variance), 0.7))[0][0] + 1
+        #principal_components_no = np.nonzero(np.greater(np.cumsum(explained_variance), 0.7))[0][0] + 1
 
-        return K_star, K_labels, no_optimal_L
+        return K_star, K_labels, BIC_value, no_optimal_L
     except Exception as e:
         raise e
 
@@ -2742,27 +2691,7 @@ def determine_number_of_ensembles(
     one_sec_qs = 1000 / q_size
     start_q = total_trial_qs - one_sec_qs
 
-    if correct_trials_no < 1:
-        raise ValueError('No correct trials were found in the NWBfile!')
-
-    # Use custom_range to compute PCA only on a portion of the original data:
-    if custom_range is not None:
-        if not isinstance(custom_range, tuple):
-            raise ValueError('Custom range must be a tuple!')
-        trial_slice_start = int(custom_range[0])
-        trial_slice_stop = int(custom_range[1])
-        duration = trial_slice_stop - trial_slice_start
-    else:
-        duration = trial_q_no
-
-    #TODO: handle single file or array, decide:
-    # Load binned acquisition (all trials together)
-    binned_network_activity = NWBfile_array[0]. \
-                                  acquisition['binned_activity']. \
-                                  data[:pn_no, :]. \
-        reshape(pn_no, ntrials, trial_q_no)
-    # Slice out non correct trials and unwanted trial periods:
-    tmp = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
+    tmp = get_correct_trials(NWBfile_array[0])
     # Reshape in array with m=cells, n=time bins.
     data = tmp.reshape(pn_no, correct_trials_no * duration)
 

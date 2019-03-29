@@ -234,3 +234,7 @@ def set_horizontal_scalebar(axis=None, label=None, relativesize=None,
     axis.add_artist(scalebar)
 
     pass
+
+def report_value(name, value):
+    print(f'Reporting value: \n\t{name} -> {value}\n')
+    pass

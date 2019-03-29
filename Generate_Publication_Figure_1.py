@@ -29,8 +29,6 @@ glia_dir = Path(r'G:\Glia')
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
 
-y_array = np.linspace(0.1, 100, 1000)
-y_i = 500
 plt.ion()
 axis_label_font_size = 10
 no_of_conditions = 10
@@ -250,6 +248,12 @@ nb.mark_figure_letter(E_axis_a, 'E')
 # Trials that have pa: 2, 6. The 6 is quite nice!
 nb.plot_trial_spiketrains(NWBfile=NWBfile, trialid=6, plot_axis=E_axis_a)
 
+#TODO: blah
+TR_sp = analysis.sparsness(NWBfile, custom_range)
+nb.report_value(f'Fig 1E: BIC', BIC_val)
+nb.report_value(f'Fig 1E: Sparsness', TR_sp)
+
+
 # Dynamic network response:
 trial_inst_ff = analysis.trial_instantaneous_frequencies(
     NWBfile=NWBfile, trialid=6, smooth=True
@@ -301,13 +305,13 @@ custom_range = (0, int(trial_len / 50))
 # Plot velocity from raw network activity:
 #TODO: all the data and how many Ls in PCA? Must be all!
 # This is Hz/Sec.
-raw_net_activity = NWBfile.acquisition['binned_activity'].data[:pn_no, :].\
-    reshape(pn_no, ntrials, trial_q_no)
-velocity = analysis.md_velocity(pca_data=raw_net_activity)
+net_activity = analysis.get_correct_trials(NWBfile)
+# Filter only trials with PA
+velocity = analysis.velocity(data=net_activity)
 G_axis_a.cla()
 G_axis_a.plot(velocity.T, color='gray', alpha=0.2)
 G_axis_a.plot(np.mean(velocity.T, axis=1), color='k', linewidth=2)
-G_axis_a.set_ylabel('Energy Velocity (Hz/s)')
+G_axis_a.set_ylabel('Velocity (Hz/s)')
 G_axis_a.set_xlabel('Time (ms)')
 #TODO: use proper values, not hardcoded!
 G_axis_a.axvspan(50.0 / 50, 1050.0 /50 , ymin=0, ymax=1, color='g', alpha=0.2)
@@ -315,12 +319,12 @@ nb.axis_normal_plot(axis=G_axis_a)
 nb.adjust_spines(G_axis_a, ['left', 'bottom'])
 
 # Figure 1I:
-velocity = analysis.energy(pca_data=raw_net_activity)
+energy = analysis.energy(data=net_activity)
 I_axis_a.cla()
-I_axis_a.plot(velocity.T, color='gray', alpha=0.2)
-tmp = np.mean(velocity.T, axis=1)
+I_axis_a.plot(energy.T, color='gray', alpha=0.2)
+tmp = np.mean(energy.T, axis=1)
 I_axis_a.plot(tmp[1:], color='k', linewidth=2)
-I_axis_a.set_ylabel('MD Velocity (Hz/s)')
+I_axis_a.set_ylabel('Energy (Hz/s)')
 I_axis_a.set_xlabel('Time (ms)')
 #TODO: use proper values, not hardcoded!
 I_axis_a.axvspan(50.0 / 50, 1050.0 /50 , ymin=0, ymax=1, color='g', alpha=0.2)
@@ -374,12 +378,15 @@ figure1.colorbar(im, orientation='horizontal', fraction=0.05,
                  cax=cax)
 
 # Figure 1H:
-K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+K_star, K_labels, BIC_val, _ = analysis.determine_number_of_clusters(
     NWBfile_array=[NWBfile],
     max_clusters=no_of_conditions,
-    y_array=y_array,
     custom_range=custom_range
 )
+
+TR_sp = analysis.sparsness(NWBfile, custom_range)
+nb.report_value('Fig 1H: BIC', BIC_val)
+nb.report_value('Fig 1H: Sparsness', TR_sp)
 
 analysis.plot_pca_in_3d(
     NWBfile=NWBfile, custom_range=custom_range, smooth=True, plot_axes=H_axis_a,

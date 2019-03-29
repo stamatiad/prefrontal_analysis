@@ -29,8 +29,6 @@ plt.rcParams["figure.figsize"] = (15, 15)
 
 no_of_conditions = 10
 no_of_animals = 4
-y_array = np.linspace(0.1, 100, 1000)
-y_i = 500
 plt.ion()
 # FIGURE 2
 subplot_width = 5
@@ -57,17 +55,16 @@ trial_len, pn_no, ntrials, trial_q_no = analysis.get_acquisition_parameters(
 )
 custom_range = (0, int(trial_len / 50))
 
-K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+K_star, K_labels, BIC_val, _ = analysis.determine_number_of_clusters(
     NWBfile_array=[NWBfile],
     max_clusters=no_of_conditions,
-    y_array=y_array,
     custom_range=custom_range
 )
 
 A_axis.cla()
 analysis.pcaL2(
     NWBfile_array=[NWBfile],
-    klabels=K_labels[y_i, :].T,
+    klabels=K_labels,
     custom_range=custom_range,
     smooth=True, plot_3d=True,
     plot_axes=A_axis
@@ -121,17 +118,20 @@ trial_len, pn_no, ntrials, trial_q_no = analysis.get_acquisition_parameters(
 )
 custom_range = (0, int(trial_len / 50))
 
-K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+K_star, K_labels, BIC_val, _ = analysis.determine_number_of_clusters(
     NWBfile_array=[NWBfile],
     max_clusters=no_of_conditions,
-    y_array=y_array,
     custom_range=custom_range
 )
+
+TR_sp = analysis.sparsness(NWBfile, custom_range)
+nb.report_value('Fig 2C: BIC', BIC_val)
+nb.report_value('Fig 2C: Sparsness', TR_sp)
 
 C_axis.cla()
 analysis.pcaL2(
     NWBfile_array=[NWBfile],
-    klabels=K_labels[y_i, :].T,
+    klabels=K_labels,
     custom_range=custom_range,
     smooth=True, plot_3d=True,
     plot_axes=C_axis
@@ -173,17 +173,20 @@ trial_len, pn_no, ntrials, trial_q_no = analysis.get_acquisition_parameters(
 )
 custom_range = (0, int(trial_len / 50))
 
-K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+K_star, K_labels, BIC_val, _ = analysis.determine_number_of_clusters(
     NWBfile_array=[NWBfile],
     max_clusters=no_of_conditions,
-    y_array=y_array,
     custom_range=custom_range
 )
+
+TR_sp = analysis.sparsness(NWBfile, custom_range)
+nb.report_value('Fig 2E: BIC', BIC_val)
+nb.report_value('Fig 2E: Sparsness', TR_sp)
 
 E_axis.cla()
 analysis.pcaL2(
     NWBfile_array=[NWBfile],
-    klabels=K_labels[y_i, :].T,
+    klabels=K_labels,
     custom_range=custom_range,
     smooth=True, plot_3d=True,
     plot_axes=E_axis
@@ -223,18 +226,19 @@ if False:
 
                     # Determine the optimal number of clusters for all trials of a single animal
                     # model/learning condition.
-                    K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+                    K_star, K_labels, BIC_val, _ = analysis.determine_number_of_clusters(
                         NWBfile_array=[NWBfile],
                         max_clusters=10,
-                        y_array=y_array,
                         custom_range=custom_range
                     )
 
-                    K_star_over_trials[learning_condition - 1, config_id] =                     K_star[y_i]
+                    K_star_over_trials[learning_condition - 1, config_id] = \
+                        K_star
                 except Exception as e:
                     print(f'Got Exception during analysis {str(e)}')
 
-        optimal_clusters_of_group[f'Network {animal_model}'] =         K_star_over_trials
+        optimal_clusters_of_group[f'Network {animal_model}'] = \
+            K_star_over_trials
 
     C_axis = figure2.add_subplot(
         subplot_height, subplot_width, 3
@@ -321,18 +325,19 @@ if False:
 
                     # Determine the optimal number of clusters for all trials of a single animal
                     # model/learning condition.
-                    K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+                    K_star, K_labels, BIC_val, _ = analysis.determine_number_of_clusters(
                         NWBfile_array=[NWBfile],
                         max_clusters=10,
-                        y_array=y_array,
                         custom_range=custom_range
                     )
 
-                    K_star_over_trials[learning_condition - 1, config_id] =                     K_star[y_i]
+                    K_star_over_trials[learning_condition - 1, config_id] = \
+                        K_star
                 except Exception as e:
                     print(f'Got Exception during analysis {str(e)}')
 
-        optimal_clusters_of_group[f'Network {animal_model}'] =         K_star_over_trials
+        optimal_clusters_of_group[f'Network {animal_model}'] = \
+            K_star_over_trials
 
 
     D_axis = figure2.add_subplot(

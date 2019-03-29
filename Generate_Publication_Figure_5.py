@@ -28,6 +28,9 @@ from itertools import chain
 import matplotlib.gridspec as gridspec
 from matplotlib import cm
 import pandas as pd
+import seaborn as sb
+import scipy.stats
+import math
 
 # <markdowncell>
 # ## Create figure 4
@@ -39,9 +42,6 @@ glia_dir = Path(r'G:\Glia')
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
 
-y_array = np.linspace(0.1, 100, 1000)
-y_nnmf_array = np.linspace(0.1, 1, 2000)
-y_i = 500
 no_of_conditions = 10
 no_of_animals = 4
 dataset_name = lambda x : f'Network {x}'
@@ -59,11 +59,10 @@ plt.ion()
 #fig, axblah = plt.subplots(1,1)
 #plt.cla()
 #plt.ion()
-#K_star_nnmf = np.zeros((no_of_animals, no_of_conditions, len(y_nnmf_array)), dtype=int)
 
 subplot_width = 4
 subplot_height = 1
-figure4 = plt.figure(figsize=plt.figaspect(subplot_height / subplot_width))
+figure5 = plt.figure(figsize=plt.figaspect(subplot_height / subplot_width))
 
 gs1 = gridspec.GridSpec(
     1, 1, left=0.05, right=0.15, top=0.95, bottom=0.50, wspace=0.35, hspace=0.0
@@ -102,10 +101,9 @@ trial_len = analysis.get_acquisition_parameters(
 )
 custom_range = (20, int(trial_len / 50))
 
-K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+K_star, K_labels, BIC_val, _ = analysis.determine_number_of_clusters(
     NWBfile_array=[NWBfile],
     max_clusters=10,
-    y_array=y_array,
     custom_range=custom_range
 )
 
@@ -167,7 +165,7 @@ W_components, *_ = analysis.NNMF(
 )
 
 E_ax = [C_axis_a, C_axis_b, C_axis_c]
-klabels = K_labels[y_i]
+klabels = K_labels
 # Color differently each trial:
 trial_colors = cm.Set2(np.linspace(0, 1, W_components.shape[1]))
 for assembly, assembly_axis in zip(range(1, 4), E_ax):
@@ -272,9 +270,9 @@ plot_axes.legend(handles=handles, labels=['State 1', 'State 2', 'State 3'])
 # aftwn twn vectors.
 
 gs4 = gridspec.GridSpec(
-    1, 1, left=0.75, right=0.95, top=0.95, bottom=0.02, wspace=0.35, hspace=0.2
+    1, 1, left=0.80, right=0.95, top=0.95, bottom=0.02, wspace=0.35, hspace=0.2
 )
-E_axis_a = plt.subplot(gs3[0, 0])
+E_axis_a = plt.subplot(gs4[0, 0])
 
 K_star_mat = np.zeros((no_of_animals, no_of_conditions), dtype=int)
 for animal_model in range(1, no_of_animals + 1):
@@ -329,15 +327,14 @@ for animal_model in range(1, no_of_animals + 1):
         # of passing it around...
         custom_range = (20, int(trial_len / 50))
 
-        K_star, K_labels, pcno = analysis.determine_number_of_clusters(
+        K_star, K_labels, BIC_val, _ = analysis.determine_number_of_clusters(
             NWBfile_array=[nwbfile],
             max_clusters=no_of_conditions,
-            y_array=y_array,
             custom_range=custom_range
         )
 
         K_star_over_trials[learning_condition - 1, :] = \
-            [K_star[y_i], pcno]
+            [K_star, K_star_mat[animal_model-1][learning_condition-1]]
 
     optimal_clusters_of_group[dataset_name(animal_model)] = \
         K_star_over_trials
@@ -352,24 +349,29 @@ for pos, animal in enumerate(models_list):
     K_s.append(list(optimal_clusters_of_group[dataset_name(animal)][:,0]))
     K_s_CV.append(list(optimal_clusters_of_group[dataset_name(animal)][:,1]))
 
-sb.regplot(x=list(chain(*K_s)), y=list(chain(*PC_no)), ax=E_axis_a, marker='.', color='C0')
-scipy.stats.pearsonr(list(chain(*K_s)), list(chain(*PC_no)))
+#test the correlation, scattering the data (eyeball it first):
+fig, ax = plt.subplots(1,1)
+ax.scatter(x=list(chain(*K_s)), y=list(chain(*K_s_CV)))
+fig.savefig('scatter_K_CV.png')
+
+sb.regplot(x=list(chain(*K_s)), y=list(chain(*K_s_CV)), ax=E_axis_a, marker='.', color='C0')
+scipy.stats.pearsonr(list(chain(*K_s)), list(chain(*K_s_CV)))
 xlim = (1 - 0.2, np.array(list(chain(*K_s))).max() + 0.2)
-ylim = (1 - 0.2, np.array(list(chain(*PC_no))).max() + 0.2)
+ylim = (1 - 0.2, np.array(list(chain(*K_s_CV))).max() + 0.2)
 E_axis_a.set_xlim(xlim[0], xlim[1])
 E_axis_a.set_ylim(ylim[0], ylim[1])
 E_axis_a.set_xticks(list(range(math.ceil(xlim[0]), int(xlim[1]) + 1)))
 E_axis_a.set_yticks(list(range(math.ceil(ylim[0]), int(ylim[1]) + 1)))
 E_axis_a.set_xlabel('K*')
-E_axis_a.set_ylabel('#PCA components')
+E_axis_a.set_ylabel('Optimal assemblie no')
 nb.mark_figure_letter(E_axis_a, 'D')
 nb.axis_normal_plot(E_axis_a)
 nb.adjust_spines(E_axis_a, ['left', 'bottom'])
 
 nb.mark_figure_letter(E_axis_a, 'E')
 
-figure4.savefig('Figure_4.png')
-figure4.savefig('Figure_4.svg')
+figure5.savefig('Figure_5.png')
+figure5.savefig('Figure_5.svg')
 
 
 # <markdowncell>
@@ -400,10 +402,10 @@ W_components, *_ = analysis.NNMF(
 # Plot the annotated clustering results:
 analysis.pcaL2(
     NWBfile_array=[NWBfile],
-    klabels=K_labels[y_i, :].T,
+    klabels=K_labels,
     custom_range=custom_range,
     smooth=True, plot_3d=True,
-    plot_axes=figure4_axis[0, 0]
+    plot_axes=figure5_axis[0, 0]
 )
 
 #===============================================================================
@@ -413,8 +415,8 @@ analysis.pcaL2(
 #===============================================================================
 
 # <codecell>
-#figure4.savefig('Figure_4.png')
-#figure4.savefig('Figure_4.svg')
+#figure5.savefig('Figure_4.png')
+#figure5.savefig('Figure_4.svg')
 print('Tutto pronto!')
 
 
