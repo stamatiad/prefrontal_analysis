@@ -1113,8 +1113,20 @@ def plot_pca_in_3d(NWBfile=None, custom_range=None, smooth=False, \
                    plot_axes=None, klabels=None):
     #TODO: is this deterministic? Because some times I got an error in some
     # matrix.
+    animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+    trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+        get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=[
+                'animal_model_id', 'learning_condition_id', 'ncells',
+                'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+                'correct_trials_idx', 'correct_trials_no'
+            ]
+        )
     tmp = get_correct_trials(NWBfile)
+    # TODO: Duration equals trial_q_no, if no custom_range is used:
     # Reshape in array with m=cells, n=time bins.
+    duration = trial_q_no
     pool_array = tmp.reshape(pn_no, correct_trials_no * duration)
 
     # how many PCA components
@@ -1690,10 +1702,20 @@ def NNMF(
     # Initialize pool_array:
     pool_array = np.array([])
     for input_NWBfile in NWBfile_array:
-        #TODO: is this deterministic? Because some times I got an error in some
-        # matrix.
+        #TODO: WHAT IS THIS MESS!
+        animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+        trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+            get_acquisition_parameters(
+                input_NWBfile=NWBfile,
+                requested_parameters=[
+                    'animal_model_id', 'learning_condition_id', 'ncells',
+                    'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+                    'correct_trials_idx', 'correct_trials_no'
+                ]
+            )
         tmp = get_correct_trials(input_NWBfile)
         # Reshape in array with m=cells, n=time bins.
+        duration = trial_q_no
         tmp = tmp.reshape(pn_no, correct_trials_no * duration)
         # Concatinate it the pool array:
         if pool_array.size:
@@ -2704,6 +2726,7 @@ def determine_number_of_ensembles(
 
     tmp = get_correct_trials(NWBfile_array[0])
     # Reshape in array with m=cells, n=time bins.
+    duration = trial_q_no
     data = tmp.reshape(pn_no, correct_trials_no * duration)
 
     # This is now handled by the decorator!

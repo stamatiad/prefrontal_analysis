@@ -244,13 +244,13 @@ E_axis_b = plt.subplot(gs3[1, :])
 nb.mark_figure_letter(E_axis_a, 'E')
 
 # Figure Ea
+#TODO: opws einai to NWBfile einai ena tyxaio apo to loop pio panw!
 # Exemplar network rasterplot:
 # Trials that have pa: 2, 6. The 6 is quite nice!
 nb.plot_trial_spiketrains(NWBfile=NWBfile, trialid=6, plot_axis=E_axis_a)
 
 #TODO: blah
-TR_sp = analysis.sparsness(NWBfile, custom_range)
-nb.report_value(f'Fig 1E: BIC', BIC_val)
+TR_sp = analysis.sparsness(NWBfile)
 nb.report_value(f'Fig 1E: Sparsness', TR_sp)
 
 
@@ -390,7 +390,7 @@ nb.report_value('Fig 1H: Sparsness', TR_sp)
 
 analysis.plot_pca_in_3d(
     NWBfile=NWBfile, custom_range=custom_range, smooth=True, plot_axes=H_axis_a,
-    klabels=K_labels[0, :].T
+    klabels=K_labels
 )
 #azim, elev = H_axis_a.azim, H_axis_a.elev
 print((H_axis_a.azim, H_axis_a.elev))
