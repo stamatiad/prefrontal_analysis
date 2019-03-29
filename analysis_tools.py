@@ -1435,7 +1435,7 @@ def pcaL2(
             fig = plt.figure()
             plt.ion()
             plot_axes = fig.add_subplot(111, projection='3d')
-        plot_axes.set_title(f'Learning condition {learning_condition_id}')
+        plot_axes.set_title(f'Synaptic Reconfiguration {learning_condition_id}')
         # Stylize the 3d plot:
         plot_axes.w_xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
         plot_axes.w_yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))

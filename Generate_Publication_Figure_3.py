@@ -32,12 +32,14 @@ plt.rcParams["figure.figsize"] = (15, 15)
 y_array = np.linspace(0.1, 100, 1000)
 y_i = 500
 
+axis_label_font_size = 10
 no_of_conditions = 10
 no_of_animals = 4
 
 
 subplot_width = 3
 subplot_height = 2
+plt.ion()
 figure2 = plt.figure(figsize=plt.figaspect(0.5))
 figure2_axis = np.zeros((subplot_height, subplot_width), dtype=object)
 dataset_name = lambda x : f'Network {x}'
@@ -56,7 +58,7 @@ conditions = [1,2,3]
 condition_axes = [A_axis_a, A_axis_b, A_axis_c]
 for axis, (idx, learning_condition) in zip(condition_axes, enumerate(conditions)):
     NWBfile = analysis.load_nwb_file(
-        animal_model=3,
+        animal_model=1,
         learning_condition=learning_condition,
         experiment_config='structured',
         type='bn',
@@ -163,30 +165,51 @@ C_axis = figure2.add_subplot(
 )
 C_axis.cla()
 #C_axis.set_title('Optimal no of clusters')
-bplots = []
-models_list = range(1, no_of_animals + 1)
-max_val = 0
-for pos, animal in enumerate(models_list):
-    bp = C_axis.boxplot(
-        optimal_clusters_of_group[dataset_name(animal)][:, 0],
-        positions=[pos],
-        widths=0.4,
-        patch_artist=True
-    )
-    max_val = np.maximum(max_val, optimal_clusters_of_group[dataset_name(animal)][:, 0].max())
 
-xlim = (-1, 4)
-C_axis.set_xlim(xlim[0], xlim[1])
-C_axis.set_xticks(list(range(no_of_animals)))
-C_axis.set_xticklabels(['Model 1', 'Model 2', 'Model 3', 'Model 4'])
-C_axis.set_yticks(list(range(1, int(max_val) + 1)))
-C_axis.set_ylabel('K*')
-for tick in C_axis.get_xticklabels():
-    tick.set_rotation(45)
+tmp = [
+    optimal_clusters_of_group[dataset_name(animal)][:, 0].tolist()
+    for animal in range(1, no_of_animals + 1)
+]
+K_stars = list(chain(*tmp))
 
-nb.axis_box_plot(C_axis)
-nb.adjust_spines(C_axis, ['left'])
+bins = np.arange(1, np.max(K_stars) + 2, 1)
+kstar_hist, *_ = np.histogram(K_stars, bins=bins)
+
+C_axis.plot(kstar_hist / len(K_stars), color='C0')
+C_axis.axvline(np.mean(K_stars), color='C0', linestyle='--')
+C_axis.set_xticks(range(bins.size + 1))
+C_axis.set_xticklabels(np.round(bins, 1))
+C_axis.set_xlabel('K*', fontsize=axis_label_font_size)
+C_axis.set_ylabel('Relative Frequency', fontsize=axis_label_font_size)
+nb.axis_normal_plot(axis=C_axis)
+nb.adjust_spines(C_axis, ['left', 'bottom'])
 nb.mark_figure_letter(C_axis, 'C')
+
+
+if False:
+    bplots = []
+    models_list = range(1, no_of_animals + 1)
+    max_val = 0
+    for pos, animal in enumerate(models_list):
+        bp = C_axis.boxplot(
+            optimal_clusters_of_group[dataset_name(animal)][:, 0],
+            positions=[pos],
+            widths=0.4,
+            patch_artist=True
+        )
+        max_val = np.maximum(max_val, optimal_clusters_of_group[dataset_name(animal)][:, 0].max())
+
+    xlim = (-1, 4)
+    C_axis.set_xlim(xlim[0], xlim[1])
+    C_axis.set_xticks(list(range(no_of_animals)))
+    C_axis.set_xticklabels(['Model 1', 'Model 2', 'Model 3', 'Model 4'])
+    C_axis.set_yticks(list(range(1, int(max_val) + 1)))
+    C_axis.set_ylabel('K*')
+    for tick in C_axis.get_xticklabels():
+        tick.set_rotation(45)
+
+    nb.axis_box_plot(C_axis)
+    nb.adjust_spines(C_axis, ['left'])
 
 
 
@@ -239,8 +262,8 @@ plt.subplots_adjust(top=0.92, bottom=0.15, left=0.10, right=0.95, hspace=0.25,
 
 
 # <codecell>
-figure2.savefig('Figure_2.svg')
-figure2.savefig('Figure_2.png')
+figure2.savefig('Figure_3.svg')
+figure2.savefig('Figure_3.png')
 print('Tutto pronto!')
 
 
