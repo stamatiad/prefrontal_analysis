@@ -1062,14 +1062,25 @@ def get_correct_trials(NWBfile, custom_range=None):
     return response_array
 
 
-def sparsness(NWBfile, custom_range):
+def sparsness(NWBfile, custom_range=None):
     # Treves - Rolls metric of population sparsness:
     # function sparsness = S_tr(r)
     # r is the population rates: a matrix MxN of M neurons and N trials
     # stamatiad.st@gmail.com
     # S_T = @(r,N) (sum(r/N))^2 / (sum(r.^2/N));
 
-    tmp = get_correct_trials(NWBfile)
+    animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+    trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+        get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=[
+                'animal_model_id', 'learning_condition_id', 'ncells',
+                'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+                'correct_trials_idx', 'correct_trials_no'
+            ]
+        )
+
+    tmp = get_correct_trials(NWBfile, custom_range=custom_range)
 
     trial_rates = np.median(tmp, axis=2)
 
