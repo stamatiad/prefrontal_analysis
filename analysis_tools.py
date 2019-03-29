@@ -1065,8 +1065,8 @@ def sparsness(NWBfile, custom_range):
     M, N = trial_rates.shape
     # N = size(r,1);
     # M = size(r,2);
-    S_TR = np.power(np.sum(trial_rates / ntrials, axis=1), 2) / \
-        np.sum(np.power(trial_rates, 2) / N, axis=1)
+    S_TR = np.power(np.sum(trial_rates.mean(axis=1) / pn_no), 2) / \
+        np.sum(np.power(trial_rates.mean(axis=1), 2) / pn_no)
 
     #TODO: check that it works!
     return 1 - S_TR
