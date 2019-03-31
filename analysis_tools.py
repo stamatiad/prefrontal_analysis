@@ -1706,7 +1706,7 @@ def NNMF(
         animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
         trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
             get_acquisition_parameters(
-                input_NWBfile=NWBfile,
+                input_NWBfile=input_NWBfile,
                 requested_parameters=[
                     'animal_model_id', 'learning_condition_id', 'ncells',
                     'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',

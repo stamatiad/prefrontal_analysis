@@ -238,6 +238,7 @@ nb.axis_normal_plot(axis=D_axis_b)
 nb.adjust_spines(D_axis_b, ['left', 'bottom'])
 
 
+#TODO bale to idio animal me to Fig H1.
 gs3 = gridspec.GridSpec(2, 2, left=0.05, right=0.50, top=0.43, bottom=0.1, wspace=0.2, hspace=0.35)
 E_axis_a = plt.subplot(gs3[0, :])
 E_axis_b = plt.subplot(gs3[1, :])
@@ -312,6 +313,11 @@ G_axis_a.cla()
 G_axis_a.plot(energy.T, color='gray', alpha=0.2)
 tmp = np.mean(energy.T, axis=1)
 G_axis_a.plot(tmp[1:], color='k', linewidth=2)
+duration = net_activity.shape[2]
+time_axis_ticks = np.linspace(0, duration, (duration / 20) + 1)
+time_axis_ticklabels = analysis.q2sec(q_time=time_axis_ticks).astype(int)  #np.linspace(0, time_axis_limits[1], duration)
+G_axis_a.set_xticks(time_axis_ticks)
+G_axis_a.set_xticklabels(time_axis_ticklabels)
 G_axis_a.set_ylabel('Energy (Hz/s)')
 G_axis_a.set_xlabel('Time (ms)')
 #TODO: use proper values, not hardcoded!
@@ -324,7 +330,7 @@ velocity = analysis.velocity(data=net_activity)
 I_axis_a.cla()
 I_axis_a.plot(velocity.T, color='gray', alpha=0.2)
 I_axis_a.plot(np.mean(velocity.T, axis=1), color='k', linewidth=2)
-I_axis_a.set_ylabel('Energy (Hz/s)')
+I_axis_a.set_ylabel('Velocity (Hz/s)')
 I_axis_a.set_xlabel('Time (ms)')
 #TODO: use proper values, not hardcoded!
 I_axis_a.axvspan(50.0 / 50, 1050.0 /50 , ymin=0, ymax=1, color='g', alpha=0.2)
