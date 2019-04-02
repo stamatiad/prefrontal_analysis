@@ -110,14 +110,17 @@ for animal_model in range(1, no_of_animals + 1):
             data_path=simulations_dir
         )
 
-        trial_len = analysis.get_acquisition_parameters(
+        trial_len, q_size = analysis.get_acquisition_parameters(
             input_NWBfile=nwbfile,
-            requested_parameters=['trial_len']
+            requested_parameters=['trial_len', 'q_size']
         )
 
         # TODO: Where is custom range needed? determine a global way
         # of passing it around...
-        custom_range = (20, int(trial_len / 50))
+        #custom_range = (20, int(trial_len / 50))
+        total_trial_qs = trial_len / q_size
+        one_sec_qs = 1000 / q_size
+        start_q = total_trial_qs - one_sec_qs
 
         K_star, K_labels, BIC_val, pcno = analysis.determine_number_of_clusters(
             NWBfile_array=[nwbfile],
