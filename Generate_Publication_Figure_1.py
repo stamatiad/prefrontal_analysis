@@ -330,6 +330,8 @@ velocity = analysis.velocity(data=net_activity)
 I_axis_a.cla()
 I_axis_a.plot(velocity.T, color='gray', alpha=0.2)
 I_axis_a.plot(np.mean(velocity.T, axis=1), color='k', linewidth=2)
+I_axis_a.set_xticks(time_axis_ticks)
+I_axis_a.set_xticklabels(time_axis_ticklabels)
 I_axis_a.set_ylabel('Velocity (Hz/s)')
 I_axis_a.set_xlabel('Time (ms)')
 #TODO: use proper values, not hardcoded!
