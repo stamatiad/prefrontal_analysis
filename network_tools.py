@@ -23,6 +23,8 @@ import pkg_resources
 from pkg_resources import DistributionNotFound, VersionConflict
 from contextlib import contextmanager
 import copy
+import notebook_module as nb
+from scipy.signal import savgol_filter
 
 def check_requirements():
     # Check that user is running a supported python version and necessary packages:
@@ -401,12 +403,34 @@ class Network:
 
         if plot:
             fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
-            ax.scatter(somata[:,0], somata[:,1], somata[:,2], c='r', marker='o')
-            ax.set_xlabel('X Label')
-            ax.set_ylabel('Y Label')
-            ax.set_zlabel('Z Label')
+            plot_axis = fig.add_subplot(111, projection='3d')
+            plot_axis.scatter(
+                self.pc_somata[:, 0],
+                self.pc_somata[:, 1],
+                self.pc_somata[:, 2],
+                c='b', marker='^'
+            )
+            plot_axis.scatter(
+                self.pv_somata[:, 0],
+                self.pv_somata[:, 1],
+                self.pv_somata[:, 2],
+                c='r', marker='o'
+            )
+            plot_axis.set_xlabel('X (um)')
+            plot_axis.set_ylabel('Y (um)')
+            plot_axis.set_zlabel('Z (um)')
+            plot_axis.w_xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+            plot_axis.w_yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+            plot_axis.w_zaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+            pca_axis_limits = (0, 180)
+            plot_axis.set_xlim(pca_axis_limits)
+            plot_axis.set_ylim(pca_axis_limits)
+            plot_axis.set_zlim(pca_axis_limits)
+            plot_axis.set_xticks(pca_axis_limits)
+            plot_axis.set_yticks(pca_axis_limits)
+            plot_axis.set_zticks(pca_axis_limits)
             plt.savefig('Network_sn{}_3d_positions.png'.format(self.serial_no))
+            plt.savefig('Network_sn{}_3d_positions.svg'.format(self.serial_no))
             plt.show()
 
         return
@@ -749,11 +773,22 @@ class Network:
             # Plot
             if plot:
                 fig, ax = plt.subplots()
-                cax = ax.plot(cc[0])
+                ax.plot(cc[0, 1:], color='gray', alpha=0.2)
+                ax.plot(
+                    savgol_filter(cc[0, 1:], int(cc.shape[1] / 20 + 1), 3),
+                    color='k', linewidth=2
+                )
                 ax.set_title('Clustering Coefficient')
                 plt.xlabel('Iterations')
                 plt.ylabel('Clustering Coefficient')
-                plt.savefig('Network_sn{}_clustering_coefficient.png'.format(self.serial_no))
+                nb.axis_normal_plot(axis=ax)
+                nb.adjust_spines(ax, ['left', 'bottom'])
+                plt.savefig(
+                    f'Network_sn{self.serial_no}_clustering_coefficient.png'
+                )
+                plt.savefig(
+                    f'Network_sn{self.serial_no}_clustering_coefficient.svg'
+                )
                 plt.show()
 
             # Save connectivity to the network:
@@ -785,28 +820,80 @@ class Network:
         # Plot to see the validated results of the connectivity routines:
         if plot:
             plt.ion()
+            '''
+            # Plot PN-PN reciprocal:
+            plot_connectivity_across_distance(
+                conn_mat=connectivity_mat[:self.pc_no, :self.pc_no],
+                distance_mat=self.dist_mat[:self.pc_no, :self.pc_no],
+                conn_pair='PN_PN',
+                conn_type='reciprocal',
+                conn_functions_dict=connection_functions_d
+            )
+            # Plot PN-PN unidirectional:
+            plot_connectivity_across_distance(
+                conn_mat=connectivity_mat[:self.pc_no, :self.pc_no],
+                distance_mat=self.dist_mat[:self.pc_no, :self.pc_no],
+                conn_pair='PN_PN',
+                conn_type='unidirectional',
+                conn_functions_dict=connection_functions_d
+            )
+            # Plot PN-PV unidirectional:
+            plot_connectivity_across_distance(
+                conn_mat=[
+                    connectivity_mat[:self.pc_no, self.pc_no:],
+                    connectivity_mat[self.pc_no:, :self.pc_no]
+                ],
+                distance_mat=self.dist_mat[:self.pc_no, self.pc_no:],
+                conn_pair='PN_PV',
+                conn_type='A2B',
+                conn_functions_dict=connection_functions_d
+            )
+            # Plot PV-PN unidirectional:
+            plot_connectivity_across_distance(
+                conn_mat=[
+                    connectivity_mat[:self.pc_no, self.pc_no:],
+                    connectivity_mat[self.pc_no:, :self.pc_no]
+                ],
+                distance_mat=self.dist_mat[:self.pc_no, self.pc_no:],
+                conn_pair='PN_PV',
+                conn_type='B2A',
+                conn_functions_dict=connection_functions_d
+            )
+            # Plot PN-PV reciprocals:
+            plot_connectivity_across_distance(
+                conn_mat=[
+                    connectivity_mat[:self.pc_no, self.pc_no:],
+                    connectivity_mat[self.pc_no:, :self.pc_no]
+                ],
+                distance_mat=self.dist_mat[:self.pc_no, self.pc_no:],
+                conn_pair='PN_PV',
+                conn_type='reciprocal',
+                conn_functions_dict=connection_functions_d
+            )
+           '''
             plot_reciprocal_across_distance(connectivity_mat[:self.pc_no, :self.pc_no],
                                             self.dist_mat[:self.pc_no, :self.pc_no],
                                             connection_functions_d['PN_PN']['reciprocal'],
-                                            plot=True)
+                                            )
             plot_unidirectional_across_distance(connectivity_mat[:self.pc_no, :self.pc_no],
                                                 self.dist_mat[:self.pc_no, :self.pc_no],
                                                 connection_functions_d['PN_PN']['unidirectional'],
-                                                plot=True)
+                                                )
             plot_pn2pv_unidirectional_across_distance(mat_pn_pv=connectivity_mat[:self.pc_no, self.pc_no:],
                                                       mat_pv_pn=connectivity_mat[self.pc_no:, :self.pc_no],
                                                       dist_mat=self.dist_mat[:self.pc_no, self.pc_no:],
                                                       ground_truth=connection_functions_d['PN_PV']['A2B'],
-                                                      plot=True)
+                                                      )
             plot_pv2pn_unidirectional_across_distance(mat_pn_pv=connectivity_mat[:self.pc_no, self.pc_no:],
                                                       mat_pv_pn=connectivity_mat[self.pc_no:, :self.pc_no],
                                                       dist_mat=self.dist_mat[:self.pc_no, self.pc_no:],
                                                       ground_truth=connection_functions_d['PN_PV']['B2A'],
-                                                      plot=True)
+                                                      )
             plot_pn_pv_reciprocal_across_distance(connectivity_mat[:self.pc_no, self.pc_no:],
                                                   connectivity_mat[self.pc_no:, :self.pc_no],
                                                   self.dist_mat[:self.pc_no, self.pc_no:],
-                                                  connection_functions_d['PN_PV']['reciprocal'])
+                                                  connection_functions_d['PN_PV']['reciprocal']
+                                                  )
 
 
         # Now if configuration is random, update the PN to PN connectivity matrix part and return:
@@ -1154,6 +1241,100 @@ def get_unidirectional_percentage(mat):
     n = mat.shape[0]
     return get_unidirectional_number(mat) / (n*(n-1)/2)
 
+def plot_connectivity_across_distance(
+        conn_mat, distance_mat, conn_pair, conn_type, conn_functions_dict
+    ):
+    '''
+    Plots a histogram with the relative frequency of reciprocal connections as a function of distance.
+    If a ground truth function is provided, plot it for comparisson.
+    :param mat:
+    :return:
+    '''
+    bin_width = 10
+    max_dist = 300
+    # Make sure that arguments are correct:
+    # If you have a non-square input mat, var is a list of two matrices:
+    if isinstance(conn_mat, list):
+        mat_pn_pv = conn_mat[0]
+        mat_pv_pn = conn_mat[1]
+        if mat_pn_pv.shape[0] != mat_pv_pn.shape[1]:
+            raise ValueError('Matrices'' transpose must be of same dimensions!')
+        # Also distance conn_mat is not square:
+        if distance_mat.shape[0] < distance_mat.shape[1]:
+            # we want dist_pn_pv, so transpose the matrix:
+            distance_mat = distance_mat.getT()
+        if mat_pn_pv.shape[0] != distance_mat.shape[0]:
+            raise ValueError('Matrices must be of same size!')
+
+        logical_mat_pn_pv = np.asmatrix(mat_pn_pv, dtype=bool)
+        logical_mat_pv_pn = np.asmatrix(mat_pv_pn, dtype=bool)
+        mat_unid = np.logical_and(logical_mat_pn_pv,  logical_mat_pv_pn.T)
+
+        histo_bins = np.arange(0, max_dist, bin_width)
+        histo_dist, bin_edges = np.histogram(distance_mat, bins=histo_bins)
+        histo, bin_edges = np.histogram(distance_mat[mat_unid], bins=histo_bins)
+    else:
+        # Else:
+        if conn_mat.shape[0] != conn_mat.shape[1]:
+            raise ValueError('Matrix must be square!')
+        if distance_mat.shape[0] != distance_mat.shape[1]:
+            raise ValueError('Matrix must be square!')
+        if conn_mat.shape[0] != distance_mat.shape[0]:
+            raise ValueError('Matrices must be of same size!')
+
+        n = conn_mat.shape[0]
+        # get only upper triangular part:
+        logical_mat = np.asmatrix(conn_mat, dtype=bool)
+        mat_recip = np.logical_and(logical_mat,  logical_mat.getT())
+        conn_vector = mat_recip[np.asmatrix(np.triu(np.ones((n, n)), 1), dtype=bool)]
+        dist_vector = distance_mat[np.asmatrix(np.triu(np.ones((n, n)), 1), dtype=bool)]
+
+        histo_bins = np.arange(0, max_dist, bin_width)
+        histo_dist, bin_edges = np.histogram(dist_vector, bins=histo_bins)
+        histo, bin_edges = np.histogram(dist_vector[np.asarray(conn_vector)[0]], bins=histo_bins)
+
+    ground_truth = conn_functions_dict[conn_pair][conn_type]
+    # Plot
+    fig, ax = plt.subplots()
+    # Normalize histogram of intra-neuronal distances to GT maximum, for
+    # better visualization.
+    cax = ax.plot(
+        histo_bins[:-1], np.divide(histo, histo_dist), linewidth=2
+    )
+    cax = ax.plot(histo_bins, ground_truth(histo_bins), linewidth=2)
+    cax = ax.bar(
+        histo_bins[:-1], (histo / np.max(histo)) \
+                         * np.max(ground_truth(histo_bins)),
+        width=bin_width, color='gray', alpha=0.4
+    )
+    ax.set_title('Structured Configuration')
+    plt.xlabel('Distance (um)')
+    plt.ylabel(f'{conn_pair} {conn_type} Probability')
+    nb.axis_normal_plot(axis=ax)
+    nb.adjust_spines(ax, ['left', 'bottom'])
+
+    plt.savefig(f'{conn_pair}_{conn_type}_across_distance.png')
+    plt.show()
+
+def plot_connectivity(histo, histo_bins, histo_dist, ground_truth, bin_width):
+    fig, ax = plt.subplots()
+    # Normalize histogram of intra-neuronal distances to GT maximum, for
+    # better visualization.
+    cax = ax.plot(
+        histo_bins[:-1], np.divide(histo, histo_dist), linewidth=2
+    )
+    if ground_truth:
+        cax = ax.plot(histo_bins, ground_truth(histo_bins), linewidth=2)
+        cax = ax.bar(
+            histo_bins[:-1], (histo / np.max(histo)) \
+                             * np.max(ground_truth(histo_bins)),
+            width=bin_width, color='gray', alpha=0.4
+        )
+    ax.set_title('Structured Configuration')
+    nb.axis_normal_plot(axis=ax)
+    nb.adjust_spines(ax, ['left', 'bottom'])
+    return ax
+
 def plot_reciprocal_across_distance(mat, distance_mat, ground_truth=None, plot=False):
     '''
     Plots a histogram with the relative frequency of reciprocal connections as a function of distance.
@@ -1175,21 +1356,20 @@ def plot_reciprocal_across_distance(mat, distance_mat, ground_truth=None, plot=F
     conn_vector = mat_recip[np.asmatrix(np.triu(np.ones((n, n)), 1), dtype=bool)]
     dist_vector = distance_mat[np.asmatrix(np.triu(np.ones((n, n)), 1), dtype=bool)]
 
-    histo_bins = np.arange(0, 600, 10)
+    bin_width = 10
+    histo_bins = np.arange(0, 200, bin_width)
     histo_dist, bin_edges = np.histogram(dist_vector, bins=histo_bins)
     histo, bin_edges = np.histogram(dist_vector[np.asarray(conn_vector)[0]], bins=histo_bins)
 
-    # Plot
-    if plot:
-        fig, ax = plt.subplots()
-        cax = ax.plot(histo_bins[:-1], np.divide(histo, histo_dist))
-        if ground_truth:
-            cax = ax.plot(histo_bins, ground_truth(histo_bins))
-        ax.set_title('configuration str')
-        plt.xlabel('Distance (um)')
-        plt.ylabel('Reciprocal Probability')
-        plt.savefig('plot_reciprocal_across_distance.png')
-        plt.show()
+    ax = plot_connectivity(
+        histo, histo_bins, histo_dist, ground_truth, bin_width
+    )
+    ax.set_xlabel('Distance (um)')
+    ax.set_ylabel('PN-PN Reciprocal Probability')
+
+    plt.savefig('PN-PN_reciprocal_across_distance.png')
+    plt.savefig('PN-PN_reciprocal_across_distance.svg')
+    plt.show()
 
 def plot_unidirectional_across_distance(mat, distance_mat, ground_truth=None, plot=False):
     '''
@@ -1212,21 +1392,20 @@ def plot_unidirectional_across_distance(mat, distance_mat, ground_truth=None, pl
     conn_vector = mat_unid[np.asmatrix(np.triu(np.ones((n, n)), 1), dtype=bool)]
     dist_vector = distance_mat[np.asmatrix(np.triu(np.ones((n, n)), 1), dtype=bool)]
 
-    histo_bins = np.arange(0, 600, 10)
+    bin_width = 10
+    histo_bins = np.arange(0, 200, bin_width)
     histo_dist, bin_edges = np.histogram(dist_vector, bins=histo_bins)
     histo, bin_edges = np.histogram(dist_vector[np.asarray(conn_vector)[0]], bins=histo_bins)
 
-    # Plot
-    if plot:
-        fig, ax = plt.subplots()
-        cax = ax.plot(histo_bins[:-1], np.divide(histo, histo_dist))
-        if ground_truth:
-            cax = ax.plot(histo_bins, ground_truth(histo_bins))
-        ax.set_title('configuration str')
-        plt.xlabel('Distance (um)')
-        plt.ylabel('Unidirectional Probability')
-        plt.savefig('plot_unidirectional_across_distance.png')
-        plt.show()
+    ax = plot_connectivity(
+        histo, histo_bins, histo_dist, ground_truth, bin_width
+    )
+    ax.set_xlabel('Distance (um)')
+    ax.set_ylabel('PN-PN Unidirectional Probability')
+
+    plt.savefig('PN-PN_unidirectional_across_distance.png')
+    plt.savefig('PN-PN_unidirectional_across_distance.svg')
+    plt.show()
 
 def plot_pn_pv_reciprocal_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, ground_truth=None):
     '''
@@ -1247,18 +1426,18 @@ def plot_pn_pv_reciprocal_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, ground
     logical_mat_pv_pn = np.asmatrix(mat_pv_pn, dtype=bool)
     mat_unid = np.logical_and(logical_mat_pn_pv,  logical_mat_pv_pn.T)
 
-    histo_bins = np.arange(0, 600, 10)
+    bin_width = 10
+    histo_bins = np.arange(0, 200, bin_width)
     histo_dist, bin_edges = np.histogram(dist_mat, bins=histo_bins)
     histo, bin_edges = np.histogram(dist_mat[mat_unid], bins=histo_bins)
     # Plot
-    fig, ax = plt.subplots()
-    cax = ax.plot(histo_bins[:-1], np.divide(histo, histo_dist))
-    if ground_truth:
-        cax = ax.plot(histo_bins, ground_truth(histo_bins))
-    ax.set_title('configuration str')
-    plt.xlabel('Distance (um)')
-    plt.ylabel('PN2PV Reciprocal Probability')
+    ax = plot_connectivity(
+        histo, histo_bins, histo_dist, ground_truth, bin_width
+    )
+    ax.set_xlabel('Distance (um)')
+    ax.set_ylabel('PN2PV Reciprocal Probability')
     plt.show()
+
 def plot_pn2pv_unidirectional_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, ground_truth=None, plot=False):
     '''
     Plots a histogram with the relative frequency of pn to pv unidirectional connections as a function of distance.
@@ -1278,21 +1457,20 @@ def plot_pn2pv_unidirectional_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, gr
     logical_mat_pv_pn = np.asmatrix(mat_pv_pn, dtype=bool)
     mat_unid = np.logical_and(np.logical_xor(logical_mat_pn_pv,  logical_mat_pv_pn.T), logical_mat_pn_pv)
 
-    histo_bins = np.arange(0, 600, 10)
+    bin_width = 10
+    histo_bins = np.arange(0, 200, bin_width)
     histo_dist, bin_edges = np.histogram(dist_mat, bins=histo_bins)
     histo, bin_edges = np.histogram(dist_mat[mat_unid], bins=histo_bins)
 
-    # Plot
-    if plot:
-        fig, ax = plt.subplots()
-        cax = ax.plot(histo_bins[:-1], np.divide(histo, histo_dist))
-        if ground_truth:
-            cax = ax.plot(histo_bins, ground_truth(histo_bins))
-        ax.set_title('configuration str')
-        plt.xlabel('Distance (um)')
-        plt.ylabel('PN2PV Unidirectional Probability')
-        plt.savefig('plot_pn2pv_unidirectional_across_distance.png')
-        plt.show()
+    ax = plot_connectivity(
+        histo, histo_bins, histo_dist, ground_truth, bin_width
+    )
+    ax.set_xlabel('Distance (um)')
+    ax.set_ylabel('PN2PV Unidirectional Probability')
+
+    plt.savefig('plot_pn2pv_unidirectional_across_distance.png')
+    plt.savefig('plot_pn2pv_unidirectional_across_distance.svg')
+    plt.show()
 
 def plot_pv2pn_unidirectional_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, ground_truth=None, plot=False):
     '''
@@ -1313,18 +1491,17 @@ def plot_pv2pn_unidirectional_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, gr
     logical_mat_pv_pn = np.asmatrix(mat_pv_pn, dtype=bool)
     mat_unid = np.logical_and(np.logical_xor(logical_mat_pn_pv,  logical_mat_pv_pn.T), logical_mat_pv_pn.T)
 
-    histo_bins = np.arange(0, 600, 10)
+    bin_width = 10
+    histo_bins = np.arange(0, 200, bin_width)
     histo_dist, bin_edges = np.histogram(dist_mat, bins=histo_bins)
     histo, bin_edges = np.histogram(dist_mat[mat_unid], bins=histo_bins)
 
-    # Plot
-    if plot:
-        fig, ax = plt.subplots()
-        cax = ax.plot(histo_bins[:-1], np.divide(histo, histo_dist))
-        if ground_truth:
-            cax = ax.plot(histo_bins, ground_truth(histo_bins))
-        ax.set_title('configuration str')
-        plt.xlabel('Distance (um)')
-        plt.ylabel('PV2PN Unidirectional Probability')
-        plt.savefig('plot_pv2pn_unidirectional_across_distance.png')
-        plt.show()
+    ax = plot_connectivity(
+        histo, histo_bins, histo_dist, ground_truth, bin_width
+    )
+    ax.set_xlabel('Distance (um)')
+    ax.set_ylabel('PV2PN Unidirectional Probability')
+
+    plt.savefig('plot_pv2pn_unidirectional_across_distance.png')
+    plt.savefig('plot_pv2pn_unidirectional_across_distance.svg')
+    plt.show()

@@ -77,7 +77,7 @@ if __name__ == '__main__':
     else:
         #compute_nnmf_cv(param_pairs[1])
         #TODO: Load the CV results an plot them to see if correct
-        fig = plt.figure()
+        fig, ax = plt.subplots(1,1)
         for animal_model in range(1, no_of_animals + 1):
             for learning_condition in range(1, no_of_conditions + 1):
                 print(f'NT:{animal_model}, LC:{learning_condition}')
@@ -90,23 +90,26 @@ if __name__ == '__main__':
                     K = attribs['K'][0]
                     max_clusters = attribs['max_clusters'][0]
                     rng_max_iters = attribs['rng_max_iters'][0]
+                    print(f'\tNT{animal_model}_LC{learning_condition}_RNG max iters: {rng_max_iters}')
                     error_bar = pd.read_hdf(inputfile, key='error_bar') \
-                        .values.reshape(max_clusters, K, rng_max_iters) \
-                            .mean(axis=2)
+                        .values.reshape(max_clusters, K, rng_max_iters)
                     error_test = pd.read_hdf(inputfile, key='error_test') \
-                        .values.reshape(max_clusters, K, rng_max_iters) \
-                            .mean(axis=2)
+                        .values.reshape(max_clusters, K, rng_max_iters)
                     # Plot the errors to get the picture:
-                    plt.plot(error_bar, color='C0', alpha=0.2)
-                    plt.plot(error_test, color='C1', alpha=0.2)
-                    plt.plot(error_bar.mean(axis=1), color='C0')
-                    plt.plot(error_test.mean(axis=1), color='C1')
-                    K_str_cv = np.argmin(error_test.mean(axis=1))
-                    plt.title(f'NT:{animal_model}, LC:{learning_condition}, K*cv:{K_str_cv}')
-                    #plt.show()
-                    #plt.waitforbuttonpress()
-                    plt.savefig(str(data_dir.joinpath(f'NT{animal_model} LC{learning_condition} K_cv{K_str_cv}_structured.png')), format='png')
-                    plt.cla()
+                    ax.plot(error_bar.mean(axis=2), color='C0', alpha=0.2)
+                    # Test that variability of NNMF is indeed great:
+                    #ax.plot(error_test.reshape(-1, K * rng_max_iters), color='C2', alpha=0.2)
+                    ax.plot(error_test.mean(axis=2), color='C1', alpha=0.2)
+                    ax.plot(error_bar.mean(axis=2).mean(axis=1), color='C0')
+                    ax.plot(error_test.mean(axis=2).mean(axis=1), color='C1')
+                    K_str_cv = np.argmin(error_test.mean(axis=2).mean(axis=1)) + 1
+                    ax.set_title(f'NT:{animal_model}, LC:{learning_condition}, K*cv:{K_str_cv}')
+                    ax.set_xticks(range(max_clusters))
+                    ax.set_xticklabels(range(1, max_clusters + 1))
+                    #ax.show()
+                    #ax.waitforbuttonpress()
+                    fig.savefig(str(data_dir.joinpath(f'new_NT{animal_model} LC{learning_condition} K_cv{K_str_cv}_structured.png')), format='png')
+                    ax.cla()
                     # Giati einai toso mikrotero to test error? Mipws ginetai kati me ta data
                     # kai to train blepei to test?
 

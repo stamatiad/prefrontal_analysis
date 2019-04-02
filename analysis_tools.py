@@ -1447,16 +1447,21 @@ def pcaL2(
         plot_axes.set_xlabel('PC1')
         plot_axes.set_ylabel('PC2')
         plot_axes.set_zlabel('Time')
-        pca_axis_limits = (-10, 10)
+        pc1_max = int(np.max(t_L_per_trial[0, :, :].reshape(-1, 1)))
+        pc1_min = int(np.min(t_L_per_trial[0, :, :].reshape(-1, 1)))
+        pc2_max = int(np.max(t_L_per_trial[1, :, :].reshape(-1, 1)))
+        pc2_min = int(np.min(t_L_per_trial[1, :, :].reshape(-1, 1)))
+        pc1_axis_limits = (pc1_min, pc1_max)
+        pc2_axis_limits = (pc2_min, pc2_max)
         time_axis_limits = (0, duration)
         #TODO: change the 20 with a proper variable (do I have one?)
         time_axis_ticks = np.linspace(0, duration, (duration / 20) + 1)
         time_axis_ticklabels = q2sec(q_time=time_axis_ticks)  #np.linspace(0, time_axis_limits[1], duration)
-        plot_axes.set_xlim(pca_axis_limits)
-        plot_axes.set_ylim(pca_axis_limits)
+        plot_axes.set_xlim(pc1_axis_limits)
+        plot_axes.set_ylim(pc2_axis_limits)
         plot_axes.set_zlim(time_axis_limits)
-        plot_axes.set_xticks(pca_axis_limits)
-        plot_axes.set_yticks(pca_axis_limits)
+        plot_axes.set_xticks(pc1_axis_limits)
+        plot_axes.set_yticks(pc2_axis_limits)
         plot_axes.set_zticks(time_axis_ticks)
         plot_axes.set_zticklabels(time_axis_ticklabels)
         plot_axes.elev = 22.5
@@ -1706,7 +1711,7 @@ def NNMF(
         animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
         trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
             get_acquisition_parameters(
-                input_NWBfile=NWBfile,
+                input_NWBfile=input_NWBfile,
                 requested_parameters=[
                     'animal_model_id', 'learning_condition_id', 'ncells',
                     'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',

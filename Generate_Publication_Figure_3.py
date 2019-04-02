@@ -235,11 +235,10 @@ for idx, animal_model in enumerate([2]):
     )
     custom_range = (20, int(trial_len / 50))
 
-    #K_star, K_labels, *_ = analysis.determine_number_of_clusters(
-    #    NWBfile_array=NWBfiles,
-    #    max_clusters=no_of_conditions * ntrials,
-    #    custom_range=custom_range
-    #)
+    K_star, K_labels, BIC_val, _ = analysis.determine_number_of_clusters(
+        NWBfile_array=NWBfiles,
+        max_clusters=no_of_conditions * ntrials
+    )
 
     # Plot the annotated clustering results:
     #TODO: are these correctly labeled?

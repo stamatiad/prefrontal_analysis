@@ -20,11 +20,11 @@ serial_no = 1
 net_structured = nt.Network(serial_no=serial_no, pc_no=pn_no, pv_no=pv_no)
 
 # A cube of side 180 um, has about 60000 cells.
-net_structured.populate_network(cube_side_len=cube_side_length, plot=False)
+net_structured.populate_network(cube_side_len=cube_side_length, plot=True)
 
 # Create both structured and random configurations:
 net_structured.create_connections(
-    alias='structured_half_reciprocals', rearrange_iterations=1000, plot=False
+    alias='structured_half_reciprocals', rearrange_iterations=1000, plot=True
 )
 
 net_structured.create_weights()
