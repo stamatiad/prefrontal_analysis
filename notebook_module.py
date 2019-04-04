@@ -21,6 +21,46 @@ import sys
 from pynwb import NWBHDF5IO
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 import matplotlib.font_manager as fm
+import matplotlib.gridspec as gridspec
+import matplotlib.axes._subplots as mpsp
+import matplotlib.projections as mppr
+
+def p_figure_space(h, c, r):
+    return (c*r)/(h-c*r+c)
+
+def extract_subgridspec_bbox(fig, sgs):
+    projection_class, kwargs, key = mppr.process_projection_requirements(
+        fig, sgs)
+    a = mpsp.subplot_class_factory(projection_class)(fig, sgs, **kwargs)
+    return a.bbox
+
+def split_gridspec(nrows, ncols, c, gs=None, left=0.0, bottom=0.0,
+                   right=1.0, top=1.0):
+    # I don't know what I'm doing...
+    fig = plt.gcf()
+    if gs:
+        # If a gridspec is given, split that.
+        # Extract gs bounding box:
+        bbox = extract_subgridspec_bbox(fig, gs)
+        h = bbox._bbox.y1 - bbox._bbox.y0
+        w = bbox._bbox.x1 - bbox._bbox.x0
+        hpercent = p_figure_space(h, c, nrows)
+        wpercent = p_figure_space(w, c, ncols)
+        gs_split = gs.subgridspec(
+            nrows, ncols, wspace=wpercent, hspace=hpercent
+        )
+    else:
+        h = top - bottom
+        w = right - left
+        hpercent = p_figure_space(h, c, nrows)
+        wpercent = p_figure_space(w, c, ncols)
+        gs_split = gridspec.GridSpec(
+            nrows, ncols, left=left, right=right,
+            top=top, bottom=bottom,
+            wspace=wpercent, hspace=hpercent
+        )
+
+    return gs_split
 
 def cm2inch(*tupl):
     inch = 2.54
@@ -62,7 +102,7 @@ def hide_axis_border(axis=None):
     axis.xaxis.set_ticklabels([])
     axis.yaxis.set_ticklabels([])
 
-def adjust_spines(ax, spines, blowout=10):
+def adjust_spines(ax, spines, blowout=2):
     for loc, spine in ax.spines.items():
         if loc in spines:
             spine.set_position(('outward', blowout))  # outward by 10 points
