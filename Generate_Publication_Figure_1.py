@@ -25,7 +25,6 @@ from scipy import stats
 
 # <codecell>
 simulations_dir = Path.cwd().joinpath('simulations')
-glia_dir = Path(r'G:\Glia')
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
 
@@ -36,28 +35,143 @@ no_of_animals = 4
 #===============================================================================
 #===============================================================================
 # FIGURE 1 (PENDING)
-NWBfile = analysis.load_nwb_file(
-    animal_model=1,
-    learning_condition=1,
-    experiment_config='structured',
-    type='mp',
-    data_path=glia_dir
-    #type='bn',
-    #data_path=simulations_dir
-)
 
+# Create the figure objects:
 subplot_width = 4
-subplot_height = 3
+subplot_height = 2
 figure1 = plt.figure(figsize=plt.figaspect(subplot_height / subplot_width))
-#TODO: I tend to believe that the w/hspace is RELATIVE to the size of this grid.
-# This asks for a absolute number, in order to have a visually pleasing grid.
-gs1 = gridspec.GridSpec(2, 2, left=0.05, right=0.30, top=0.95, bottom=0.52, wspace=0.35, hspace=0.2)
-#gs1.update(left=0.05, right=0.30, wspace=0.05)
-A_axis_a = plt.subplot(gs1[0, 0])
-A_axis_b = plt.subplot(gs1[1, 0])
-nb.mark_figure_letter(A_axis_a, 'A')
 
-sketch_pyramidal = plt.imread('../Pyramidal.png')
+# c is the size of subplot space/margin, for both h/w (in figure scale).
+# If you are realy OCD, you can use a second one, scaled by fig aspect ratio.
+c = 0.09
+main_gs = nb.split_gridspec(2, 1, c, left=0.05, right=0.95, top=0.95, bottom=0.05)
+upper_gs = nb.split_gridspec(1, 3, c, gs=main_gs[0, :])
+lower_gs = nb.split_gridspec(1, 2, c, gs=main_gs[1, :])
+#upper_gs = main_gs[0, :].subgridspec(1, 3, wspace=0.15, hspace=0.15)
+#lower_gs = main_gs[1, :].subgridspec(1, 2, wspace=0.15, hspace=0.15)
+AB_gs = nb.split_gridspec(2, 2, c, gs=upper_gs[0, 0])
+#AB_gs = upper_gs[0, 0].subgridspec(2, 2, wspace=0.15, hspace=new_p)
+A_axis_a = plt.subplot(AB_gs[0, 0])
+A_axis_b = plt.subplot(AB_gs[0, 1])
+B_axis_a = plt.subplot(AB_gs[1, :])
+nb.mark_figure_letter(A_axis_a, 'a')
+nb.mark_figure_letter(B_axis_a, 'b')
+
+CD_gs = nb.split_gridspec(6, 4, c, gs=upper_gs[0, 1:])
+#CD_gs = upper_gs[0, 1:].subgridspec(6, 4, wspace=0.15, hspace=new_p)
+C_gs = CD_gs[:, :3].subgridspec(6, 1, hspace=0.1)
+C_axis_a = plt.subplot(C_gs[0, 0])
+C_axis_b = plt.subplot(C_gs[1, 0])
+C_axis_c = plt.subplot(C_gs[2, 0])
+C_axis_d = plt.subplot(C_gs[3, 0])
+C_axis_e = plt.subplot(C_gs[4, 0])
+C_axis_f = plt.subplot(C_gs[5, 0])
+nb.mark_figure_letter(C_axis_a, 'c')
+D_axis_a = plt.subplot(CD_gs[:3, 3:])
+D_axis_b = plt.subplot(CD_gs[3:, 3:])
+nb.mark_figure_letter(D_axis_a, 'd')
+
+E_gs = nb.split_gridspec(2, 1, c, gs=lower_gs[0, 0])
+#E_gs = lower_gs[0, 0].subgridspec(2, 1, wspace=0.15, hspace=0.15*2)
+E_axis_a = plt.subplot(E_gs[0, :])
+E_axis_b = plt.subplot(E_gs[1, :])
+nb.mark_figure_letter(E_axis_a, 'e')
+FGHI_gs = nb.split_gridspec(1, 3, c, gs=lower_gs[0, 1])
+#FGHI_gs = lower_gs[0, 1].subgridspec(1, 3, wspace=0.15, hspace=0.15)
+FGH_gs = nb.split_gridspec(5, 1, c, gs=FGHI_gs[0, 0])
+#FGH_gs = FGHI_gs[0, 0].subgridspec(5, 1, wspace=0.15, hspace=0.15*5)
+F_axis_a = plt.subplot(FGH_gs[:3, :])
+nb.mark_figure_letter(F_axis_a, 'f')
+G_axis_a = plt.subplot(FGH_gs[3, :])
+nb.mark_figure_letter(G_axis_a, 'g')
+H_axis_a = plt.subplot(FGH_gs[4, :])
+nb.mark_figure_letter(H_axis_a, 'h')
+I_axis_a = plt.subplot(FGHI_gs[0, 1:], projection='3d')
+nb.mark_figure_letter(I_axis_a, 'i')
+
+plt.show()
+figure1.savefig('FINAL.png')
+print('Tutto pronto!')
+
+'''
+main_gs = gridspec.GridSpec(
+    2, 1, left=0.05, right=0.95,
+    top=0.95, bottom=0.05,
+    wspace=0.15, hspace=0.0
+)
+upper_gs = main_gs[0, :].subgridspec(1, 3, wspace=0.15, hspace=0.15)
+lower_gs = main_gs[1, :].subgridspec(1, 2, wspace=0.15, hspace=0.15)
+AB_gs = upper_gs[0, 0].subgridspec(2, 2, wspace=0.15, hspace=0.15)
+A_axis_a = plt.subplot(AB_gs[0, :])
+B_axis_a = plt.subplot(AB_gs[1, :])
+nb.mark_figure_letter(A_axis_a, 'a')
+nb.mark_figure_letter(B_axis_a, 'b')
+
+CD_gs = upper_gs[0, 1:].subgridspec(6, 4, wspace=0.15, hspace=0.999)
+C_axis_a = plt.subplot(CD_gs[0, :3])
+C_axis_b = plt.subplot(CD_gs[1, :3])
+C_axis_c = plt.subplot(CD_gs[2, :3])
+C_axis_d = plt.subplot(CD_gs[3, :3])
+C_axis_e = plt.subplot(CD_gs[4, :3])
+C_axis_f = plt.subplot(CD_gs[5, :3])
+nb.mark_figure_letter(C_axis_a, 'c')
+D_axis_a = plt.subplot(CD_gs[:3, 3:])
+D_axis_b = plt.subplot(CD_gs[3:, 3:])
+nb.mark_figure_letter(D_axis_a, 'd')
+
+E_gs = lower_gs[0, 0].subgridspec(2, 1)
+E_axis_a = plt.subplot(E_gs[0, :])
+E_axis_b = plt.subplot(E_gs[1, :])
+nb.mark_figure_letter(E_axis_a, 'e')
+FGHI_gs = lower_gs[0, 1].subgridspec(1, 3)
+FGH_gs = FGHI_gs[0, 0].subgridspec(5, 1)
+F_axis_a = plt.subplot(FGH_gs[:3, :])
+nb.mark_figure_letter(F_axis_a, 'f')
+G_axis_a = plt.subplot(FGH_gs[3, :])
+nb.mark_figure_letter(G_axis_a, 'g')
+H_axis_a = plt.subplot(FGH_gs[4, :])
+nb.mark_figure_letter(H_axis_a, 'h')
+I_axis_a = plt.subplot(FGHI_gs[0, 1:])
+nb.mark_figure_letter(I_axis_a, 'i')
+
+#plt.subplots_adjust(top=0.95, bottom=0.05, left=0.05, right=0.95, hspace=0.15, wspace=0.15)
+figure1.savefig('BLAH.png')
+'''
+
+'''
+# Old figure creation:
+gs1 = gridspec.GridSpec(
+    2, 2, left=0.05, right=0.30, top=0.95, bottom=0.52, wspace=0.35, hspace=0.2
+)
+A_axis_a = plt.subplot(gs1[0, 0])
+nb.mark_figure_letter(A_axis_a, 'A')
+B_axis_a = plt.subplot(gs1[0, 1])
+gs2 = gridspec.GridSpec(
+    6, 6, left=0.32, right=0.98, top=0.95, bottom=0.52, wspace=0.35, hspace=0.2
+)
+C_axis_a = plt.subplot(gs2[0, :4])
+C_axis_b = plt.subplot(gs2[1, :4])
+C_axis_c = plt.subplot(gs2[2, :4])
+C_axis_d = plt.subplot(gs2[3, :4])
+C_axis_e = plt.subplot(gs2[4, :4])
+C_axis_f = plt.subplot(gs2[5, :4])
+D_axis_a = plt.subplot(gs2[:2, 4:])
+D_axis_b = plt.subplot(gs2[3:, 4:])
+gs3 = gridspec.GridSpec(
+    2, 2, left=0.05, right=0.50, top=0.43, bottom=0.1, wspace=0.2, hspace=0.35
+)
+E_axis_a = plt.subplot(gs3[0, :])
+E_axis_b = plt.subplot(gs3[1, :])
+gs4 = gridspec.GridSpec(
+    5, 3, left=0.56, right=0.98, top=0.43, bottom=0.1, wspace=0.2, hspace=0.2
+)
+F_axis_a = plt.subplot(gs4[:3, 0])
+G_axis_a = plt.subplot(gs4[3:4, 0])
+H_axis_a = plt.subplot(gs4[4:, 0])
+I_axis_a = plt.subplot(gs4[:, 1:], projection='3d')
+'''
+
+sketch_pyramidal = plt.imread('Pyramidal.png')
 A_axis_a.imshow(sketch_pyramidal, interpolation="nearest")
 nb.hide_axis_border(axis=A_axis_a)
 
@@ -90,34 +204,13 @@ A_axis_b.set_xlabel('Stimulus intensity', fontsize=axis_label_font_size)
 A_axis_b.set_ylabel('Amplitude (mV)', fontsize=axis_label_font_size)
 nb.axis_normal_plot(axis=A_axis_b)
 nb.adjust_spines(A_axis_b, ['left', 'bottom'])
-#TODO: make ticks right!
-#sketch_interneuron = plt.imread('../Interneuron.png')
-#A_axis_b.imshow(sketch_interneuron, interpolation="nearest")
-#nb.hide_axis_border(axis=A_axis_b)
-
-B_axis_a = plt.subplot(gs1[0, 1])
-B_axis_b = plt.subplot(gs1[1, 1])
-nb.mark_figure_letter(B_axis_a, 'B')
 
 #TODO: Keep only the structured PLUS input vectors to show the simulation protocol.
-sketch_structured = plt.imread('../Clustered_network_sketch.png')
-B_axis_a.imshow(sketch_structured, interpolation="nearest")
-nb.hide_axis_border(axis=B_axis_a)
+#sketch_structured = plt.imread('Clustered_network_sketch.png')
+#A_axis_b.imshow(sketch_structured, interpolation="nearest")
+#nb.hide_axis_border(axis=A_axis_b)
+#nb.mark_figure_letter(A_axis_b, 'b')
 
-sketch_random = plt.imread('../Random_network_sketch.png')
-B_axis_b.imshow(sketch_random, interpolation="nearest")
-nb.hide_axis_border(axis=B_axis_b)
-
-
-gs2 = gridspec.GridSpec(6, 6, left=0.32, right=0.98, top=0.95, bottom=0.52, wspace=0.35, hspace=0.2)
-#gs2.update(left=0.32, right=0.98, wspace=0.05)
-C_axis_a = plt.subplot(gs2[0, :4])
-C_axis_b = plt.subplot(gs2[1, :4])
-C_axis_c = plt.subplot(gs2[2, :4])
-C_axis_d = plt.subplot(gs2[3, :4])
-C_axis_e = plt.subplot(gs2[4, :4])
-C_axis_f = plt.subplot(gs2[5, :4])
-nb.mark_figure_letter(C_axis_a, 'C')
 
 # Figure C
 # Load a NWB file containing membrane potential:
@@ -128,7 +221,7 @@ NWBfile = analysis.load_nwb_file(
     learning_condition=1,
     experiment_config='structured',
     type='mp',
-    data_path=glia_dir
+    data_path=simulations_dir
     #type='bn',
     #data_path=simulations_dir
 )
@@ -153,6 +246,7 @@ for id, axis_obj in zip(exemplar_interneurons_ids, interneuron_axes):
     axis_obj.axvspan(50.0, 1050.0, ymin=0, ymax=1, color='g', alpha=0.2)
     nb.hide_axis_border(axis=axis_obj)
 
+nb.mark_figure_letter(C_axis_a, 'c')
 
 #nb.set_horizontal_scalebar(
 #    axis=C_axis_f,
@@ -162,9 +256,6 @@ for id, axis_obj in zip(exemplar_interneurons_ids, interneuron_axes):
 #    distfromx=0.4
 #)
 
-D_axis_a = plt.subplot(gs2[:2, 4:])
-D_axis_b = plt.subplot(gs2[3:, 4:])
-nb.mark_figure_letter(D_axis_a, 'D')
 
 stim_ISI_all = []
 stim_ISI_CV_all = []
@@ -236,15 +327,12 @@ D_axis_b.set_xlabel('Coefficient of Variation', fontsize=axis_label_font_size)
 D_axis_b.set_ylabel('Relative Frequency', fontsize=axis_label_font_size)
 nb.axis_normal_plot(axis=D_axis_b)
 nb.adjust_spines(D_axis_b, ['left', 'bottom'])
+nb.mark_figure_letter(D_axis_a, 'd')
 
 
-#TODO bale to idio animal me to Fig H1.
-gs3 = gridspec.GridSpec(2, 2, left=0.05, right=0.50, top=0.43, bottom=0.1, wspace=0.2, hspace=0.35)
-E_axis_a = plt.subplot(gs3[0, :])
-E_axis_b = plt.subplot(gs3[1, :])
-nb.mark_figure_letter(E_axis_a, 'E')
 
 # Figure Ea
+#TODO bale to idio animal me to Fig H1.
 #TODO: opws einai to NWBfile einai ena tyxaio apo to loop pio panw!
 # Exemplar network rasterplot:
 # Trials that have pa: 2, 6. The 6 is quite nice!
@@ -276,17 +364,9 @@ nb.adjust_spines(E_axis_b, ['left', 'bottom'])
 E_axis_b.axvspan(50.0, 1050.0, ymin=0, ymax=1, color='g', alpha=0.2)
 E_axis_b.set_xlabel('Time (ms)')
 E_axis_b.set_ylabel('Firing Frequency (Hz)')
+nb.mark_figure_letter(E_axis_a, 'e')
 
 
-gs4 = gridspec.GridSpec(4, 2, left=0.56, right=0.98, top=0.43, bottom=0.1, wspace=0.2, hspace=0.2)
-F_axis_a = plt.subplot(gs4[:3, 0])
-G_axis_a = plt.subplot(gs4[3:, 0])
-H_axis_a = plt.subplot(gs4[:3, 1], projection='3d')
-I_axis_a = plt.subplot(gs4[3:, 1])
-nb.mark_figure_letter(F_axis_a, 'F')
-nb.mark_figure_letter(G_axis_a, 'G')
-nb.mark_figure_letter(H_axis_a, 'H')
-nb.mark_figure_letter(I_axis_a, 'I')
 
 # Figure G:
 # Use the same file for the PCA 3d also:
@@ -324,20 +404,22 @@ G_axis_a.set_xlabel('Time (ms)')
 G_axis_a.axvspan(50.0 / 50, 1050.0 /50 , ymin=0, ymax=1, color='g', alpha=0.2)
 nb.axis_normal_plot(axis=G_axis_a)
 nb.adjust_spines(G_axis_a, ['left', 'bottom'])
+nb.mark_figure_letter(G_axis_a, 'g')
 
 # Figure 1I:
 velocity = analysis.velocity(data=net_activity)
-I_axis_a.cla()
-I_axis_a.plot(velocity.T, color='gray', alpha=0.2)
-I_axis_a.plot(np.mean(velocity.T, axis=1), color='k', linewidth=2)
-I_axis_a.set_xticks(time_axis_ticks)
-I_axis_a.set_xticklabels(time_axis_ticklabels)
-I_axis_a.set_ylabel('Velocity (Hz/s)')
-I_axis_a.set_xlabel('Time (ms)')
+H_axis_a.cla()
+H_axis_a.plot(velocity.T, color='gray', alpha=0.2)
+H_axis_a.plot(np.mean(velocity.T, axis=1), color='k', linewidth=2)
+H_axis_a.set_xticks(time_axis_ticks)
+H_axis_a.set_xticklabels(time_axis_ticklabels)
+H_axis_a.set_ylabel('Velocity (Hz/s)')
+H_axis_a.set_xlabel('Time (ms)')
 #TODO: use proper values, not hardcoded!
-I_axis_a.axvspan(50.0 / 50, 1050.0 /50 , ymin=0, ymax=1, color='g', alpha=0.2)
-nb.axis_normal_plot(axis=I_axis_a)
-nb.adjust_spines(I_axis_a, ['left', 'bottom'])
+H_axis_a.axvspan(50.0 / 50, 1050.0 /50 , ymin=0, ymax=1, color='g', alpha=0.2)
+nb.axis_normal_plot(axis=H_axis_a)
+nb.adjust_spines(H_axis_a, ['left', 'bottom'])
+nb.mark_figure_letter(H_axis_a, 'h')
 
 # Figure 1F:
 # Load binned acquisition (all trials together)
@@ -384,6 +466,7 @@ divider = make_axes_locatable(F_axis_a)
 cax = divider.append_axes('bottom', size='5%', pad=0.05)
 figure1.colorbar(im, orientation='horizontal', fraction=0.05,
                  cax=cax)
+nb.mark_figure_letter(F_axis_a, 'f')
 
 # Figure 1H:
 K_star, K_labels, BIC_val, _ = analysis.determine_number_of_clusters(
@@ -397,12 +480,13 @@ nb.report_value('Fig 1H: BIC', BIC_val)
 nb.report_value('Fig 1H: Sparsness', TR_sp)
 
 analysis.plot_pca_in_3d(
-    NWBfile=NWBfile, custom_range=custom_range, smooth=True, plot_axes=H_axis_a,
+    NWBfile=NWBfile, custom_range=custom_range, smooth=True, plot_axes=I_axis_a,
     klabels=K_labels
 )
-#azim, elev = H_axis_a.azim, H_axis_a.elev
-print((H_axis_a.azim, H_axis_a.elev))
-H_axis_a.view_init(elev=14, azim=-135)
+#azim, elev = I_axis_a.azim, I_axis_a.elev
+print((I_axis_a.azim, I_axis_a.elev))
+I_axis_a.view_init(elev=14, azim=-135)
+nb.mark_figure_letter(I_axis_a, 'i')
 plt.draw()
 
 #sketch_amplitude = plt.imread('../Amplitude_Nevian.png')
@@ -411,8 +495,8 @@ plt.draw()
 #nb.hide_axis_border(axis=F_axis_b)
 
 #sketch_correlation = plt.imread('../Correlation_Murray.png')
-#H_axis_b.imshow(sketch_correlation, interpolation="nearest")
-#nb.hide_axis_border(axis=H_axis_b)
+#I_axis_b.imshow(sketch_correlation, interpolation="nearest")
+#nb.hide_axis_border(axis=I_axis_b)
 
 plt.show()
 

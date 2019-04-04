@@ -1126,7 +1126,7 @@ def plot_pca_in_3d(NWBfile=None, custom_range=None, smooth=False, \
     tmp = get_correct_trials(NWBfile)
     # TODO: Duration equals trial_q_no, if no custom_range is used:
     # Reshape in array with m=cells, n=time bins.
-    duration = trial_q_no
+    duration = tmp.shape[2]
     pool_array = tmp.reshape(pn_no, correct_trials_no * duration)
 
     # how many PCA components
@@ -1200,14 +1200,40 @@ def plot_pca_in_3d(NWBfile=None, custom_range=None, smooth=False, \
         stim_stop_norm = stim_stop / duration
 
         c = mcolors.ColorConverter().to_rgb
+        stim_start_color = 'limegreen'
+        stim_stop_color = 'darkgreen'
         cluster_a_cm = make_colormap(
-            [c('coral'), c('orange'), stim_stop_norm, c('orange'), c('red')])
+            [
+                c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                c('orange'), c('red'), stim_stop_norm + 0.01,
+                c('red'), c('darkred'), 0.99,
+                c('darkred')
+            ]
+        )
         cluster_b_cm = make_colormap(
-            [c('coral'), c('orange'), stim_stop_norm, c('orange'), c('darkviolet')])
+            [
+                c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                c('orange'), c('violet'), stim_stop_norm + 0.01,
+                c('violet'), c('darkviolet'), 0.99,
+                c('darkviolet')
+            ]
+        )
         cluster_c_cm = make_colormap(
-            [c('coral'), c('orange'), stim_stop_norm, c('orange'), c('gold')])
+            [
+                c(stim_start_color), c(stim_stop_color), stim_stop_norm, 
+                c('orange'), c('gold'), stim_stop_norm + 0.01,
+                c('gold'), c('goldenrod'), 0.99,
+                c('goldenrod')
+            ]
+        )
         cluster_d_cm = make_colormap(
-            [c('coral'), c('orange'), stim_stop_norm, c('orange'), c('blue')])
+            [
+                c(stim_start_color), c(stim_stop_color), stim_stop_norm, 
+                c('orange'), c('blue'), stim_stop_norm + 0.01,
+                c('blue'), c('darkblue'), 0.99,
+                c('darkblue')
+            ]
+        )
         colors = [
             cluster_a_cm, cluster_b_cm, cluster_c_cm, cluster_d_cm
         ]
@@ -1439,7 +1465,8 @@ def pcaL2(
             fig = plt.figure()
             plt.ion()
             plot_axes = fig.add_subplot(111, projection='3d')
-        plot_axes.set_title(f'Synaptic Reconfiguration {learning_condition_id}')
+        #TODO: set title outside (you have the axis handle)
+        #plot_axes.set_title(f'Synaptic Reconfiguration {learning_condition_id}')
         # Stylize the 3d plot:
         plot_axes.w_xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
         plot_axes.w_yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
@@ -1718,9 +1745,10 @@ def NNMF(
                     'correct_trials_idx', 'correct_trials_no'
                 ]
             )
-        tmp = get_correct_trials(input_NWBfile)
+        # Get the new duration from the data (if custom_range is given):
+        tmp = get_correct_trials(input_NWBfile, custom_range=custom_range)
+        duration = tmp.shape[2]
         # Reshape in array with m=cells, n=time bins.
-        duration = trial_q_no
         tmp = tmp.reshape(pn_no, correct_trials_no * duration)
         # Concatinate it the pool array:
         if pool_array.size:
@@ -2732,7 +2760,7 @@ def determine_number_of_ensembles(
 
     tmp = get_correct_trials(NWBfile_array[0])
     # Reshape in array with m=cells, n=time bins.
-    duration = trial_q_no
+    duration = tmp.shape[2]
     data = tmp.reshape(pn_no, correct_trials_no * duration)
 
     # This is now handled by the decorator!
