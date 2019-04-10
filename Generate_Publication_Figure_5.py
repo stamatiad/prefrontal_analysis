@@ -68,7 +68,6 @@ gs1 = gridspec.GridSpec(
     1, 1, left=0.05, right=0.15, top=0.95, bottom=0.50, wspace=0.35, hspace=0.0
 )
 A_axis_a = plt.subplot(gs1[:, 0])
-nb.mark_figure_letter(A_axis_a, 'A')
 
 gs1b = gridspec.GridSpec(
     3, 1, left=0.05, right=0.15, top=0.40, bottom=0.15, wspace=0.35, hspace=0.0
@@ -76,7 +75,6 @@ gs1b = gridspec.GridSpec(
 B_axis_a = plt.subplot(gs1b[0, 0])
 B_axis_b = plt.subplot(gs1b[1, 0])
 B_axis_c = plt.subplot(gs1b[2, 0])
-nb.mark_figure_letter(B_axis_a, 'B')
 
 gs2 = gridspec.GridSpec(
     3, 1, left=0.25, right=0.50, top=0.95, bottom=0.15, wspace=0.35, hspace=0.2
@@ -121,6 +119,7 @@ A_axis_a.axvspan(0.0, 500.0, ymin=0, ymax=1, color='g', alpha=0.2)
 nb.adjust_spines(A_axis_a, ['left', 'bottom'])
 A_axis_a.xaxis.set_ticks_position('none')
 A_axis_a.xaxis.set_ticklabels([])
+nb.mark_figure_letter(A_axis_a, 'a')
 
 # First decomposition: stimulus to delay transition:
 W_stim2delay, *_ = analysis.NNMF(
@@ -153,6 +152,7 @@ B_axis_c.xaxis.set_ticklabels([])
 B_axis_c.yaxis.set_ticks_position('none')
 B_axis_c.yaxis.set_ticklabels([])
 B_axis_c.set_xlabel('Time (ms)')
+nb.mark_figure_letter(B_axis_a, 'b')
 
 
 
@@ -185,6 +185,7 @@ for assembly, assembly_axis in zip(range(1, 4), E_ax):
     ylim = assembly_axis.get_ylim()
     assembly_axis.set_yticks(ylim)
     assembly_axis.set_yticklabels(['0', 'Max'])
+    nb.axis_normal_plot(assembly_axis)
     nb.adjust_spines(assembly_axis, ['left'])
     #assembly_axis.set_ylim([0.0, 1.1])
     if assembly != 3:
@@ -201,6 +202,7 @@ C_axis_c.set_xlabel('Time (sec)')
 C_axis_c.spines['bottom'].set_visible(True)
 C_axis_c.spines['bottom'].set_color('k')
 nb.adjust_spines(C_axis_c, ['left', 'bottom'])
+nb.mark_figure_letter(C_axis_a, 'c')
 
 
 #D_axis_b.set_xlim([0.0, 5000])
@@ -210,10 +212,9 @@ nb.adjust_spines(C_axis_c, ['left', 'bottom'])
 #D_axis_b.axvspan(50.0, 1050.0, ymin=0, ymax=1, color='g', alpha=0.2)
 
 gs3 = gridspec.GridSpec(
-    1, 1, left=0.55, right=0.75, top=0.95, bottom=0.02, wspace=0.35, hspace=0.2
+    1, 1, left=0.55, right=0.75, top=0.95, bottom=0.15, wspace=0.35, hspace=0.2
 )
 D_axis_a = plt.subplot(gs3[0, 0], projection='3d')
-#nb.mark_figure_letter(D_axis_a, 'D')
 
 # A 3d plot with the last 1s of the above, in assemblie space.
 plot_axes = D_axis_a
@@ -265,12 +266,13 @@ for i, (trial, label) in enumerate(zip(range(total_trials), labels)):
                 capture_artist = False
 # Youmust group handles based on unique labels.
 plot_axes.legend(handles=handles, labels=['State 1', 'State 2', 'State 3'])
+nb.mark_figure_letter(D_axis_a, 'd')
 
 #TODO: na pros8eseis ena graph. h timh sto text pou na leei to cosine dist
 # aftwn twn vectors.
 
 gs4 = gridspec.GridSpec(
-    1, 1, left=0.80, right=0.95, top=0.95, bottom=0.02, wspace=0.35, hspace=0.2
+    1, 1, left=0.80, right=0.95, top=0.95, bottom=0.15, wspace=0.35, hspace=0.2
 )
 E_axis_a = plt.subplot(gs4[0, 0])
 
@@ -354,21 +356,25 @@ fig, ax = plt.subplots(1,1)
 ax.scatter(x=list(chain(*K_s)), y=list(chain(*K_s_CV)))
 fig.savefig('scatter_K_CV.png')
 
-sb.regplot(x=list(chain(*K_s)), y=list(chain(*K_s_CV)), ax=E_axis_a, marker='.', color='C0')
-scipy.stats.pearsonr(list(chain(*K_s)), list(chain(*K_s_CV)))
-xlim = (1 - 0.2, np.array(list(chain(*K_s))).max() + 0.2)
-ylim = (1 - 0.2, np.array(list(chain(*K_s_CV))).max() + 0.2)
+X = np.array(list(chain(*K_s)), dtype=int)
+Y = np.array(list(chain(*K_s_CV)), dtype=int) + 1
+sb.regplot(X, Y, ax=E_axis_a, marker='.', color='C0')
+tau, p_value = scipy.stats.pearsonr(X, Y)
+nb.report_value('K* to Assemblies correlation (Pearson)', (tau, p_value))
+#tau, p_value = scipy.stats.kendalltau(list(chain(*K_s)), list(chain(*K_s_CV)))
+#tau, p_value = scipy.stats.spearmanr(list(chain(*K_s)), list(chain(*K_s_CV)))
+xlim = (1 - 0.2, np.array(X).max() + 0.2)
+ylim = (1 - 0.2, np.array(Y).max() + 0.2)
 E_axis_a.set_xlim(xlim[0], xlim[1])
 E_axis_a.set_ylim(ylim[0], ylim[1])
-E_axis_a.set_xticks(list(range(math.ceil(xlim[0]), int(xlim[1]) + 1)))
-E_axis_a.set_yticks(list(range(math.ceil(ylim[0]), int(ylim[1]) + 1)))
+E_axis_a.set_xticks(list(range(math.ceil(xlim[0]), int(xlim[1]))))
+E_axis_a.set_yticks(list(range(math.ceil(ylim[0]), int(ylim[1]))))
 E_axis_a.set_xlabel('K*')
 E_axis_a.set_ylabel('Optimal assemblie no')
-nb.mark_figure_letter(E_axis_a, 'D')
 nb.axis_normal_plot(E_axis_a)
 nb.adjust_spines(E_axis_a, ['left', 'bottom'])
 
-nb.mark_figure_letter(E_axis_a, 'E')
+nb.mark_figure_letter(E_axis_a, 'e')
 
 figure5.savefig('Figure_5.png')
 figure5.savefig('Figure_5.svg')

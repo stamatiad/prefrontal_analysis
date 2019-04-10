@@ -38,7 +38,7 @@ no_of_animals = 4
 subplot_width = 3
 subplot_height = 1
 plt.ion()
-figure4 = plt.figure(figsize=plt.figaspect(0.5))
+figure4 = plt.figure(figsize=plt.figaspect(subplot_height / subplot_width))
 figure4_axis = np.zeros((subplot_height, subplot_width), dtype=object)
 dataset_name = lambda x : f'Network {x}'
 plt.show(block=False)
@@ -154,9 +154,9 @@ for case, axis in zip(cases, case_axes):
                         trial_slice_start:trial_slice_stop]
                     # Reshape in array with m=cells, n=time bins.
                     tmp = tmp.reshape(pn_no, correct_trials_no * duration)
-                    fig,ax = plt.subplots(1,1)
-                    ax.imshow(tmp)
-                    fig.savefig(f'binact_{case}_{synarr}_{animal_model}.png')
+                    #fig,ax = plt.subplots(1,1)
+                    #ax.imshow(tmp)
+                    #fig.savefig(f'binact_{case}_{synarr}_{animal_model}.png')
                 except Exception as e:
                     print(f'WHAT HAPPENED??? \n\n\n\t{str(e)}')
 
@@ -257,7 +257,7 @@ A_axis.bar(
 )
 #A_axis.axvline(np.mean(K_stars_random), color='C1', linestyle='--')
 A_axis.set_xticks(range(bins_str.size + 1))
-A_axis.set_xticklabels(np.round(bins_str, 1))
+A_axis.set_xticklabels(range(bins_str.size + 1))
 A_axis.set_xlabel('K*', fontsize=axis_label_font_size)
 A_axis.set_ylabel('Relative Frequency', fontsize=axis_label_font_size)
 nb.axis_normal_plot(axis=A_axis)

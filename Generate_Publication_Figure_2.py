@@ -69,6 +69,7 @@ analysis.pcaL2(
     smooth=True, plot_3d=True,
     plot_axes=A_axis
 )
+nb.mark_figure_letter(A_axis, 'a')
 
 # Figure 2B:
 B_axis = figure2.add_subplot(
@@ -98,7 +99,7 @@ B_axis.set_ylabel('Somatic depolarization (mV)')
 B_axis.legend((nmda_ampa_plot[0], ampa_only_plot[0]), ['NMDA+AMPA', 'AMPA only'], loc='upper right')
 nb.axis_normal_plot(B_axis)
 nb.adjust_spines(B_axis, ['left', 'bottom'], blowout=2)
-nb.mark_figure_letter(B_axis, 'B')
+nb.mark_figure_letter(B_axis, 'b')
 
 # Figure 2C:
 C_axis = figure2.add_subplot(
@@ -136,14 +137,13 @@ analysis.pcaL2(
     smooth=True, plot_3d=True,
     plot_axes=C_axis
 )
-nb.mark_figure_letter(C_axis, 'C')
+nb.mark_figure_letter(C_axis, 'c')
 
 
 # Figure 2D:
 D_axis = figure2.add_subplot(
     subplot_height, subplot_width, 4
 )
-nb.mark_figure_letter(D_axis, 'B')
 for trace in per_trial_activity['normal_NMDA+AMPA']:
     nmda_ampa_plot = D_axis.plot(trace[0][500:5000], color='gray', label='NMDA+AMPA')
 for trace in per_trial_activity['noMg_NMDA+AMPA']:
@@ -153,7 +153,7 @@ D_axis.set_ylabel('Somatic depolarization (mV)')
 D_axis.legend((nmda_ampa_plot[0], nmda_nomg_plot[0]), ['NMDA+AMPA', 'NMDA no Mg + AMPA'], loc='upper right')
 nb.axis_normal_plot(D_axis)
 nb.adjust_spines(D_axis, ['left', 'bottom'], blowout=2)
-nb.mark_figure_letter(D_axis, 'D')
+nb.mark_figure_letter(D_axis, 'd')
 
 # Figure 2E:
 E_axis = figure2.add_subplot(
@@ -191,7 +191,8 @@ analysis.pcaL2(
     smooth=True, plot_3d=True,
     plot_axes=E_axis
 )
-nb.mark_figure_letter(E_axis, 'E')
+#E_axis.set_title(f'')
+nb.mark_figure_letter(E_axis, 'e')
 
 
 if False:
@@ -293,7 +294,7 @@ if False:
     )
     nb.axis_box_plot(C_axis)
     nb.adjust_spines(C_axis, ['left'])
-    nb.mark_figure_letter(C_axis, 'C')
+    nb.mark_figure_letter(C_axis, 'c')
 
 
     # Figure 3D:
@@ -397,7 +398,7 @@ if False:
 
     nb.axis_box_plot(D_axis)
     nb.adjust_spines(D_axis, ['left'])
-    nb.mark_figure_letter(D_axis, 'D')
+    nb.mark_figure_letter(D_axis, 'd')
 
 plt.subplots_adjust(top=0.92, bottom=0.15, left=0.10, right=0.95, hspace=0.25,
                     wspace=0.30)

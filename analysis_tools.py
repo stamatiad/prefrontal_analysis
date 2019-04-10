@@ -77,6 +77,7 @@ experiment_config_filename = \
     'animal_model_{animal_model}_learning_condition_{learning_condition}_{type}_{experiment_config}.nwb'.format
 
 simulation_template = (
+    '{prefix}'
     'SN{animal_model}'
     'LC{learning_condition}'
     'TR{trial}'
@@ -392,10 +393,10 @@ def create_nwb_file(inputdir=None, outputdir=None, \
     # Get parameters externally:
     experiment_config, animal_model, learning_condition, ntrials, trial_len, ncells, stim_start_offset, \
     stim_stop_offset, samples_per_ms, spike_upper_threshold, spike_lower_threshold, excitation_bias, \
-        inhibition_bias, nmda_bias, ampa_bias, sim_duration, q_size = \
+        inhibition_bias, nmda_bias, ampa_bias, sim_duration, q_size, fn_prefix = \
         getargs('experiment_config', 'animal_model', 'learning_condition', 'ntrials', 'trial_len', 'ncells', 'stim_start_offset', \
                    'stim_stop_offset', 'samples_per_ms', 'spike_upper_threshold', 'spike_lower_threshold', \
-                'excitation_bias', 'inhibition_bias', 'nmda_bias', 'ampa_bias', 'sim_duration', 'q_size', kwargs)
+                'excitation_bias', 'inhibition_bias', 'nmda_bias', 'ampa_bias', 'sim_duration', 'q_size', 'fn_prefix', kwargs)
 
     # the base unit of time is the ms:
     samples2ms_factor = 1 / samples_per_ms
@@ -434,6 +435,7 @@ def create_nwb_file(inputdir=None, outputdir=None, \
         # Search inputdir for files specified in the parameters
         inputfile = inputdir.joinpath(
             simulation_template(
+                prefix=fn_prefix,
                 excitation_bias=excitation_bias,
                 inhibition_bias=inhibition_bias,
                 nmda_bias=nmda_bias,
