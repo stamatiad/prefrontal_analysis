@@ -26,6 +26,10 @@ simulations_dir = Path.cwd().joinpath('simulations')
 glia_dir = Path(r'G:\Glia')
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
+axis_label_font_size = 12
+tick_label_font_size = 12
+labelpad_x = 10
+labelpad_y = 10
 
 no_of_conditions = 10
 no_of_animals = 4
@@ -69,6 +73,8 @@ analysis.pcaL2(
     smooth=True, plot_3d=True,
     plot_axes=A_axis
 )
+nb.mark_figure_letter(A_axis, 'a')
+
 
 # Figure 2B:
 B_axis = figure2.add_subplot(
@@ -93,12 +99,18 @@ for trace in per_trial_activity['normal_NMDA+AMPA']:
     nmda_ampa_plot = B_axis.plot(trace[0][500:5000], color='gray', label='NMDA+AMPA')
 for trace in per_trial_activity['normal_AMPA_only']:
     ampa_only_plot = B_axis.plot(trace[0][500:5000], color='C0', label='AMPA only')
-B_axis.set_xlabel('Time (ms)')
-B_axis.set_ylabel('Somatic depolarization (mV)')
+B_axis.set_xlabel(
+    'Time (ms)', fontsize=axis_label_font_size,
+    labelpad=labelpad_x
+)
+B_axis.set_ylabel(
+    'Somatic depolarization (mV)', fontsize=axis_label_font_size,
+    labelpad=labelpad_y
+)
 B_axis.legend((nmda_ampa_plot[0], ampa_only_plot[0]), ['NMDA+AMPA', 'AMPA only'], loc='upper right')
 nb.axis_normal_plot(B_axis)
 nb.adjust_spines(B_axis, ['left', 'bottom'], blowout=2)
-nb.mark_figure_letter(B_axis, 'B')
+nb.mark_figure_letter(B_axis, 'b')
 
 # Figure 2C:
 C_axis = figure2.add_subplot(
@@ -136,24 +148,29 @@ analysis.pcaL2(
     smooth=True, plot_3d=True,
     plot_axes=C_axis
 )
-nb.mark_figure_letter(C_axis, 'C')
+nb.mark_figure_letter(C_axis, 'c')
 
 
 # Figure 2D:
 D_axis = figure2.add_subplot(
     subplot_height, subplot_width, 4
 )
-nb.mark_figure_letter(D_axis, 'B')
 for trace in per_trial_activity['normal_NMDA+AMPA']:
     nmda_ampa_plot = D_axis.plot(trace[0][500:5000], color='gray', label='NMDA+AMPA')
 for trace in per_trial_activity['noMg_NMDA+AMPA']:
     nmda_nomg_plot = D_axis.plot(trace[0][500:5000], color='C0', label='NMDA no Mg + AMPA')
-D_axis.set_xlabel('Time (ms)')
-D_axis.set_ylabel('Somatic depolarization (mV)')
+D_axis.set_xlabel(
+    'Time (ms)', fontsize=axis_label_font_size,
+    labelpad=labelpad_x
+)
+D_axis.set_ylabel(
+    'Somatic depolarization (mV)', fontsize=axis_label_font_size,
+    labelpad=labelpad_y
+)
 D_axis.legend((nmda_ampa_plot[0], nmda_nomg_plot[0]), ['NMDA+AMPA', 'NMDA no Mg + AMPA'], loc='upper right')
 nb.axis_normal_plot(D_axis)
 nb.adjust_spines(D_axis, ['left', 'bottom'], blowout=2)
-nb.mark_figure_letter(D_axis, 'D')
+nb.mark_figure_letter(D_axis, 'd')
 
 # Figure 2E:
 E_axis = figure2.add_subplot(
@@ -281,8 +298,14 @@ if False:
         f'Network {i}'
         for i in range(1, no_of_animals + 1)
     ])
-    C_axis.set_xlabel('Configurations')
-    C_axis.set_ylabel('K*')
+    C_axis.set_xlabel(
+        'Configurations', fontsize=axis_label_font_size,
+        labelpad=labelpad_x
+    )
+    C_axis.set_ylabel(
+        'K*', fontsize=axis_label_font_size,
+        labelpad=labelpad_y
+    )
     C_axis.set_yticks(list(range(1, int(max_y) + 1)))
     for tick in C_axis.get_xticklabels():
         tick.set_rotation(45)
@@ -293,7 +316,7 @@ if False:
     )
     nb.axis_box_plot(C_axis)
     nb.adjust_spines(C_axis, ['left'])
-    nb.mark_figure_letter(C_axis, 'C')
+    nb.mark_figure_letter(C_axis, 'c')
 
 
     # Figure 3D:
@@ -379,8 +402,14 @@ if False:
         f'Network {i}'
         for i in range(1, no_of_animals + 1)
     ])
-    D_axis.set_xlabel('Configurations')
-    D_axis.set_ylabel('K*')
+    D_axis.set_xlabel(
+        'Configurations', fontsize=axis_label_font_size,
+        labelpad=labelpad_x
+    )
+    D_axis.set_ylabel(
+        'K*', fontsize=axis_label_font_size,
+        labelpad=labelpad_y
+    )
     D_axis.set_yticks(list(range(1, int(max_y) + 1)))
     for tick in D_axis.get_xticklabels():
         tick.set_rotation(45)
@@ -397,7 +426,7 @@ if False:
 
     nb.axis_box_plot(D_axis)
     nb.adjust_spines(D_axis, ['left'])
-    nb.mark_figure_letter(D_axis, 'D')
+    nb.mark_figure_letter(D_axis, 'd')
 
 plt.subplots_adjust(top=0.92, bottom=0.15, left=0.10, right=0.95, hspace=0.25,
                     wspace=0.30)
@@ -407,7 +436,7 @@ plt.show()
 
 # <codecell>
 figure2.savefig('Figure_2.png')
-figure2.savefig('Figure_2.svg')
+figure2.savefig('Figure_2.pdf')
 print('Tutto pronto!')
 
 

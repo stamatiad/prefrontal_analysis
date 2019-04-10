@@ -1289,7 +1289,9 @@ def q2sec(q_size=50, q_time=0):
 @nwb_unique_rng
 def pcaL2(
         NWBfile_array=[], plot_2d=False, plot_3d=False, custom_range=None,
-        klabels=None, pca_components=20, smooth=False, plot_axes=None, **kwargs
+        klabels=None, pca_components=20, smooth=False, plot_axes=None,
+        axis_label_font_size=12, tick_label_font_size=12, labelpad_x=10,
+        labelpad_y=10, **kwargs
 ):
     '''
     This function reads binned activity from a list of files and performs PCA
@@ -1471,9 +1473,15 @@ def pcaL2(
         plot_axes.w_xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
         plot_axes.w_yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
         plot_axes.w_zaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
-        plot_axes.set_xlabel('PC1')
-        plot_axes.set_ylabel('PC2')
-        plot_axes.set_zlabel('Time')
+        plot_axes.set_xlabel(
+            'PC1', fontsize=axis_label_font_size, labelpad=labelpad_x
+        )
+        plot_axes.set_ylabel(
+            'PC2', fontsize=axis_label_font_size, labelpad=labelpad_x
+        )
+        plot_axes.set_zlabel(
+            'Time', fontsize=axis_label_font_size, labelpad=labelpad_x
+        )
         pc1_max = int(np.max(t_L_per_trial[0, :, :].reshape(-1, 1)))
         pc1_min = int(np.min(t_L_per_trial[0, :, :].reshape(-1, 1)))
         pc2_max = int(np.max(t_L_per_trial[1, :, :].reshape(-1, 1)))
@@ -1490,7 +1498,9 @@ def pcaL2(
         plot_axes.set_xticks(pc1_axis_limits)
         plot_axes.set_yticks(pc2_axis_limits)
         plot_axes.set_zticks(time_axis_ticks)
-        plot_axes.set_zticklabels(time_axis_ticklabels)
+        plot_axes.set_zticklabels(
+            time_axis_ticklabels, fontsize=tick_label_font_size
+        )
         plot_axes.elev = 22.5
         plot_axes.azim = 52.4
 

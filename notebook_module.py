@@ -22,6 +22,7 @@ from pynwb import NWBHDF5IO
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 import matplotlib.font_manager as fm
 import matplotlib.gridspec as gridspec
+from matplotlib.patches import Rectangle
 import matplotlib.axes._subplots as mpsp
 import matplotlib.projections as mppr
 
@@ -34,7 +35,7 @@ def extract_subgridspec_bbox(fig, sgs):
     a = mpsp.subplot_class_factory(projection_class)(fig, sgs, **kwargs)
     return a.bbox
 
-def split_gridspec(nrows, ncols, c, gs=None, left=0.0, bottom=0.0,
+def split_gridspec(nrows, ncols, ch, cw, gs=None, left=0.0, bottom=0.0,
                    right=1.0, top=1.0):
     # I don't know what I'm doing...
     fig = plt.gcf()
@@ -44,16 +45,16 @@ def split_gridspec(nrows, ncols, c, gs=None, left=0.0, bottom=0.0,
         bbox = extract_subgridspec_bbox(fig, gs)
         h = bbox._bbox.y1 - bbox._bbox.y0
         w = bbox._bbox.x1 - bbox._bbox.x0
-        hpercent = p_figure_space(h, c, nrows)
-        wpercent = p_figure_space(w, c, ncols)
+        hpercent = p_figure_space(h, ch, nrows)
+        wpercent = p_figure_space(w, cw, ncols)
         gs_split = gs.subgridspec(
             nrows, ncols, wspace=wpercent, hspace=hpercent
         )
     else:
         h = top - bottom
         w = right - left
-        hpercent = p_figure_space(h, c, nrows)
-        wpercent = p_figure_space(w, c, ncols)
+        hpercent = p_figure_space(h, ch, nrows)
+        wpercent = p_figure_space(w, cw, ncols)
         gs_split = gridspec.GridSpec(
             nrows, ncols, left=left, right=right,
             top=top, bottom=bottom,
@@ -181,7 +182,9 @@ def mark_figure_letter(axis=None, letter=None):
                   transform=axis.transAxes)
 
 
-def plot_trial_spiketrains(NWBfile=None, trialid=None, plot_axis=None):
+def plot_trial_spiketrains(NWBfile=None, trialid=None, plot_axis=None,
+                           axis_label_font_size=12, tick_label_font_size=12,
+                           labelpad_x=10, labelpad_y=10):
 
     animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
     trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
@@ -211,12 +214,15 @@ def plot_trial_spiketrains(NWBfile=None, trialid=None, plot_axis=None):
     plot_axis.eventplot(
         cell_spiketrains,
         lineoffsets=cell_ids,
-        colors='k'
+        colors='k',
+        orientation='horizontal'
     )
-    plot_axis.set_xlim([-200.0, trial_len])
+    plot_axis.set_xlim([0.0, trial_len])
     plot_axis.set_ylim([0.0, ncells])
     plot_axis.margins(0.0)
 
+    plot_axis.xaxis.set_ticks(np.arange(0, trial_len + 1000, 1000))
+    plot_axis.xaxis.set_ticklabels(np.arange(0, 5, 1), fontsize=tick_label_font_size)
     plot_axis.yaxis.set_ticks_position('none')
     plot_axis.yaxis.set_ticklabels([])
 
@@ -225,15 +231,43 @@ def plot_trial_spiketrains(NWBfile=None, trialid=None, plot_axis=None):
     plot_axis.spines['bottom'].set_position('zero')
     #plot_axis.spines['left'].set_position(('axes', 0.6))
 
+    # pyramidals:
+    x = 0.0
+    y = 0.0
+    w = -0.05
+    h = 250 / 333
+    rect = Rectangle(
+        (x, y), w, h, 0.0, fill=True, facecolor='b', alpha=0.2,
+        clip_on=False,
+        transform=plot_axis.transAxes
+    )
+    plot_axis.add_patch(rect)
+    # interneurons
+    x = 0.0
+    y = 1.0
+    w = -0.05
+    h = -83 / 333
+    rect = Rectangle(
+        (x, y), w, h, 0.0, fill=True, facecolor='r', alpha=0.2,
+        clip_on=False,
+        transform=plot_axis.transAxes
+    )
+    plot_axis.add_patch(rect)
+
     plot_axis.axvspan(50.0, 1050.0, ymin=0, ymax=1, color='g', alpha=0.2)
     # Annotate excitatory/inhibitory population:
-    plot_axis.axvspan(-200.0, 0.0, ymin=0, ymax=250/333, color='b', alpha=0.2)
-    plot_axis.axvspan(-200.0, 0.0, ymin=250/333, ymax=1, color='r', alpha=0.2)
+    #plot_axis.axvspan(-200.0, 0.0, ymin=0, ymax=250/333, color='b', alpha=0.2)
+    #plot_axis.axvspan(-200.0, 0.0, ymin=250/333, ymax=1, color='r', alpha=0.2)
 
-    plot_axis.set(xlabel='Time (ms)', ylabel='Cell type')
-    plot_axis.set(title='Spike events')
+    plot_axis.set_xlabel(
+        'Time (ms)', fontsize=axis_label_font_size, labelpad=labelpad_x
+    )
+    plot_axis.set_ylabel(
+        'Cell type', fontsize=axis_label_font_size, labelpad=labelpad_x
+    )
 
     if not plot_axis:
+        plot_axis.set(title='Spike events')
         plt.show()
 
 
