@@ -155,6 +155,7 @@ def load_nwb_file(**kwargs):
     if not Path.is_file(filename):
         raise FileNotFoundError(f'The file {filename} was not found :(')
 
+    print(f'Loading NWB file: \n{str(filename)}')
     nwbfile = NWBHDF5IO(str(filename), 'r').read()
     return nwbfile
 
@@ -389,7 +390,7 @@ def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
         io.write(nwbfile)
 
 def create_nwb_file(inputdir=None, outputdir=None, \
-                    add_membrane_potential=False, **kwargs):
+                    include_membrane_potential=False, **kwargs):
     # Get parameters externally:
     experiment_config, animal_model, learning_condition, ntrials, trial_len, ncells, stim_start_offset, \
     stim_stop_offset, samples_per_ms, spike_upper_threshold, spike_lower_threshold, excitation_bias, \
@@ -502,7 +503,7 @@ def create_nwb_file(inputdir=None, outputdir=None, \
             trial_offset_samples += nsamples
 
 
-    if add_membrane_potential:
+    if include_membrane_potential:
         # Chunk and compress the data:
         wrapped_data = H5DataIO(
             data=membrane_potential,
@@ -525,18 +526,28 @@ def create_nwb_file(inputdir=None, outputdir=None, \
         print('Membrane potential acquired.')
 
     for cellid in range(ncells):
+        # Get each trial start/end in seconds rather than ms:
+        trial_intervals = [
+            [trial_start, trial_end]
+            for trial_start, trial_end in \
+            generate_slices(
+                size=trial_len / 1000, number=ntrials, start_from=0
+            )
+        ]
+        #TODO: These should be separate. If you don't have spikes in ANY
+        # cell, pynwb throws error, uppon saving.
         if spike_trains_d[cellid].size > 0:
-            # Get each trial start/end in seconds rather than ms:
-            trial_intervals = [
-                [trial_start, trial_end]
-                for trial_start, trial_end in \
-                generate_slices(
-                    size=trial_len / 1000, number=ntrials, start_from=0
-                )
-            ]
             nwbfile.add_unit(
                 id=cellid,
                 spike_times=spike_trains_d[cellid],
+                obs_intervals=trial_intervals,
+                cell_id=cellid,
+                cell_type=get_cell_type(cellid, pn_no)
+            )
+        else:
+            nwbfile.add_unit(
+                id=cellid,
+                spike_times=[],
                 obs_intervals=trial_intervals,
                 cell_id=cellid,
                 cell_type=get_cell_type(cellid, pn_no)
@@ -588,7 +599,7 @@ def create_nwb_file(inputdir=None, outputdir=None, \
     print('Binned activity acquired')
 
     # write to file:
-    if add_membrane_potential:
+    if include_membrane_potential:
         type = 'mp'
     else:
         type = 'bn'
@@ -1048,7 +1059,6 @@ def get_correct_trials(NWBfile, custom_range=None):
         trial_slice_stop = int(custom_range[1])
         duration = trial_slice_stop - trial_slice_start
     else:
-        #TODO: SE OLA EINAI LA8OS. Prepei na exw ta trial start stop.
         trial_slice_start = 0
         trial_slice_stop = trial_q_no
         duration = trial_q_no
@@ -1291,7 +1301,9 @@ def q2sec(q_size=50, q_time=0):
 @nwb_unique_rng
 def pcaL2(
         NWBfile_array=[], plot_2d=False, plot_3d=False, custom_range=None,
-        klabels=None, pca_components=20, smooth=False, plot_axes=None, **kwargs
+        klabels=None, pca_components=20, smooth=False, plot_axes=None,
+        axis_label_font_size=12, tick_label_font_size=12, labelpad_x=10,
+        labelpad_y=10, **kwargs
 ):
     '''
     This function reads binned activity from a list of files and performs PCA
@@ -1473,9 +1485,15 @@ def pcaL2(
         plot_axes.w_xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
         plot_axes.w_yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
         plot_axes.w_zaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
-        plot_axes.set_xlabel('PC1')
-        plot_axes.set_ylabel('PC2')
-        plot_axes.set_zlabel('Time')
+        plot_axes.set_xlabel(
+            'PC1', fontsize=axis_label_font_size, labelpad=labelpad_x
+        )
+        plot_axes.set_ylabel(
+            'PC2', fontsize=axis_label_font_size, labelpad=labelpad_x
+        )
+        plot_axes.set_zlabel(
+            'Time', fontsize=axis_label_font_size, labelpad=labelpad_x
+        )
         pc1_max = int(np.max(t_L_per_trial[0, :, :].reshape(-1, 1)))
         pc1_min = int(np.min(t_L_per_trial[0, :, :].reshape(-1, 1)))
         pc2_max = int(np.max(t_L_per_trial[1, :, :].reshape(-1, 1)))
@@ -1492,7 +1510,9 @@ def pcaL2(
         plot_axes.set_xticks(pc1_axis_limits)
         plot_axes.set_yticks(pc2_axis_limits)
         plot_axes.set_zticks(time_axis_ticks)
-        plot_axes.set_zticklabels(time_axis_ticklabels)
+        plot_axes.set_zticklabels(
+            time_axis_ticklabels, fontsize=tick_label_font_size
+        )
         plot_axes.elev = 22.5
         plot_axes.azim = 52.4
 

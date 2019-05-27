@@ -1436,6 +1436,8 @@ def plot_pn_pv_reciprocal_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, ground
     )
     ax.set_xlabel('Distance (um)')
     ax.set_ylabel('PN2PV Reciprocal Probability')
+    plt.savefig('PN-PV_reciprocal_across_distance.png')
+    plt.savefig('PN-PV_reciprocal_across_distance.svg')
     plt.show()
 
 def plot_pn2pv_unidirectional_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, ground_truth=None, plot=False):

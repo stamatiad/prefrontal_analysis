@@ -26,6 +26,10 @@ simulations_dir = Path.cwd().joinpath('simulations')
 glia_dir = Path(r'G:\Glia')
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
+axis_label_font_size = 12
+tick_label_font_size = 12
+labelpad_x = 10
+labelpad_y = 10
 
 no_of_conditions = 10
 no_of_animals = 4
@@ -94,8 +98,14 @@ for trace in per_trial_activity['normal_NMDA+AMPA']:
     nmda_ampa_plot = B_axis.plot(trace[0][500:5000], color='gray', label='NMDA+AMPA')
 for trace in per_trial_activity['normal_AMPA_only']:
     ampa_only_plot = B_axis.plot(trace[0][500:5000], color='C0', label='AMPA only')
-B_axis.set_xlabel('Time (ms)')
-B_axis.set_ylabel('Somatic depolarization (mV)')
+B_axis.set_xlabel(
+    'Time (ms)', fontsize=axis_label_font_size,
+    labelpad=labelpad_x
+)
+B_axis.set_ylabel(
+    'Somatic depolarization (mV)', fontsize=axis_label_font_size,
+    labelpad=labelpad_y
+)
 B_axis.legend((nmda_ampa_plot[0], ampa_only_plot[0]), ['NMDA+AMPA', 'AMPA only'], loc='upper right')
 nb.axis_normal_plot(B_axis)
 nb.adjust_spines(B_axis, ['left', 'bottom'], blowout=2)
@@ -148,8 +158,14 @@ for trace in per_trial_activity['normal_NMDA+AMPA']:
     nmda_ampa_plot = D_axis.plot(trace[0][500:5000], color='gray', label='NMDA+AMPA')
 for trace in per_trial_activity['noMg_NMDA+AMPA']:
     nmda_nomg_plot = D_axis.plot(trace[0][500:5000], color='C0', label='NMDA no Mg + AMPA')
-D_axis.set_xlabel('Time (ms)')
-D_axis.set_ylabel('Somatic depolarization (mV)')
+D_axis.set_xlabel(
+    'Time (ms)', fontsize=axis_label_font_size,
+    labelpad=labelpad_x
+)
+D_axis.set_ylabel(
+    'Somatic depolarization (mV)', fontsize=axis_label_font_size,
+    labelpad=labelpad_y
+)
 D_axis.legend((nmda_ampa_plot[0], nmda_nomg_plot[0]), ['NMDA+AMPA', 'NMDA no Mg + AMPA'], loc='upper right')
 nb.axis_normal_plot(D_axis)
 nb.adjust_spines(D_axis, ['left', 'bottom'], blowout=2)
@@ -282,8 +298,14 @@ if False:
         f'Network {i}'
         for i in range(1, no_of_animals + 1)
     ])
-    C_axis.set_xlabel('Configurations')
-    C_axis.set_ylabel('K*')
+    C_axis.set_xlabel(
+        'Configurations', fontsize=axis_label_font_size,
+        labelpad=labelpad_x
+    )
+    C_axis.set_ylabel(
+        'K*', fontsize=axis_label_font_size,
+        labelpad=labelpad_y
+    )
     C_axis.set_yticks(list(range(1, int(max_y) + 1)))
     for tick in C_axis.get_xticklabels():
         tick.set_rotation(45)
@@ -380,8 +402,14 @@ if False:
         f'Network {i}'
         for i in range(1, no_of_animals + 1)
     ])
-    D_axis.set_xlabel('Configurations')
-    D_axis.set_ylabel('K*')
+    D_axis.set_xlabel(
+        'Configurations', fontsize=axis_label_font_size,
+        labelpad=labelpad_x
+    )
+    D_axis.set_ylabel(
+        'K*', fontsize=axis_label_font_size,
+        labelpad=labelpad_y
+    )
     D_axis.set_yticks(list(range(1, int(max_y) + 1)))
     for tick in D_axis.get_xticklabels():
         tick.set_rotation(45)
@@ -408,7 +436,7 @@ plt.show()
 
 # <codecell>
 figure2.savefig('Figure_2.png')
-figure2.savefig('Figure_2.svg')
+figure2.savefig('Figure_2.pdf')
 print('Tutto pronto!')
 
 

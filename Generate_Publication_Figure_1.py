@@ -25,11 +25,16 @@ from scipy import stats
 
 # <codecell>
 simulations_dir = Path.cwd().joinpath('simulations')
+#Changes between computers.
+glia_dir = Path(r'G:\Glia')
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
+axis_label_font_size = 12
+tick_label_font_size = 12
+labelpad_x = 10
+labelpad_y = 10
 
 plt.ion()
-axis_label_font_size = 10
 no_of_conditions = 10
 no_of_animals = 4
 #===============================================================================
@@ -39,17 +44,19 @@ no_of_animals = 4
 # Create the figure objects:
 subplot_width = 4
 subplot_height = 2
-figure1 = plt.figure(figsize=plt.figaspect(subplot_height / subplot_width))
+figure_ratio = subplot_height / subplot_width
+figure1 = plt.figure(figsize=plt.figaspect(figure_ratio))
 
 # c is the size of subplot space/margin, for both h/w (in figure scale).
-# If you are realy OCD, you can use a second one, scaled by fig aspect ratio.
-c = 0.09
-main_gs = nb.split_gridspec(2, 1, c, left=0.05, right=0.95, top=0.95, bottom=0.05)
-upper_gs = nb.split_gridspec(1, 3, c, gs=main_gs[0, :])
-lower_gs = nb.split_gridspec(1, 2, c, gs=main_gs[1, :])
+# If you are really OCD, you can use a second one, scaled by fig aspect ratio.
+cw = 0.05
+ch = cw / figure_ratio
+main_gs = nb.split_gridspec(2, 1, ch, cw, left=0.05, right=0.95, top=0.95, bottom=0.05)
+upper_gs = nb.split_gridspec(1, 3, ch, cw, gs=main_gs[0, :])
+lower_gs = nb.split_gridspec(1, 2, ch, cw, gs=main_gs[1, :])
 #upper_gs = main_gs[0, :].subgridspec(1, 3, wspace=0.15, hspace=0.15)
 #lower_gs = main_gs[1, :].subgridspec(1, 2, wspace=0.15, hspace=0.15)
-AB_gs = nb.split_gridspec(2, 2, c, gs=upper_gs[0, 0])
+AB_gs = nb.split_gridspec(2, 2, ch, cw, gs=upper_gs[0, 0])
 #AB_gs = upper_gs[0, 0].subgridspec(2, 2, wspace=0.15, hspace=new_p)
 A_axis_a = plt.subplot(AB_gs[0, 0])
 A_axis_b = plt.subplot(AB_gs[0, 1])
@@ -57,7 +64,7 @@ B_axis_a = plt.subplot(AB_gs[1, :])
 nb.mark_figure_letter(A_axis_a, 'a')
 nb.mark_figure_letter(B_axis_a, 'b')
 
-CD_gs = nb.split_gridspec(6, 4, c, gs=upper_gs[0, 1:])
+CD_gs = nb.split_gridspec(6, 4, ch, cw, gs=upper_gs[0, 1:])
 #CD_gs = upper_gs[0, 1:].subgridspec(6, 4, wspace=0.15, hspace=new_p)
 C_gs = CD_gs[:, :3].subgridspec(6, 1, hspace=0.1)
 C_axis_a = plt.subplot(C_gs[0, 0])
@@ -71,14 +78,14 @@ D_axis_a = plt.subplot(CD_gs[:3, 3:])
 D_axis_b = plt.subplot(CD_gs[3:, 3:])
 nb.mark_figure_letter(D_axis_a, 'd')
 
-E_gs = nb.split_gridspec(2, 1, c, gs=lower_gs[0, 0])
+E_gs = nb.split_gridspec(2, 1, ch, cw, gs=lower_gs[0, 0])
 #E_gs = lower_gs[0, 0].subgridspec(2, 1, wspace=0.15, hspace=0.15*2)
 E_axis_a = plt.subplot(E_gs[0, :])
 E_axis_b = plt.subplot(E_gs[1, :])
 nb.mark_figure_letter(E_axis_a, 'e')
-FGHI_gs = nb.split_gridspec(1, 3, c, gs=lower_gs[0, 1])
+FGHI_gs = nb.split_gridspec(1, 3, ch, cw, gs=lower_gs[0, 1])
 #FGHI_gs = lower_gs[0, 1].subgridspec(1, 3, wspace=0.15, hspace=0.15)
-FGH_gs = nb.split_gridspec(5, 1, c, gs=FGHI_gs[0, 0])
+FGH_gs = nb.split_gridspec(5, 1, ch, cw, gs=FGHI_gs[0, 0])
 #FGH_gs = FGHI_gs[0, 0].subgridspec(5, 1, wspace=0.15, hspace=0.15*5)
 F_axis_a = plt.subplot(FGH_gs[:3, :])
 nb.mark_figure_letter(F_axis_a, 'f')
@@ -200,8 +207,14 @@ dend_amplitude = [
 ]
 A_axis_b.plot(soma_amplitude[:5], color='C0')
 A_axis_b.plot(dend_amplitude[:5], color='C1')
-A_axis_b.set_xlabel('Stimulus intensity', fontsize=axis_label_font_size)
-A_axis_b.set_ylabel('Amplitude (mV)', fontsize=axis_label_font_size)
+A_axis_b.set_xlabel(
+    'Stimulus intensity', fontsize=axis_label_font_size,
+    labelpad=labelpad_x
+)
+A_axis_b.set_ylabel(
+    'Amplitude (mV)', fontsize=axis_label_font_size,
+    labelpad=labelpad_y
+)
 nb.axis_normal_plot(axis=A_axis_b)
 nb.adjust_spines(A_axis_b, ['left', 'bottom'])
 
@@ -221,7 +234,7 @@ NWBfile = analysis.load_nwb_file(
     learning_condition=1,
     experiment_config='structured',
     type='mp',
-    data_path=simulations_dir
+    data_path=glia_dir
     #type='bn',
     #data_path=simulations_dir
 )
@@ -310,10 +323,17 @@ D_axis_a.plot(stim_isi_hist / len(stim_ISI), color='C0')
 D_axis_a.axvline(np.mean(stim_ISI) / step_isi, color='C0', linestyle='--')
 D_axis_a.plot(delay_isi_hist / len(delay_ISI), color='C1')
 D_axis_a.axvline(np.mean(delay_ISI) / step_isi, color='C1', linestyle='--')
-D_axis_a.set_xticks(range(bins_isi.size + 1))
-D_axis_a.set_xticklabels(np.round(bins_isi, 1))
-D_axis_a.set_xlabel('ISI length (ms)', fontsize=axis_label_font_size)
-D_axis_a.set_ylabel('Relative Frequency', fontsize=axis_label_font_size)
+D_axis_a.set_xticks(range(0, bins_isi.size, 2))
+D_axis_a.set_xticklabels(np.round(bins_isi * 2, 1), fontsize=tick_label_font_size)
+D_axis_a.set_xlim([0.0, bins_isi.size])
+D_axis_a.set_xlabel(
+    'ISI length (ms)', fontsize=axis_label_font_size,
+    labelpad=labelpad_x
+)
+D_axis_a.set_ylabel(
+    'Relative Frequency', fontsize=axis_label_font_size,
+    labelpad=labelpad_y
+)
 nb.axis_normal_plot(axis=D_axis_a)
 nb.adjust_spines(D_axis_a, ['left', 'bottom'])
 #TODO: Why I have nans inside CV?
@@ -321,10 +341,17 @@ D_axis_b.plot(stim_isi_cv_hist / len(stim_ISI_CV), color='C0')
 D_axis_b.axvline(np.nanmean(stim_ISI_CV) / step_cv, color='C0', linestyle='--')
 D_axis_b.plot(delay_isi_cv_hist / len(delay_ISI_CV), color='C1')
 D_axis_b.axvline(np.nanmean(delay_ISI_CV) / step_cv, color='C1', linestyle='--')
-D_axis_b.set_xticks(range(bins_cv.size + 1))
-D_axis_b.set_xticklabels(np.round(bins_cv, 1))
-D_axis_b.set_xlabel('Coefficient of Variation', fontsize=axis_label_font_size)
-D_axis_b.set_ylabel('Relative Frequency', fontsize=axis_label_font_size)
+D_axis_b.set_xticks(range(0, bins_cv.size, 2))
+D_axis_b.set_xticklabels(np.round(bins_cv * 2, 1), fontsize=tick_label_font_size)
+D_axis_b.set_xlim([0.0, bins_cv.size])
+D_axis_b.set_xlabel(
+    'Coefficient of Variation', fontsize=axis_label_font_size,
+    labelpad=labelpad_x
+)
+D_axis_b.set_ylabel(
+    'Relative Frequency', fontsize=axis_label_font_size,
+    labelpad=labelpad_y
+)
 nb.axis_normal_plot(axis=D_axis_b)
 nb.adjust_spines(D_axis_b, ['left', 'bottom'])
 nb.mark_figure_letter(D_axis_a, 'd')
@@ -336,12 +363,25 @@ nb.mark_figure_letter(D_axis_a, 'd')
 #TODO: opws einai to NWBfile einai ena tyxaio apo to loop pio panw!
 # Exemplar network rasterplot:
 # Trials that have pa: 2, 6. The 6 is quite nice!
-nb.plot_trial_spiketrains(NWBfile=NWBfile, trialid=6, plot_axis=E_axis_a)
+nb.plot_trial_spiketrains(
+    NWBfile=NWBfile, trialid=6, plot_axis=E_axis_a,
+    axis_label_font_size=axis_label_font_size,
+    tick_label_font_size=tick_label_font_size,
+    labelpad_x=labelpad_x, labelpad_y=labelpad_y
+)
 
 #TODO: blah
 TR_sp = analysis.sparsness(NWBfile)
 nb.report_value(f'Fig 1E: Sparsness', TR_sp)
 
+
+trial_len = \
+    analysis.get_acquisition_parameters(
+        input_NWBfile=NWBfile,
+        requested_parameters=[
+            'trial_len'
+        ]
+    )
 
 # Dynamic network response:
 trial_inst_ff = analysis.trial_instantaneous_frequencies(
@@ -362,8 +402,18 @@ nb.adjust_spines(E_axis_b, ['left', 'bottom'])
 #E_axis_b.spines['left'].set_position('zero')
 #E_axis_b.spines['bottom'].set_position('zero')
 E_axis_b.axvspan(50.0, 1050.0, ymin=0, ymax=1, color='g', alpha=0.2)
-E_axis_b.set_xlabel('Time (ms)')
-E_axis_b.set_ylabel('Firing Frequency (Hz)')
+E_axis_b.xaxis.set_ticks(np.arange(0, trial_len + 1000, 1000))
+E_axis_b.xaxis.set_ticklabels(np.arange(0, 5, 1), fontsize=tick_label_font_size)
+E_axis_b.set_xlabel(
+    'Time (ms)', fontsize=axis_label_font_size,
+    labelpad=labelpad_x
+)
+E_axis_b.set_ylabel(
+    'Firing Frequency (Hz)', fontsize=axis_label_font_size,
+    labelpad=labelpad_y
+)
+nb.axis_normal_plot(axis=E_axis_b)
+nb.adjust_spines(E_axis_b, ['left', 'bottom'])
 nb.mark_figure_letter(E_axis_a, 'e')
 
 
@@ -397,9 +447,15 @@ duration = net_activity.shape[2]
 time_axis_ticks = np.linspace(0, duration, (duration / 20) + 1)
 time_axis_ticklabels = analysis.q2sec(q_time=time_axis_ticks).astype(int)  #np.linspace(0, time_axis_limits[1], duration)
 G_axis_a.set_xticks(time_axis_ticks)
-G_axis_a.set_xticklabels(time_axis_ticklabels)
-G_axis_a.set_ylabel('Energy (Hz/s)')
-G_axis_a.set_xlabel('Time (ms)')
+G_axis_a.set_xticklabels(time_axis_ticklabels, fontsize=tick_label_font_size)
+G_axis_a.set_ylabel(
+    'Energy (Hz/s)', fontsize=axis_label_font_size,
+    labelpad=labelpad_x
+)
+G_axis_a.set_xlabel(
+    'Time (ms)', fontsize=axis_label_font_size,
+    labelpad=labelpad_y
+)
 #TODO: use proper values, not hardcoded!
 G_axis_a.axvspan(50.0 / 50, 1050.0 /50 , ymin=0, ymax=1, color='g', alpha=0.2)
 nb.axis_normal_plot(axis=G_axis_a)
@@ -412,9 +468,15 @@ H_axis_a.cla()
 H_axis_a.plot(velocity.T, color='gray', alpha=0.2)
 H_axis_a.plot(np.mean(velocity.T, axis=1), color='k', linewidth=2)
 H_axis_a.set_xticks(time_axis_ticks)
-H_axis_a.set_xticklabels(time_axis_ticklabels)
-H_axis_a.set_ylabel('Velocity (Hz/s)')
-H_axis_a.set_xlabel('Time (ms)')
+H_axis_a.set_xticklabels(time_axis_ticklabels, fontsize=tick_label_font_size)
+H_axis_a.set_ylabel(
+    'Velocity (Hz/s)', fontsize=axis_label_font_size,
+    labelpad=labelpad_y
+)
+H_axis_a.set_xlabel(
+    'Time (ms)', fontsize=axis_label_font_size,
+    labelpad=labelpad_x
+)
 #TODO: use proper values, not hardcoded!
 H_axis_a.axvspan(50.0 / 50, 1050.0 /50 , ymin=0, ymax=1, color='g', alpha=0.2)
 nb.axis_normal_plot(axis=H_axis_a)
@@ -455,17 +517,24 @@ time_axis_limits = (0, duration)
 time_axis_ticks = np.linspace(0, duration, (duration / 20) + 1)
 time_axis_ticklabels = analysis.q2sec(q_time=time_axis_ticks).astype(int)  #np.linspace(0, time_axis_limits[1], duration)
 F_axis_a.set_xticks(time_axis_ticks)
-F_axis_a.set_xticklabels(time_axis_ticklabels)
+F_axis_a.set_xticklabels(time_axis_ticklabels, fontsize=tick_label_font_size)
 F_axis_a.set_yticks(time_axis_ticks)
-F_axis_a.set_yticklabels(time_axis_ticklabels)
-F_axis_a.set_ylabel('Time (s)')
-F_axis_a.set_xlabel('Correlation')
+F_axis_a.set_yticklabels(time_axis_ticklabels, fontsize=tick_label_font_size)
+F_axis_a.set_ylabel(
+    'Time (s)', fontsize=axis_label_font_size,
+    labelpad=labelpad_y
+)
+#F_axis_a.set_xlabel('')
 # create an axes on the right side of ax. The width of cax will be 5%
 # of ax and the padding between cax and ax will be fixed at 0.05 inch.
 divider = make_axes_locatable(F_axis_a)
 cax = divider.append_axes('bottom', size='5%', pad=0.05)
 figure1.colorbar(im, orientation='horizontal', fraction=0.05,
                  cax=cax)
+cax.set_xlabel(
+    'Correlation', fontsize=axis_label_font_size,
+    labelpad=labelpad_x
+)
 nb.mark_figure_letter(F_axis_a, 'f')
 
 # Figure 1H:
@@ -502,7 +571,7 @@ plt.show()
 
 
 # <codecell>
-figure1.savefig('Figure_1.svg')
+figure1.savefig('Figure_1.pdf')
 figure1.savefig('Figure_1.png')
 print('Tutto pronto!')
 
