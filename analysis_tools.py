@@ -1528,6 +1528,7 @@ def pcaL2(
                 handle = plot_axes.plot(x, y,
                                   range(duration),
                                   color=colors[label - 1],
+                                  linewidth=3,
                                   label=f'Cluster {label}'
                                   )
                 if i in key_labels:
@@ -1545,7 +1546,8 @@ def pcaL2(
                     plot_axes.plot(
                         t_L_per_trial[0][trial][t:t+2],
                         t_L_per_trial[1][trial][t:t+2],
-                        [t, t+1], color=c
+                        [t, t+1], color=c,
+                        linewidth=3
                     )
         if not plot_axes:
             plt.show()

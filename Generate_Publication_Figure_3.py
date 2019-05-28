@@ -42,22 +42,30 @@ no_of_animals = 4
 subplot_width = 3
 subplot_height = 2
 plt.ion()
-figure2 = plt.figure(figsize=plt.figaspect(0.5))
-figure2_axis = np.zeros((subplot_height, subplot_width), dtype=object)
+figure_ratio = subplot_height / subplot_width
+figure3 = plt.figure(figsize=plt.figaspect(figure_ratio))
+figure3_axis = np.zeros((subplot_height, subplot_width), dtype=object)
 dataset_name = lambda x : f'Network {x}'
 
-A_axis_a = figure2.add_subplot(
-    subplot_height, subplot_width, 1, projection='3d'
-)
-A_axis_b = figure2.add_subplot(
-    subplot_height, subplot_width, 2, projection='3d'
-)
-A_axis_c = figure2.add_subplot(
-    subplot_height, subplot_width, 3, projection='3d'
-)
+# c is the size of subplot space/margin, for both h/w (in figure scale).
+# If you are really OCD, you can use a second one, scaled by fig aspect ratio.
+cw = 0.05
+ch = cw / figure_ratio
+main_gs = nb.split_gridspec(2, 1, ch, cw, left=0.05, right=0.95, top=0.95, bottom=0.05)
+upper_gs = nb.split_gridspec(1, 3, ch, cw, gs=main_gs[0, :])
+lower_gs = nb.split_gridspec(1, 4, ch, cw, gs=main_gs[1, :])
+A_axis = plt.subplot(upper_gs[0, 0], projection='3d')
+B_axis = plt.subplot(upper_gs[0, 1], projection='3d')
+C_axis = plt.subplot(upper_gs[0, 2], projection='3d')
+
+D_axis = plt.subplot(lower_gs[0, 0])
+E_axis = plt.subplot(lower_gs[0, 1])
+F_axis = plt.subplot(lower_gs[0, 2])
+G_axis = plt.subplot(lower_gs[0, 3])
+
 # Plot same animal model, different learning conditions:
 conditions = [1,2,3]
-condition_axes = [A_axis_a, A_axis_b, A_axis_c]
+condition_axes = [A_axis, B_axis, C_axis]
 for axis, (idx, learning_condition) in zip(condition_axes, enumerate(conditions)):
     NWBfile = analysis.load_nwb_file(
         animal_model=1,
@@ -99,8 +107,9 @@ for axis, (idx, learning_condition) in zip(condition_axes, enumerate(conditions)
         labelpad_y=labelpad_y
     )
 
-nb.mark_figure_letter(A_axis_a, 'A')
+nb.mark_figure_letter(A_axis, 'a')
 
+# Fig 3F
 # TODO: Plot number of clusters per animal/condition (na dw)
 # Run for every learning condition and animal the k-means clustering:
 optimal_clusters_of_group = defaultdict(partial(np.ndarray, 0))
@@ -144,11 +153,8 @@ for animal_model in range(1, no_of_animals + 1):
         K_star_over_trials
 
 # Scatter plot PC VS clusters
-D_axis = figure2.add_subplot(
-    subplot_height, subplot_width, 6
-)
-D_axis.cla()
-#D_axis.set_title('Optimal no of clusters')
+F_axis.cla()
+#F_axis.set_title('Optimal no of clusters')
 K_s = []
 PC_no = []
 models_list = range(1, no_of_animals + 1)
@@ -156,36 +162,34 @@ for pos, animal in enumerate(models_list):
     K_s.append(list(optimal_clusters_of_group[dataset_name(animal)][:,0]))
     PC_no.append(list(optimal_clusters_of_group[dataset_name(animal)][:,1]))
 
-sb.regplot(x=list(chain(*K_s)), y=list(chain(*PC_no)), ax=D_axis, marker='.', color='C0')
+sb.regplot(x=list(chain(*K_s)), y=list(chain(*PC_no)), ax=F_axis, marker='.', color='C0')
 scipy.stats.pearsonr(list(chain(*K_s)), list(chain(*PC_no)))
 xlim = (1 - 0.2, np.array(list(chain(*K_s))).max() + 0.2)
 ylim = (1 - 0.2, np.array(list(chain(*PC_no))).max() + 0.2)
-D_axis.set_xlim(xlim[0], xlim[1])
-D_axis.set_ylim(ylim[0], ylim[1])
-D_axis.set_xticks(
+F_axis.set_xlim(xlim[0], xlim[1])
+F_axis.set_ylim(ylim[0], ylim[1])
+F_axis.set_xticks(
     list(range(math.ceil(xlim[0]), int(xlim[1]) + 1))
 )
-D_axis.set_yticks(
+F_axis.set_yticks(
     list(range(math.ceil(ylim[0]), int(ylim[1]) + 1))
 )
-D_axis.set_xlabel(
+F_axis.set_xlabel(
     'K*', fontsize=axis_label_font_size,
     labelpad=labelpad_x
 )
-D_axis.set_ylabel(
+F_axis.set_ylabel(
     '#PCA components', fontsize=axis_label_font_size,
     labelpad=labelpad_y
 )
-nb.mark_figure_letter(D_axis, 'D')
-nb.axis_normal_plot(D_axis)
-nb.adjust_spines(D_axis, ['left', 'bottom'])
+nb.mark_figure_letter(F_axis, 'f')
+nb.axis_normal_plot(F_axis)
+nb.adjust_spines(F_axis, ['left', 'bottom'])
 
 
-C_axis = figure2.add_subplot(
-    subplot_height, subplot_width, 5
-)
-C_axis.cla()
-#C_axis.set_title('Optimal no of clusters')
+# Fig 3E
+E_axis.cla()
+#E_axis.set_title('Optimal no of clusters')
 
 tmp = [
     optimal_clusters_of_group[dataset_name(animal)][:, 0].tolist()
@@ -196,24 +200,24 @@ K_stars = list(chain(*tmp))
 bins = np.arange(1, np.max(K_stars) + 2, 1)
 kstar_hist, *_ = np.histogram(K_stars, bins=bins)
 
-C_axis.bar(bins[:-1], kstar_hist / len(K_stars), color='C0')
+E_axis.bar(bins[:-1], kstar_hist / len(K_stars), color='C0')
 #TODO: kane bar plot!na ftia3w ta labels (-1)
-#C_axis.axvline(np.mean(K_stars) - 1, color='C0', linestyle='--')
-C_axis.set_xticks(
+#E_axis.axvline(np.mean(K_stars) - 1, color='C0', linestyle='--')
+E_axis.set_xticks(
     range(bins.size + 1)
 )
-C_axis.set_xticklabels(range(bins.size))
-C_axis.set_xlabel(
+E_axis.set_xticklabels(range(bins.size))
+E_axis.set_xlabel(
     'K*', fontsize=axis_label_font_size,
     labelpad=labelpad_x
 )
-C_axis.set_ylabel(
+E_axis.set_ylabel(
     'Relative Frequency', fontsize=axis_label_font_size,
     labelpad=labelpad_y
 )
-nb.axis_normal_plot(axis=C_axis)
-nb.adjust_spines(C_axis, ['left', 'bottom'])
-nb.mark_figure_letter(C_axis, 'C')
+nb.axis_normal_plot(axis=E_axis)
+nb.adjust_spines(E_axis, ['left', 'bottom'])
+nb.mark_figure_letter(E_axis, 'e')
 
 
 if False:
@@ -221,7 +225,7 @@ if False:
     models_list = range(1, no_of_animals + 1)
     max_val = 0
     for pos, animal in enumerate(models_list):
-        bp = C_axis.boxplot(
+        bp = E_axis.boxplot(
             optimal_clusters_of_group[dataset_name(animal)][:, 0],
             positions=[pos],
             widths=0.4,
@@ -230,22 +234,20 @@ if False:
         max_val = np.maximum(max_val, optimal_clusters_of_group[dataset_name(animal)][:, 0].max())
 
     xlim = (-1, 4)
-    C_axis.set_xlim(xlim[0], xlim[1])
-    C_axis.set_xticks(list(range(no_of_animals)))
-    C_axis.set_xticklabels(['Model 1', 'Model 2', 'Model 3', 'Model 4'])
-    C_axis.set_yticks(list(range(1, int(max_val) + 1)))
-    C_axis.set_ylabel('K*')
-    for tick in C_axis.get_xticklabels():
+    E_axis.set_xlim(xlim[0], xlim[1])
+    E_axis.set_xticks(list(range(no_of_animals)))
+    E_axis.set_xticklabels(['Model 1', 'Model 2', 'Model 3', 'Model 4'])
+    E_axis.set_yticks(list(range(1, int(max_val) + 1)))
+    E_axis.set_ylabel('K*')
+    for tick in E_axis.get_xticklabels():
         tick.set_rotation(45)
 
-    nb.axis_box_plot(C_axis)
-    nb.adjust_spines(C_axis, ['left'])
+    nb.axis_box_plot(E_axis)
+    nb.adjust_spines(E_axis, ['left'])
 
 
 
-B_axis = figure2.add_subplot(
-    subplot_height, subplot_width, 4
-)
+# Fig 3D
 # Plot whole animal model state space:
 for idx, animal_model in enumerate([2]):
     NWBfiles = [
@@ -280,14 +282,95 @@ for idx, animal_model in enumerate([2]):
         klabels=K_labels,
         custom_range=custom_range,
         smooth=True, plot_2d=True,
-        plot_axes=B_axis,
+        plot_axes=D_axis,
         axis_label_font_size=axis_label_font_size,
         tick_label_font_size=tick_label_font_size,
         labelpad_x=labelpad_x,
         labelpad_y=labelpad_y
     )
 
-nb.mark_figure_letter(B_axis, 'B')
+nb.mark_figure_letter(D_axis, 'd')
+
+# Fig 3G
+# Scatter plot PC VS clusters
+G_axis.cla()
+# Figure 3D:
+optimal_clusters_of_group = defaultdict(partial(np.ndarray, 0))
+configurations = ['structured', 'random']
+for animal_model in range(1, no_of_animals + 1):
+    # Pool together no of clusters for one animal model:
+    K_star_over_trials = np.ones((no_of_conditions, len(configurations)))
+    for config_id, config in enumerate(configurations):
+        for learning_condition in range(1, no_of_conditions + 1):
+            try:
+                # Lazy load the data as a NWB file. Easy to pass around and encapsulates info like trial length, stim times etc.
+                NWBfile = analysis.load_nwb_file(
+                    animal_model=animal_model,
+                    learning_condition=learning_condition,
+                    experiment_config=config,
+                    type='bn',
+                    data_path=simulations_dir
+                )
+
+                #analysis.bin_activity(nwbfile, q_size=50)
+
+                trial_len = analysis.get_acquisition_parameters(
+                    input_NWBfile=NWBfile,
+                    requested_parameters=['trial_len']
+                )
+                custom_range = (20, int(trial_len / 50))
+
+
+                # Determine the optimal number of clusters for all trials of a single animal
+                # model/learning condition.
+                K_star, K_labels, BIC_val, _ = \
+                    analysis.determine_number_of_clusters(
+                        NWBfile_array=[NWBfile],
+                        max_clusters=10,
+                        custom_range=custom_range
+                    )
+
+                K_star_over_trials[learning_condition - 1, config_id] = K_star
+            except Exception as e:
+                print(f'Got Exception during analysis {str(e)}')
+
+    optimal_clusters_of_group[dataset_name(animal_model)] = K_star_over_trials
+
+# Use histogram instead of boxplot:
+tmp = [
+    optimal_clusters_of_group[dataset_name(animal)][:, 0].tolist()
+    for animal in range(1, no_of_animals + 1)
+]
+K_stars_structured = list(chain(*tmp))
+tmp = [
+    optimal_clusters_of_group[dataset_name(animal)][:, 1].tolist()
+    for animal in range(1, no_of_animals + 1)
+]
+K_stars_random = list(chain(*tmp))
+
+bins_str = np.arange(1, np.max(K_stars_structured) + 2, 1)
+kstar_str_hist, *_ = np.histogram(K_stars_structured, bins=bins_str)
+bins_rnd = np.arange(1, np.max(K_stars_random) + 2, 1)
+kstar_rnd_hist, *_ = np.histogram(K_stars_random, bins=bins_rnd)
+
+G_axis.bar(
+    bins_str[:-1],kstar_str_hist / len(K_stars_structured), color='C0',
+    alpha=0.5
+)
+#G_axis.axvline(np.mean(K_stars_structured), color='C0', linestyle='--')
+G_axis.bar(
+    bins_rnd[:-1],kstar_rnd_hist / len(K_stars_random), color='C1',
+    alpha=0.5
+)
+#G_axis.axvline(np.mean(K_stars_random), color='C1', linestyle='--')
+G_axis.set_xticks(range(bins_str.size + 1))
+G_axis.set_xticklabels(range(bins_str.size + 1))
+G_axis.set_xlabel('K*', fontsize=axis_label_font_size)
+G_axis.set_ylabel('Relative Frequency', fontsize=axis_label_font_size)
+nb.axis_normal_plot(axis=G_axis)
+nb.adjust_spines(G_axis, ['left', 'bottom'])
+nb.mark_figure_letter(G_axis, 'g')
+
 
 plt.subplots_adjust(top=0.92, bottom=0.15, left=0.10, right=0.95, hspace=0.25,
                     wspace=0.25)
@@ -295,8 +378,8 @@ plt.subplots_adjust(top=0.92, bottom=0.15, left=0.10, right=0.95, hspace=0.25,
 
 
 # <codecell>
-figure2.savefig('Figure_3.pdf')
-figure2.savefig('Figure_3.png')
+figure3.savefig('Figure_3.pdf')
+figure3.savefig('Figure_3.png')
 print('Tutto pronto!')
 
 

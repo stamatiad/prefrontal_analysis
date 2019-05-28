@@ -548,24 +548,8 @@ TR_sp = analysis.sparsness(NWBfile, custom_range)
 nb.report_value('Fig 1H: BIC', BIC_val)
 nb.report_value('Fig 1H: Sparsness', TR_sp)
 
-analysis.plot_pca_in_3d(
-    NWBfile=NWBfile, custom_range=custom_range, smooth=True, plot_axes=I_axis_a,
-    klabels=K_labels
-)
-#azim, elev = I_axis_a.azim, I_axis_a.elev
-print((I_axis_a.azim, I_axis_a.elev))
-I_axis_a.view_init(elev=14, azim=-135)
-nb.mark_figure_letter(I_axis_a, 'i')
 plt.draw()
 
-#sketch_amplitude = plt.imread('../Amplitude_Nevian.png')
-#F_axis_b.imshow(sketch_amplitude, interpolation="nearest")
-#F_axis_b.margins(0.0)
-#nb.hide_axis_border(axis=F_axis_b)
-
-#sketch_correlation = plt.imread('../Correlation_Murray.png')
-#I_axis_b.imshow(sketch_correlation, interpolation="nearest")
-#nb.hide_axis_border(axis=I_axis_b)
 
 plt.show()
 

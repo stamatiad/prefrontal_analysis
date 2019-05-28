@@ -35,16 +35,11 @@ no_of_conditions = 10
 no_of_animals = 4
 plt.ion()
 # FIGURE 2
-subplot_width = 5
-subplot_height = 1
+subplot_width = 3
+subplot_height = 2
 figure2 = plt.figure(figsize=plt.figaspect(subplot_height / subplot_width))
 figure2_axis = np.zeros((subplot_height, subplot_width), dtype=object)
 
-# Figure 2A:
-A_axis = figure2.add_subplot(
-    subplot_height, subplot_width, 1,
-    projection='3d'
-)
 # The Network activity in two PC:
 NWBfile = analysis.load_nwb_file(
     animal_model=1,
@@ -58,25 +53,46 @@ trial_len, pn_no, ntrials, trial_q_no = analysis.get_acquisition_parameters(
     requested_parameters=['trial_len', 'pn_no', 'ntrials', 'trial_q_no']
 )
 custom_range = (0, int(trial_len / 50))
-
 K_star, K_labels, BIC_val, _ = analysis.determine_number_of_clusters(
     NWBfile_array=[NWBfile],
     max_clusters=no_of_conditions,
     custom_range=custom_range
 )
 
-A_axis.cla()
+# Figure 2A:
+#I_axis_a = plt.subplot(FGHI_gs[0, 1:], projection='3d')
+A_axis = figure2.add_subplot(
+    subplot_height, subplot_width, 1, projection='3d'
+)
+nb.mark_figure_letter(A_axis, 'i')
+analysis.plot_pca_in_3d(
+    NWBfile=NWBfile, custom_range=custom_range, smooth=True, plot_axes=A_axis,
+    klabels=K_labels
+)
+#azim, elev = A_axis_a.azim, A_axis_a.elev
+print((A_axis.azim, A_axis.elev))
+A_axis.view_init(elev=14, azim=-135)
+nb.mark_figure_letter(A_axis, 'a')
+
+# Figure 2B:
+B_axis = figure2.add_subplot(
+    subplot_height, subplot_width, 4,
+    projection='3d'
+)
+
+
+B_axis.cla()
 analysis.pcaL2(
     NWBfile_array=[NWBfile],
     klabels=K_labels,
     custom_range=custom_range,
     smooth=True, plot_3d=True,
-    plot_axes=A_axis
+    plot_axes=B_axis
 )
-nb.mark_figure_letter(A_axis, 'a')
+nb.mark_figure_letter(B_axis, 'b')
 
-# Figure 2B:
-B_axis = figure2.add_subplot(
+# Figure 2C:
+C_axis = figure2.add_subplot(
     subplot_height, subplot_width, 2
 )
 
@@ -95,24 +111,24 @@ per_trial_activity['noMg_NMDA+AMPA'] = analysis.separate_trials(
 )
 
 for trace in per_trial_activity['normal_NMDA+AMPA']:
-    nmda_ampa_plot = B_axis.plot(trace[0][500:5000], color='gray', label='NMDA+AMPA')
+    nmda_ampa_plot = C_axis.plot(trace[0][500:5000:10], color='gray', label='NMDA+AMPA')
 for trace in per_trial_activity['normal_AMPA_only']:
-    ampa_only_plot = B_axis.plot(trace[0][500:5000], color='C0', label='AMPA only')
-B_axis.set_xlabel(
+    ampa_only_plot = C_axis.plot(trace[0][500:5000:10], color='C0', label='AMPA only')
+C_axis.set_xlabel(
     'Time (ms)', fontsize=axis_label_font_size,
     labelpad=labelpad_x
 )
-B_axis.set_ylabel(
+C_axis.set_ylabel(
     'Somatic depolarization (mV)', fontsize=axis_label_font_size,
     labelpad=labelpad_y
 )
-B_axis.legend((nmda_ampa_plot[0], ampa_only_plot[0]), ['NMDA+AMPA', 'AMPA only'], loc='upper right')
-nb.axis_normal_plot(B_axis)
-nb.adjust_spines(B_axis, ['left', 'bottom'], blowout=2)
-nb.mark_figure_letter(B_axis, 'b')
+C_axis.legend((nmda_ampa_plot[0], ampa_only_plot[0]), ['NMDA+AMPA', 'AMPA only'], loc='upper right')
+nb.axis_normal_plot(C_axis)
+nb.adjust_spines(C_axis, ['left', 'bottom'], blowout=2)
+nb.mark_figure_letter(C_axis, 'c')
 
-# Figure 2C:
-C_axis = figure2.add_subplot(
+# Figure 2D:
+D_axis = figure2.add_subplot(
     subplot_height, subplot_width, 3, projection='3d'
 )
 # The Network activity in two PC:
@@ -139,41 +155,41 @@ TR_sp = analysis.sparsness(NWBfile, custom_range)
 nb.report_value('Fig 2C: BIC', BIC_val)
 nb.report_value('Fig 2C: Sparsness', TR_sp)
 
-C_axis.cla()
+D_axis.cla()
 analysis.pcaL2(
     NWBfile_array=[NWBfile],
     klabels=K_labels,
     custom_range=custom_range,
     smooth=True, plot_3d=True,
-    plot_axes=C_axis
+    plot_axes=D_axis
 )
-nb.mark_figure_letter(C_axis, 'c')
-
-
-# Figure 2D:
-D_axis = figure2.add_subplot(
-    subplot_height, subplot_width, 4
-)
-for trace in per_trial_activity['normal_NMDA+AMPA']:
-    nmda_ampa_plot = D_axis.plot(trace[0][500:5000], color='gray', label='NMDA+AMPA')
-for trace in per_trial_activity['noMg_NMDA+AMPA']:
-    nmda_nomg_plot = D_axis.plot(trace[0][500:5000], color='C0', label='NMDA no Mg + AMPA')
-D_axis.set_xlabel(
-    'Time (ms)', fontsize=axis_label_font_size,
-    labelpad=labelpad_x
-)
-D_axis.set_ylabel(
-    'Somatic depolarization (mV)', fontsize=axis_label_font_size,
-    labelpad=labelpad_y
-)
-D_axis.legend((nmda_ampa_plot[0], nmda_nomg_plot[0]), ['NMDA+AMPA', 'NMDA no Mg + AMPA'], loc='upper right')
-nb.axis_normal_plot(D_axis)
-nb.adjust_spines(D_axis, ['left', 'bottom'], blowout=2)
 nb.mark_figure_letter(D_axis, 'd')
+
 
 # Figure 2E:
 E_axis = figure2.add_subplot(
-    subplot_height, subplot_width, 5, projection='3d'
+    subplot_height, subplot_width, 5
+)
+for trace in per_trial_activity['normal_NMDA+AMPA']:
+    nmda_ampa_plot = E_axis.plot(trace[0][500:5000:10], color='gray', label='NMDA+AMPA')
+for trace in per_trial_activity['noMg_NMDA+AMPA']:
+    nmda_nomg_plot = E_axis.plot(trace[0][500:5000:10], color='C0', label='NMDA no Mg + AMPA')
+E_axis.set_xlabel(
+    'Time (ms)', fontsize=axis_label_font_size,
+    labelpad=labelpad_x
+)
+E_axis.set_ylabel(
+    'Somatic depolarization (mV)', fontsize=axis_label_font_size,
+    labelpad=labelpad_y
+)
+E_axis.legend((nmda_ampa_plot[0], nmda_nomg_plot[0]), ['NMDA+AMPA', 'NMDA no Mg + AMPA'], loc='upper right')
+nb.axis_normal_plot(E_axis)
+nb.adjust_spines(E_axis, ['left', 'bottom'], blowout=2)
+nb.mark_figure_letter(E_axis, 'e')
+
+# Figure 2F:
+F_axis = figure2.add_subplot(
+    subplot_height, subplot_width, 6, projection='3d'
 )
 # The Network activity in two PC:
 NWBfile = analysis.load_nwb_file(
@@ -199,16 +215,16 @@ TR_sp = analysis.sparsness(NWBfile, custom_range)
 nb.report_value('Fig 2E: BIC', BIC_val)
 nb.report_value('Fig 2E: Sparsness', TR_sp)
 
-E_axis.cla()
+F_axis.cla()
 analysis.pcaL2(
     NWBfile_array=[NWBfile],
     klabels=K_labels,
     custom_range=custom_range,
     smooth=True, plot_3d=True,
-    plot_axes=E_axis
+    plot_axes=F_axis
 )
-#E_axis.set_title(f'')
-nb.mark_figure_letter(E_axis, 'e')
+#F_axis.set_title(f'')
+nb.mark_figure_letter(F_axis, 'f')
 
 
 if False:
