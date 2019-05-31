@@ -283,7 +283,9 @@ def import_recordings_to_nwb(nwbfile=None, read_function=None, **kwargs):
     print('Time series acquired.')
     return
 
-def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
+def create_nwb_validation_file(inputdir=None, outputdir=None,
+                               synapse_activation=None, location=None,
+                               **kwargs):
     # Create a NWB file from the results of the validation routines.
 
     print('Creating NWBfile.')
@@ -297,7 +299,11 @@ def create_nwb_validation_file(inputdir=None, outputdir=None, **kwargs):
     # Partially automate the loading with the aid of a reading function;
     # use a generic reading function that you make specific with partial and
     # then just load all the trials:
-    synapse_activation = list(range(1, 150, 5))
+    #TODO: you should put somewhere the external kwargs!!
+    if not synapse_activation:
+        synapse_activation = list(range(1, 150, 5))
+    if not location:
+        location = 'vsoma'
     basic_kwargs = {'ncells': 1, 'ntrials': len(synapse_activation), \
                     'stim_start_offset': 100, 'stim_stop_offset': 140,
                     'trial_len': 700, 'samples_per_ms': 10}

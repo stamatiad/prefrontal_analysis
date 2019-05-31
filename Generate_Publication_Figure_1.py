@@ -26,7 +26,7 @@ from scipy import stats
 # <codecell>
 simulations_dir = Path.cwd().joinpath('simulations')
 #Changes between computers.
-glia_dir = Path(r'G:\Glia')
+glia_dir = Path(r'W:\taxidi\analysis\Python\simulations')
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
 axis_label_font_size = 12
@@ -42,8 +42,8 @@ no_of_animals = 4
 # FIGURE 1 (PENDING)
 
 # Create the figure objects:
-subplot_width = 4
-subplot_height = 2
+subplot_width = 5
+subplot_height = 4
 figure_ratio = subplot_height / subplot_width
 figure1 = plt.figure(figsize=plt.figaspect(figure_ratio))
 
@@ -51,9 +51,9 @@ figure1 = plt.figure(figsize=plt.figaspect(figure_ratio))
 # If you are really OCD, you can use a second one, scaled by fig aspect ratio.
 cw = 0.05
 ch = cw / figure_ratio
-main_gs = nb.split_gridspec(2, 1, ch, cw, left=0.05, right=0.95, top=0.95, bottom=0.05)
+main_gs = nb.split_gridspec(2, 1, ch, cw, left=0.05, right=0.95, top=0.99, bottom=0.08)
 upper_gs = nb.split_gridspec(1, 3, ch, cw, gs=main_gs[0, :])
-lower_gs = nb.split_gridspec(1, 2, ch, cw, gs=main_gs[1, :])
+lower_gs = nb.split_gridspec(1, 4, ch, cw, gs=main_gs[1, :])
 #upper_gs = main_gs[0, :].subgridspec(1, 3, wspace=0.15, hspace=0.15)
 #lower_gs = main_gs[1, :].subgridspec(1, 2, wspace=0.15, hspace=0.15)
 AB_gs = nb.split_gridspec(2, 2, ch, cw, gs=upper_gs[0, 0])
@@ -78,105 +78,26 @@ D_axis_a = plt.subplot(CD_gs[:3, 3:])
 D_axis_b = plt.subplot(CD_gs[3:, 3:])
 nb.mark_figure_letter(D_axis_a, 'd')
 
-E_gs = nb.split_gridspec(2, 1, ch, cw, gs=lower_gs[0, 0])
+E_gs = nb.split_gridspec(2, 1, ch, cw, gs=lower_gs[0, :2])
 #E_gs = lower_gs[0, 0].subgridspec(2, 1, wspace=0.15, hspace=0.15*2)
 E_axis_a = plt.subplot(E_gs[0, :])
 E_axis_b = plt.subplot(E_gs[1, :])
 nb.mark_figure_letter(E_axis_a, 'e')
-FGHI_gs = nb.split_gridspec(1, 3, ch, cw, gs=lower_gs[0, 1])
+FGH_gs = nb.split_gridspec(2, 3, ch, cw, gs=lower_gs[0, 2:])
 #FGHI_gs = lower_gs[0, 1].subgridspec(1, 3, wspace=0.15, hspace=0.15)
-FGH_gs = nb.split_gridspec(5, 1, ch, cw, gs=FGHI_gs[0, 0])
+#FGH_gs = nb.split_gridspec(2, 2, ch, cw, gs=FGHI_gs[0, 0])
 #FGH_gs = FGHI_gs[0, 0].subgridspec(5, 1, wspace=0.15, hspace=0.15*5)
-F_axis_a = plt.subplot(FGH_gs[:3, :])
+F_axis_a = plt.subplot(FGH_gs[:, :2])
 nb.mark_figure_letter(F_axis_a, 'f')
-G_axis_a = plt.subplot(FGH_gs[3, :])
+G_axis_a = plt.subplot(FGH_gs[0, 2])
 nb.mark_figure_letter(G_axis_a, 'g')
-H_axis_a = plt.subplot(FGH_gs[4, :])
+H_axis_a = plt.subplot(FGH_gs[1, 2])
 nb.mark_figure_letter(H_axis_a, 'h')
-I_axis_a = plt.subplot(FGHI_gs[0, 1:], projection='3d')
-nb.mark_figure_letter(I_axis_a, 'i')
 
 plt.show()
 figure1.savefig('FINAL.png')
 print('Tutto pronto!')
 
-'''
-main_gs = gridspec.GridSpec(
-    2, 1, left=0.05, right=0.95,
-    top=0.95, bottom=0.05,
-    wspace=0.15, hspace=0.0
-)
-upper_gs = main_gs[0, :].subgridspec(1, 3, wspace=0.15, hspace=0.15)
-lower_gs = main_gs[1, :].subgridspec(1, 2, wspace=0.15, hspace=0.15)
-AB_gs = upper_gs[0, 0].subgridspec(2, 2, wspace=0.15, hspace=0.15)
-A_axis_a = plt.subplot(AB_gs[0, :])
-B_axis_a = plt.subplot(AB_gs[1, :])
-nb.mark_figure_letter(A_axis_a, 'a')
-nb.mark_figure_letter(B_axis_a, 'b')
-
-CD_gs = upper_gs[0, 1:].subgridspec(6, 4, wspace=0.15, hspace=0.999)
-C_axis_a = plt.subplot(CD_gs[0, :3])
-C_axis_b = plt.subplot(CD_gs[1, :3])
-C_axis_c = plt.subplot(CD_gs[2, :3])
-C_axis_d = plt.subplot(CD_gs[3, :3])
-C_axis_e = plt.subplot(CD_gs[4, :3])
-C_axis_f = plt.subplot(CD_gs[5, :3])
-nb.mark_figure_letter(C_axis_a, 'c')
-D_axis_a = plt.subplot(CD_gs[:3, 3:])
-D_axis_b = plt.subplot(CD_gs[3:, 3:])
-nb.mark_figure_letter(D_axis_a, 'd')
-
-E_gs = lower_gs[0, 0].subgridspec(2, 1)
-E_axis_a = plt.subplot(E_gs[0, :])
-E_axis_b = plt.subplot(E_gs[1, :])
-nb.mark_figure_letter(E_axis_a, 'e')
-FGHI_gs = lower_gs[0, 1].subgridspec(1, 3)
-FGH_gs = FGHI_gs[0, 0].subgridspec(5, 1)
-F_axis_a = plt.subplot(FGH_gs[:3, :])
-nb.mark_figure_letter(F_axis_a, 'f')
-G_axis_a = plt.subplot(FGH_gs[3, :])
-nb.mark_figure_letter(G_axis_a, 'g')
-H_axis_a = plt.subplot(FGH_gs[4, :])
-nb.mark_figure_letter(H_axis_a, 'h')
-I_axis_a = plt.subplot(FGHI_gs[0, 1:])
-nb.mark_figure_letter(I_axis_a, 'i')
-
-#plt.subplots_adjust(top=0.95, bottom=0.05, left=0.05, right=0.95, hspace=0.15, wspace=0.15)
-figure1.savefig('BLAH.png')
-'''
-
-'''
-# Old figure creation:
-gs1 = gridspec.GridSpec(
-    2, 2, left=0.05, right=0.30, top=0.95, bottom=0.52, wspace=0.35, hspace=0.2
-)
-A_axis_a = plt.subplot(gs1[0, 0])
-nb.mark_figure_letter(A_axis_a, 'A')
-B_axis_a = plt.subplot(gs1[0, 1])
-gs2 = gridspec.GridSpec(
-    6, 6, left=0.32, right=0.98, top=0.95, bottom=0.52, wspace=0.35, hspace=0.2
-)
-C_axis_a = plt.subplot(gs2[0, :4])
-C_axis_b = plt.subplot(gs2[1, :4])
-C_axis_c = plt.subplot(gs2[2, :4])
-C_axis_d = plt.subplot(gs2[3, :4])
-C_axis_e = plt.subplot(gs2[4, :4])
-C_axis_f = plt.subplot(gs2[5, :4])
-D_axis_a = plt.subplot(gs2[:2, 4:])
-D_axis_b = plt.subplot(gs2[3:, 4:])
-gs3 = gridspec.GridSpec(
-    2, 2, left=0.05, right=0.50, top=0.43, bottom=0.1, wspace=0.2, hspace=0.35
-)
-E_axis_a = plt.subplot(gs3[0, :])
-E_axis_b = plt.subplot(gs3[1, :])
-gs4 = gridspec.GridSpec(
-    5, 3, left=0.56, right=0.98, top=0.43, bottom=0.1, wspace=0.2, hspace=0.2
-)
-F_axis_a = plt.subplot(gs4[:3, 0])
-G_axis_a = plt.subplot(gs4[3:4, 0])
-H_axis_a = plt.subplot(gs4[4:, 0])
-I_axis_a = plt.subplot(gs4[:, 1:], projection='3d')
-'''
 
 sketch_pyramidal = plt.imread('Pyramidal.png')
 A_axis_a.imshow(sketch_pyramidal, interpolation="nearest")
