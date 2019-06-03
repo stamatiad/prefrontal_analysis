@@ -477,6 +477,7 @@ plt.show()
 
 # <codecell>
 figure1.savefig('Figure_1.pdf')
+figure1.savefig('Figure_1.svg')
 figure1.savefig('Figure_1.png')
 print('Tutto pronto!')
 

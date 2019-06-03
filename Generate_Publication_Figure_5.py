@@ -37,7 +37,7 @@ import math
 
 # <codecell>
 simulations_dir = Path.cwd().joinpath('simulations')
-data_dir = Path(r'\\139.91.162.90\cluster\stefanos\Documents\GitHub\prefrontal_analysis\prefrontal_analysis')
+data_dir = Path(r'W:\taxidi\analysis\Python\crossvalidation_errors')
 glia_dir = Path(r'G:\Glia')
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
@@ -376,8 +376,9 @@ nb.adjust_spines(E_axis_a, ['left', 'bottom'])
 
 nb.mark_figure_letter(E_axis_a, 'e')
 
-figure5.savefig('Figure_5.png')
-figure5.savefig('Figure_5.svg')
+figure5.savefig('Figure_4.pdf')
+figure5.savefig('Figure_4.png')
+print('Tutto pronto!')
 
 
 # <markdowncell>
@@ -421,8 +422,8 @@ analysis.pcaL2(
 #===============================================================================
 
 # <codecell>
-#figure5.savefig('Figure_4.png')
-#figure5.savefig('Figure_4.svg')
+figure5.savefig('Figure_4.pdf')
+figure5.savefig('Figure_4.png')
 print('Tutto pronto!')
 
 
