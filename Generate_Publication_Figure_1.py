@@ -29,6 +29,8 @@ simulations_dir = Path.cwd().joinpath('simulations')
 glia_dir = Path(r'W:\taxidi\analysis\Python\simulations')
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
+plt.rcParams['pdf.fonttype'] = 42
+plt.rcParams['ps.fonttype'] = 42
 axis_label_font_size = 12
 tick_label_font_size = 12
 labelpad_x = 10
@@ -221,6 +223,7 @@ step_isi = 20
 step_cv = 0.2
 bins_isi = np.arange(0, 200, step_isi)
 bins_cv = np.arange(0, 2, step_cv)
+# Histograms can contain less values, if original mats have NaNs!
 stim_isi_hist, *_ = np.histogram(stim_ISI, bins=bins_isi)
 delay_isi_hist, *_ = np.histogram(delay_ISI, bins=bins_isi)
 stim_isi_cv_hist, *_ = np.histogram(stim_ISI_CV, bins=bins_cv)
@@ -240,9 +243,9 @@ std_delay_isi = np.std(delay_ISI)
 std_stim_cv = np.nanstd(stim_ISI_CV)
 std_delay_cv = np.nanstd(delay_ISI_CV)
 
-D_axis_a.plot(stim_isi_hist / len(stim_ISI), color='C0')
+D_axis_a.plot(stim_isi_hist / stim_isi_hist.sum(), color='C0')
 D_axis_a.axvline(np.mean(stim_ISI) / step_isi, color='C0', linestyle='--')
-D_axis_a.plot(delay_isi_hist / len(delay_ISI), color='C1')
+D_axis_a.plot(delay_isi_hist / delay_isi_hist.sum(), color='C1')
 D_axis_a.axvline(np.mean(delay_ISI) / step_isi, color='C1', linestyle='--')
 D_axis_a.set_xticks(range(0, bins_isi.size, 2))
 D_axis_a.set_xticklabels(np.round(bins_isi * 2, 1), fontsize=tick_label_font_size)
@@ -258,9 +261,9 @@ D_axis_a.set_ylabel(
 nb.axis_normal_plot(axis=D_axis_a)
 nb.adjust_spines(D_axis_a, ['left', 'bottom'])
 #TODO: Why I have nans inside CV?
-D_axis_b.plot(stim_isi_cv_hist / len(stim_ISI_CV), color='C0')
+D_axis_b.plot(stim_isi_cv_hist / stim_isi_cv_hist.sum(), color='C0')
 D_axis_b.axvline(np.nanmean(stim_ISI_CV) / step_cv, color='C0', linestyle='--')
-D_axis_b.plot(delay_isi_cv_hist / len(delay_ISI_CV), color='C1')
+D_axis_b.plot(delay_isi_cv_hist / delay_isi_cv_hist.sum(), color='C1')
 D_axis_b.axvline(np.nanmean(delay_ISI_CV) / step_cv, color='C1', linestyle='--')
 D_axis_b.set_xticks(range(0, bins_cv.size, 2))
 D_axis_b.set_xticklabels(np.round(bins_cv * 2, 1), fontsize=tick_label_font_size)
@@ -476,9 +479,9 @@ plt.show()
 
 
 # <codecell>
-figure1.savefig('Figure_1.pdf')
-figure1.savefig('Figure_1.svg')
-figure1.savefig('Figure_1.png')
+figure1.savefig('Figure_1_final.pdf')
+figure1.savefig('Figure_1_final.svg')
+figure1.savefig('Figure_1_final.png')
 print('Tutto pronto!')
 
 
