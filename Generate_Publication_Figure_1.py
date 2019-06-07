@@ -26,7 +26,7 @@ from scipy import stats
 # <codecell>
 simulations_dir = Path.cwd().joinpath('simulations')
 #Changes between computers.
-glia_dir = Path(r'W:\taxidi\analysis\Python\simulations')
+glia_dir = Path.cwd().joinpath('simulations')
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
 plt.rcParams['pdf.fonttype'] = 42

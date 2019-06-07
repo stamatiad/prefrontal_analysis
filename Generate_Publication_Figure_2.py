@@ -26,6 +26,8 @@ simulations_dir = Path.cwd().joinpath('simulations')
 glia_dir = Path(r'G:\Glia')
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
+plt.rcParams['pdf.fonttype'] = 42
+plt.rcParams['ps.fonttype'] = 42
 axis_label_font_size = 12
 tick_label_font_size = 12
 labelpad_x = 10
@@ -451,8 +453,8 @@ plt.show()
 
 
 # <codecell>
-figure2.savefig('Figure_2.png')
-figure2.savefig('Figure_2.pdf')
+figure2.savefig('Figure_2_final.png')
+figure2.savefig('Figure_2_final.pdf')
 print('Tutto pronto!')
 
 

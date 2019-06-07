@@ -1,6 +1,17 @@
 # <markdowncell>
-# # # Generate Figure 2
-# Network distinct response states, in response to different input. A.  Exemplar population activity (n=10 stimuli) reduced in two principal components (PCAL2) over time for n=3 different synaptic reconfigurations (learning conditions). Only delay period is plotted. Time is in seconds. B. Same procedure (population PCAL2 activity) for two structured network instances, with all learning conditions (n=10) pooled together, each responding with K* > n. Clusters identified as in A. C. Boxplot of optimal number of clusters (K*) after k-means (see Methods) for each n=4 structured network instances of n=10 synaptic reshufflings (learning conditions), for n=10 stimuli.
+# # # Generate Figure 4
+# Population activity in neuronal pattern space, shows that different neuronal 
+# assemblies are active for each population activity trajectories. A. Smoothed 
+# single neuron activity for 0.5 sec of stimulus (green area) and 0.5 sec of 
+# delay epoch. B. Same population activity as in A, but now reduced with NNMF 
+# to 3 components (assembly space). The dynamic and highly irregular single 
+# neuron activity, appears smooth in the assembly space. Also the change from 
+# the stimulus to delay epoch is evident. C. Activity of 7 trials with delay 
+# epoch response (out of 10), colored as three k-means identified states, 
+# presented each time with respect to an assembly activity. It is evident 
+# that stable population states that cluster in state space (similar colors), 
+# appear to correspond to activity of a specific assembly. D. Same data as C, 
+# now plotted in assembly space.
 # <markdowncell>
 # Import necessary modules:
 
@@ -15,271 +26,360 @@ from pathlib import Path
 from pynwb import NWBHDF5IO
 from itertools import chain
 import matplotlib.gridspec as gridspec
-from mpl_toolkits.mplot3d import Axes3D
-import scipy.stats
+from matplotlib import cm
+import pandas as pd
 import seaborn as sb
+import scipy.stats
 import math
 
 # <markdowncell>
-# # Create figure 2.
+# ## Create figure 4
 
 # <codecell>
 simulations_dir = Path.cwd().joinpath('simulations')
-glia_dir = Path(r'G:\Glia')
+data_dir = Path.cwd().joinpath('crossvalidation_errors')
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
+plt.rcParams['pdf.fonttype'] = 42
+plt.rcParams['ps.fonttype'] = 42
 
-
-axis_label_font_size = 10
 no_of_conditions = 10
 no_of_animals = 4
-
-
-subplot_width = 3
-subplot_height = 1
-plt.ion()
-figure4 = plt.figure(figsize=plt.figaspect(subplot_height / subplot_width))
-figure4_axis = np.zeros((subplot_height, subplot_width), dtype=object)
 dataset_name = lambda x : f'Network {x}'
-plt.show(block=False)
 
-# Fig 4B:
-B_axis = figure4.add_subplot(
-    subplot_height, subplot_width, 2
+simulations_dir = Path.cwd().joinpath('simulations')
+plt.rcParams.update({'font.family': 'Helvetica'})
+#===============================================================================
+#===============================================================================
+# Beginning of Figure 4
+#===============================================================================
+#===============================================================================
+plt.ion()
+
+# I must discover the optimal number of NNMF components:
+#fig, axblah = plt.subplots(1,1)
+#plt.cla()
+#plt.ion()
+
+subplot_width = 4
+subplot_height = 1
+figure4 = plt.figure(figsize=plt.figaspect(subplot_height / subplot_width))
+
+gs1 = gridspec.GridSpec(
+    1, 1, left=0.05, right=0.15, top=0.95, bottom=0.50, wspace=0.35, hspace=0.0
 )
-C_axis = figure4.add_subplot(
-    subplot_height, subplot_width, 3
+A_axis_a = plt.subplot(gs1[:, 0])
+
+gs1b = gridspec.GridSpec(
+    3, 1, left=0.05, right=0.15, top=0.40, bottom=0.15, wspace=0.35, hspace=0.0
 )
-if False:
-    # Plot what happens with no NMDA, no Mg:
-    optimal_clusters_of_group = defaultdict(partial(np.ndarray, 0))
-    configurations = ['structured_nonmda', 'structured_nomg']
-    for animal_model in range(1, no_of_animals + 1):
-        # Pool together no of clusters for one animal model:
-        K_star_over_trials = np.ones((no_of_conditions, len(configurations)))
-        for config_id, config in enumerate(configurations):
-            for learning_condition in range(1, no_of_conditions + 1):
-                try:
-                    # Lazy load the data as a NWB file. Easy to pass around and encapsulates info like trial length, stim times etc.
-                    NWBfile = analysis.load_nwb_file(
-                        animal_model=animal_model,
-                        learning_condition=learning_condition,
-                        experiment_config=config,
-                        type='bn',
-                        data_path=simulations_dir
-                    )
-                    trial_len = analysis.get_acquisition_parameters(
-                        input_NWBfile=NWBfile,
-                        requested_parameters=['trial_len']
-                    )
-                    custom_range = (20, int(trial_len / 50))
+B_axis_a = plt.subplot(gs1b[0, 0])
+B_axis_b = plt.subplot(gs1b[1, 0])
+B_axis_c = plt.subplot(gs1b[2, 0])
 
-                    # Determine the optimal number of clusters for all trials of a single animal
-                    # model/learning condition.
-                    K_star, K_labels, BIC_val, _ = \
-                        analysis.determine_number_of_clusters(
-                        NWBfile_array=[NWBfile],
-                        max_clusters=10,
-                        custom_range=custom_range
-                    )
+gs2 = gridspec.GridSpec(
+    3, 1, left=0.25, right=0.50, top=0.95, bottom=0.15, wspace=0.35, hspace=0.2
+)
+C_axis_a = plt.subplot(gs2[0, 0])
+C_axis_b = plt.subplot(gs2[1, 0])
+C_axis_c = plt.subplot(gs2[2, 0])
+nb.mark_figure_letter(C_axis_a, 'C')
 
-                    K_star_over_trials[learning_condition - 1, config_id] = \
-                        K_star
-                except Exception as e:
-                    print(f'Got Exception during analysis {str(e)}')
+# Plot same animal model, different learning conditions:
+NWBfile = analysis.load_nwb_file(
+    animal_model=3,
+    learning_condition=3,
+    experiment_config='structured',
+    type='bn',
+    data_path=simulations_dir
+)
 
-        optimal_clusters_of_group[dataset_name(animal_model)] = \
-            K_star_over_trials
+trial_len = analysis.get_acquisition_parameters(
+    input_NWBfile=NWBfile,
+    requested_parameters=['trial_len']
+)
+custom_range = (20, int(trial_len / 50))
 
-# For no NMDA case:
-cases = ['structured_nonmda', 'structured_nomg']
-case_axes = [B_axis, C_axis]
-for case, axis in zip(cases, case_axes):
-    for animal_model in range(1, 1 + 1):
+K_star, K_labels, BIC_val, _ = analysis.determine_number_of_clusters(
+    NWBfile_array=[NWBfile],
+    max_clusters=10,
+    custom_range=custom_range
+)
+
+# Dynamic network response:
+trial_inst_ff = analysis.trial_instantaneous_frequencies(
+    NWBfile=NWBfile, trialid=1, smooth=True
+)
+ff_threshold = 5  # Hz
+A_axis_a.cla()
+for cellid, inst_ff in trial_inst_ff:
+    #if inst_ff.mean() > ff_threshold:
+    A_axis_a.plot(inst_ff[550:1550])
+A_axis_a.margins(0.0)
+A_axis_a.axvspan(0.0, 500.0, ymin=0, ymax=1, color='g', alpha=0.2)
+nb.adjust_spines(A_axis_a, ['left', 'bottom'])
+A_axis_a.xaxis.set_ticks_position('none')
+A_axis_a.xaxis.set_ticklabels([])
+nb.mark_figure_letter(A_axis_a, 'a')
+
+# First decomposition: stimulus to delay transition:
+W_stim2delay, *_ = analysis.NNMF(
+    NWBfile_array=[NWBfile],
+    n_components=3,
+    custom_range=(10, 30),
+    smooth=True,
+    plot=False
+)
+
+B_axis_a.plot(W_stim2delay[0,0,:].T, 'C0')
+B_axis_b.plot(W_stim2delay[1,0,:].T, 'C1')
+B_axis_c.plot(W_stim2delay[2,0,:].T, 'C2')
+B_axis_a.margins(0.0)
+B_axis_a.axvspan(0.0, 10.0, ymin=0, ymax=1, color='g', alpha=0.2)
+B_axis_a.xaxis.set_ticks_position('none')
+B_axis_a.xaxis.set_ticklabels([])
+B_axis_a.yaxis.set_ticks_position('none')
+B_axis_a.yaxis.set_ticklabels([])
+B_axis_b.margins(0.0)
+B_axis_b.axvspan(0.0, 10.0, ymin=0, ymax=1, color='g', alpha=0.2)
+B_axis_b.xaxis.set_ticks_position('none')
+B_axis_b.xaxis.set_ticklabels([])
+B_axis_b.yaxis.set_ticks_position('none')
+B_axis_b.yaxis.set_ticklabels([])
+B_axis_c.margins(0.0)
+B_axis_c.axvspan(0.0, 10.0, ymin=0, ymax=1, color='g', alpha=0.2)
+B_axis_c.xaxis.set_ticks_position('none')
+B_axis_c.xaxis.set_ticklabels([])
+B_axis_c.yaxis.set_ticks_position('none')
+B_axis_c.yaxis.set_ticklabels([])
+B_axis_c.set_xlabel('Time (ms)')
+nb.mark_figure_letter(B_axis_a, 'b')
+
+
+
+W_components, *_ = analysis.NNMF(
+    NWBfile_array=[NWBfile],
+    n_components=3,
+    custom_range=custom_range,
+    smooth=True,
+    plot=False
+)
+
+E_ax = [C_axis_a, C_axis_b, C_axis_c]
+klabels = K_labels
+# Color differently each trial:
+trial_colors = cm.Set2(np.linspace(0, 1, W_components.shape[1]))
+for assembly, assembly_axis in zip(range(1, 4), E_ax):
+    assembly_axis.cla()
+    for trialid in range(0, W_components.shape[1]):
+        #if klabels[trialid] == assembly:
+        # W components are normalized, but with the smoothing they exceed
+        # and they dont look good. So norm them again.
+        assembly_component = W_components[assembly - 1,trialid,:].T
+        assembly_axis.plot(assembly_component, color=trial_colors[trialid, :])
+    assembly_axis.set_ylabel(f'Assembly {assembly}\nactivity')
+    assembly_axis.spines['top'].set_visible(False)
+    assembly_axis.spines['top'].set_color(None)
+    assembly_axis.spines['right'].set_visible(False)
+    assembly_axis.spines['right'].set_color(None)
+    assembly_axis.spines['left'].set_position('zero')
+    ylim = assembly_axis.get_ylim()
+    assembly_axis.set_yticks(ylim)
+    assembly_axis.set_yticklabels(['0', 'Max'])
+    nb.axis_normal_plot(assembly_axis)
+    nb.adjust_spines(assembly_axis, ['left'])
+    #assembly_axis.set_ylim([0.0, 1.1])
+    if assembly != 3:
+        assembly_axis.spines['bottom'].set_visible(False)
+        assembly_axis.spines['bottom'].set_color(None)
+        assembly_axis.tick_params(axis=False)
+        assembly_axis.xaxis.set_ticks_position('none')
+        assembly_axis.xaxis.set_ticklabels([])
+        assembly_axis.spines['bottom'].set_position('zero')
+
+C_axis_c.xaxis.set_ticks(range(0, 100, 20))
+C_axis_c.xaxis.set_ticklabels(range(0, 5))
+C_axis_c.set_xlabel('Time (sec)')
+C_axis_c.spines['bottom'].set_visible(True)
+C_axis_c.spines['bottom'].set_color('k')
+nb.adjust_spines(C_axis_c, ['left', 'bottom'])
+nb.mark_figure_letter(C_axis_a, 'c')
+
+
+#D_axis_b.set_xlim([0.0, 5000])
+#D_axis_b.set_ylim([0.0, 160])
+#D_axis_b.spines['left'].set_position('zero')
+#D_axis_b.spines['bottom'].set_position('zero')
+#D_axis_b.axvspan(50.0, 1050.0, ymin=0, ymax=1, color='g', alpha=0.2)
+
+gs3 = gridspec.GridSpec(
+    1, 1, left=0.55, right=0.75, top=0.95, bottom=0.15, wspace=0.35, hspace=0.2
+)
+D_axis_a = plt.subplot(gs3[0, 0], projection='3d')
+
+# A 3d plot with the last 1s of the above, in assemblie space.
+plot_axes = D_axis_a
+plot_axes.cla()
+# Stylize the 3d plot:
+plot_axes.w_xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+plot_axes.w_yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+plot_axes.w_zaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+plot_axes.set_xlabel('Assembly 1')
+plot_axes.set_ylabel('Assembly 2')
+plot_axes.set_zlabel('Assembly 3')
+#TODO: Someway the W_components are smaller (NNMF seems the culprit). Investigate
+pca_axis_limits = (0, 0.1)
+plot_axes.set_xlim(pca_axis_limits)
+plot_axes.set_ylim(pca_axis_limits)
+plot_axes.set_zlim(pca_axis_limits)
+plot_axes.set_xticks(pca_axis_limits)
+plot_axes.set_yticks(pca_axis_limits)
+plot_axes.set_zticks(pca_axis_limits)
+#azim, elev = plot_axes.azim, plot_axes.elev
+plot_axes.elev = 35#22.5
+plot_axes.azim = 45#52.4
+
+labels = klabels.tolist()
+nclusters = np.unique(klabels).size
+#colors = cm.Set2(np.linspace(0, 1, nclusters))
+_, key_labels = np.unique(labels, return_index=True)
+handles = []
+total_trials = W_components.shape[1]
+duration = W_components.shape[2]
+colors = {1: cm.Greens(np.linspace(0, 1, duration - 1)),
+          2: cm.Blues(np.linspace(0, 1, duration - 1)),
+          3: cm.Oranges(np.linspace(0, 1, duration - 1)),
+          }
+for i, (trial, label) in enumerate(zip(range(total_trials), labels)):
+    capture_artist = True
+    for t, c in zip(reversed(range(duration - 1)), reversed(colors[label])):
+        x = W_components[0][trial][t:t + 2]
+        y = W_components[1][trial][t:t + 2]
+        z = W_components[2][trial][t:t + 2]
+        handle = plot_axes.plot(x, y, z,
+                                color=c,
+                                label=f'State {label}'
+                                )
+        if t < duration / 2:
+            if i in key_labels and capture_artist:
+                print(t)
+                handles.append(handle[0])
+                capture_artist = False
+# Youmust group handles based on unique labels.
+plot_axes.legend(handles=handles, labels=['State 1', 'State 2', 'State 3'])
+nb.mark_figure_letter(D_axis_a, 'd')
+
+#TODO: na pros8eseis ena graph. h timh sto text pou na leei to cosine dist
+# aftwn twn vectors.
+
+gs4 = gridspec.GridSpec(
+    1, 1, left=0.80, right=0.95, top=0.95, bottom=0.15, wspace=0.35, hspace=0.2
+)
+E_axis_a = plt.subplot(gs4[0, 0])
+
+K_star_mat = np.zeros((no_of_animals, no_of_conditions), dtype=int)
+for animal_model in range(1, no_of_animals + 1):
+    for learning_condition in range(1, no_of_conditions + 1):
+        print(f'NT:{animal_model}, LC:{learning_condition}')
+        inputfile = data_dir.joinpath(
+            f'cross_valid_errors_structured{animal_model}_{learning_condition}.hdf'
+        )
+        # Read CV results.
         try:
-            # Pool together no of clusters for one animal model:
-            # Lazy load the data as a NWB file. Easy to pass around and encapsulates info like trial length, stim times etc.
-            NWBfiles = [
-                analysis.load_nwb_file(
-                    animal_model=animal_model,
-                    learning_condition=learning_condition,
-                    experiment_config=case,
-                    type='bn',
-                    data_path=simulations_dir
-                )
-                for learning_condition in range(1, 5 + 1)
-            ]
+            attribs = pd.read_hdf(inputfile, key='attributes').to_dict()
+            K = attribs['K'][0]
+            max_clusters = attribs['max_clusters'][0]
+            rng_max_iters = attribs['rng_max_iters'][0]
+            error_bar = pd.read_hdf(inputfile, key='error_bar') \
+                .values.reshape(max_clusters, K, rng_max_iters) \
+                    .mean(axis=2)
+            error_test = pd.read_hdf(inputfile, key='error_test') \
+                .values.reshape(max_clusters, K, rng_max_iters) \
+                    .mean(axis=2)
+            K_str_cv = np.argmin(error_test.mean(axis=1))
+            K_star_mat[animal_model - 1, learning_condition - 1] = K_str_cv
 
-            print('Done loading!')
-
-            trial_len, ntrials = analysis.get_acquisition_parameters(
-                input_NWBfile=NWBfiles[0],
-                requested_parameters=['trial_len', 'ntrials']
-            )
-            custom_range = (20, int(trial_len / 50))
-
-
-            #TODO: san an mou fainetai oti exoun diaforetika properties, Mallon
-            # ienai ta correct no of trials, allana to 3anadw.. DEN EINAI AFTA!!!
-            #For all the synaptic rearangements:
-            for synarr in range(5):
-                try:
-                    # Check binned activity for the differences:
-                    animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
-                    trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
-                        analysis.get_acquisition_parameters(
-                            input_NWBfile=NWBfiles[synarr],
-                            requested_parameters=[
-                                'animal_model_id', 'learning_condition_id', 'ncells',
-                                'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
-                                'correct_trials_idx', 'correct_trials_no'
-                            ]
-                    )
-                    # Use custom_range to compute PCA only on a portion of the original data:
-                    if custom_range is not None:
-                        if not isinstance(custom_range, tuple):
-                            raise ValueError('Custom range must be a tuple!')
-                        trial_slice_start = int(custom_range[0])
-                        trial_slice_stop = int(custom_range[1])
-                        duration = trial_slice_stop - trial_slice_start
-                    else:
-                        duration = trial_q_no
-
-                    binned_network_activity = NWBfiles[synarr]. \
-                                                acquisition['binned_activity']. \
-                                                data[:pn_no, :]. \
-                        reshape(pn_no, ntrials, trial_q_no)
-                    # Slice out non correct trials and unwanted trial periods:
-                    tmp = binned_network_activity[:, correct_trials_idx, \
-                        trial_slice_start:trial_slice_stop]
-                    # Reshape in array with m=cells, n=time bins.
-                    tmp = tmp.reshape(pn_no, correct_trials_no * duration)
-                    #fig,ax = plt.subplots(1,1)
-                    #ax.imshow(tmp)
-                    #fig.savefig(f'binact_{case}_{synarr}_{animal_model}.png')
-                except Exception as e:
-                    print(f'WHAT HAPPENED??? \n\n\n\t{str(e)}')
-
-
-
-
-            # Plot the annotated clustering results:
-            #TODO: are these correctly labeled?
-            K_labels = np.matlib.repmat(np.arange(1, len(NWBfiles) + 1), ntrials, 1) \
-                .T.reshape(ntrials, -1).reshape(1, -1)[0]
-            analysis.pcaL2(
-                NWBfile_array=NWBfiles,
-                klabels=K_labels,
-                custom_range=custom_range,
-                smooth=True, plot_2d=True,
-                plot_axes=axis
-            )
         except Exception as e:
-            print(f'Got Exception during analysis {str(e)}')
-    axis.set_title(case)
+            print(f'Exception! {str(e)}')
+            pass
 
-
-
-
-# Fig 4A
-# Scatter plot PC VS clusters
-A_axis = figure4.add_subplot(
-    subplot_height, subplot_width, 1
-)
-A_axis.cla()
-# Figure 3D:
+# TODO: Plot number of clusters per animal/condition (na dw)
+# Run for every learning condition and animal the k-means clustering:
 optimal_clusters_of_group = defaultdict(partial(np.ndarray, 0))
-configurations = ['structured', 'random']
 for animal_model in range(1, no_of_animals + 1):
     # Pool together no of clusters for one animal model:
-    K_star_over_trials = np.ones((no_of_conditions, len(configurations)))
-    for config_id, config in enumerate(configurations):
-        for learning_condition in range(1, no_of_conditions + 1):
-            try:
-                # Lazy load the data as a NWB file. Easy to pass around and encapsulates info like trial length, stim times etc.
-                NWBfile = analysis.load_nwb_file(
-                    animal_model=animal_model,
-                    learning_condition=learning_condition,
-                    experiment_config=config,
-                    type='bn',
-                    data_path=simulations_dir
-                )
+    K_star_over_trials = np.ones((no_of_conditions, 2))
+    for learning_condition in range(1, no_of_conditions + 1):
+        # Lazy load the data as a NWB file. Easy to pass around and
+        # encapsulates info like trial length, stim times etc.
+        #TODO: this might raised some exceptions. Investigate!
+        nwbfile = analysis.load_nwb_file(
+            animal_model=animal_model,
+            learning_condition=learning_condition,
+            experiment_config='structured',
+            type='bn',
+            data_path=simulations_dir
+        )
 
-                #analysis.bin_activity(nwbfile, q_size=50)
+        trial_len = analysis.get_acquisition_parameters(
+            input_NWBfile=nwbfile,
+            requested_parameters=['trial_len']
+        )
 
-                trial_len = analysis.get_acquisition_parameters(
-                    input_NWBfile=NWBfile,
-                    requested_parameters=['trial_len']
-                )
-                custom_range = (20, int(trial_len / 50))
+        # TODO: Where is custom range needed? determine a global way
+        # of passing it around...
+        custom_range = (20, int(trial_len / 50))
 
+        K_star, K_labels, BIC_val, _ = analysis.determine_number_of_clusters(
+            NWBfile_array=[nwbfile],
+            max_clusters=no_of_conditions,
+            custom_range=custom_range
+        )
 
-                # Determine the optimal number of clusters for all trials of a single animal
-                # model/learning condition.
-                K_star, K_labels, BIC_val, _ = \
-                    analysis.determine_number_of_clusters(
-                    NWBfile_array=[NWBfile],
-                    max_clusters=10,
-                    custom_range=custom_range
-                )
+        K_star_over_trials[learning_condition - 1, :] = \
+            [K_star, K_star_mat[animal_model-1][learning_condition-1]]
 
-                K_star_over_trials[learning_condition - 1, config_id] = K_star
-            except Exception as e:
-                print(f'Got Exception during analysis {str(e)}')
-
-    optimal_clusters_of_group[dataset_name(animal_model)] = K_star_over_trials
-
-# Use histogram instead of boxplot:
-tmp = [
-    optimal_clusters_of_group[dataset_name(animal)][:, 0].tolist()
-    for animal in range(1, no_of_animals + 1)
-]
-K_stars_structured = list(chain(*tmp))
-tmp = [
-    optimal_clusters_of_group[dataset_name(animal)][:, 1].tolist()
-    for animal in range(1, no_of_animals + 1)
-]
-K_stars_random = list(chain(*tmp))
-
-bins_str = np.arange(1, np.max(K_stars_structured) + 2, 1)
-kstar_str_hist, *_ = np.histogram(K_stars_structured, bins=bins_str)
-bins_rnd = np.arange(1, np.max(K_stars_random) + 2, 1)
-kstar_rnd_hist, *_ = np.histogram(K_stars_random, bins=bins_rnd)
-
-A_axis.bar(
-    bins_str[:-1],kstar_str_hist / len(K_stars_structured), color='C0', 
-    alpha=0.5
-)
-#A_axis.axvline(np.mean(K_stars_structured), color='C0', linestyle='--')
-A_axis.bar(
-    bins_rnd[:-1],kstar_rnd_hist / len(K_stars_random), color='C1', 
-    alpha=0.5
-)
-#A_axis.axvline(np.mean(K_stars_random), color='C1', linestyle='--')
-A_axis.set_xticks(range(bins_str.size + 1))
-A_axis.set_xticklabels(range(bins_str.size + 1))
-A_axis.set_xlabel('K*', fontsize=axis_label_font_size)
-A_axis.set_ylabel('Relative Frequency', fontsize=axis_label_font_size)
-nb.axis_normal_plot(axis=A_axis)
-nb.adjust_spines(A_axis, ['left', 'bottom'])
-nb.mark_figure_letter(A_axis, 'A')
+    optimal_clusters_of_group[dataset_name(animal_model)] = \
+        K_star_over_trials
 
 
+E_axis_a.cla()
+#E_axis_a.set_title('Optimal no of clusters')
+K_s = []
+K_s_CV = []
+models_list = range(1, no_of_animals + 1)
+for pos, animal in enumerate(models_list):
+    K_s.append(list(optimal_clusters_of_group[dataset_name(animal)][:,0]))
+    K_s_CV.append(list(optimal_clusters_of_group[dataset_name(animal)][:,1]))
 
+#test the correlation, scattering the data (eyeball it first):
+fig, ax = plt.subplots(1,1)
+ax.scatter(x=list(chain(*K_s)), y=list(chain(*K_s_CV)))
+fig.savefig('scatter_K_CV.png')
 
+X = np.array(list(chain(*K_s)), dtype=int)
+Y = np.array(list(chain(*K_s_CV)), dtype=int) + 1
+sb.regplot(X, Y, ax=E_axis_a, marker='.', color='C0')
+tau, p_value = scipy.stats.pearsonr(X, Y)
+nb.report_value('K* to Assemblies correlation (Pearson)', (tau, p_value))
+#tau, p_value = scipy.stats.kendalltau(list(chain(*K_s)), list(chain(*K_s_CV)))
+#tau, p_value = scipy.stats.spearmanr(list(chain(*K_s)), list(chain(*K_s_CV)))
+xlim = (1 - 0.2, np.array(X).max() + 0.2)
+ylim = (1 - 0.2, np.array(Y).max() + 0.2)
+E_axis_a.set_xlim(xlim[0], xlim[1])
+E_axis_a.set_ylim(ylim[0], ylim[1])
+E_axis_a.set_xticks(list(range(math.ceil(xlim[0]), int(xlim[1]))))
+E_axis_a.set_yticks(list(range(math.ceil(ylim[0]), int(ylim[1]))))
+E_axis_a.set_xlabel('K*')
+E_axis_a.set_ylabel('Optimal assemblie no')
+nb.axis_normal_plot(E_axis_a)
+nb.adjust_spines(E_axis_a, ['left', 'bottom'])
 
-nb.mark_figure_letter(B_axis, 'B')
-
-#==============================================================================
-
-plt.subplots_adjust(top=0.92, bottom=0.15, left=0.10, right=0.95, hspace=0.25,
-                    wspace=0.25)
-
-
+nb.mark_figure_letter(E_axis_a, 'e')
 
 # <codecell>
-figure4.savefig('Figure_4.pdf')
-figure4.savefig('Figure_4.png')
+figure4.savefig('Figure_4_final.pdf')
+figure4.savefig('Figure_4_final.png')
 print('Tutto pronto!')
 
 
