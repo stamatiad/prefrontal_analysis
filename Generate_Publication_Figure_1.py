@@ -19,6 +19,7 @@ from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 import matplotlib.font_manager as fm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy import stats
+from scipy.signal import savgol_filter
 
 # <markdowncell>
 # # Create figure 1.
@@ -287,8 +288,9 @@ nb.mark_figure_letter(D_axis_a, 'd')
 #TODO: opws einai to NWBfile einai ena tyxaio apo to loop pio panw!
 # Exemplar network rasterplot:
 # Trials that have pa: 2, 6. The 6 is quite nice!
+fig_1e_trial_id = 6
 nb.plot_trial_spiketrains(
-    NWBfile=NWBfile, trialid=6, plot_axis=E_axis_a,
+    NWBfile=NWBfile, trialid=fig_1e_trial_id, plot_axis=E_axis_a,
     axis_label_font_size=axis_label_font_size,
     tick_label_font_size=tick_label_font_size,
     labelpad_x=labelpad_x, labelpad_y=labelpad_y
@@ -308,26 +310,29 @@ trial_len = \
     )
 
 # Dynamic network response:
-trial_inst_ff = analysis.trial_instantaneous_frequencies(
-    NWBfile=NWBfile, trialid=6, smooth=True
-)
-ff_threshold = 20  # Hz
-#fig, plot_axis =plt.subplots(1,1)
-#plt.ion()
-for cellid, inst_ff in trial_inst_ff:
-    if inst_ff.mean() > ff_threshold:
-        E_axis_b.plot(inst_ff)
-    #plt.title(f'cellid {cellid}')
-    #plt.waitforbuttonpress()
-    #plt.cla()
-E_axis_b.set_xlim([0.0, 5000])
-E_axis_b.set_ylim([0.0, 160])
-nb.adjust_spines(E_axis_b, ['left', 'bottom'])
+ff_threshold = 10  # Hz
+
+correct_trials = analysis.get_correct_trials(NWBfile)
+for cellid in range(correct_trials.shape[0]):
+    smoothed_firing_frequency = \
+        savgol_filter(
+            np.multiply(correct_trials[cellid, fig_1e_trial_id, :].T, 20),
+            11, 3
+        )
+    if smoothed_firing_frequency.mean() > ff_threshold:
+        E_axis_b.plot(smoothed_firing_frequency)
+
 #E_axis_b.spines['left'].set_position('zero')
 #E_axis_b.spines['bottom'].set_position('zero')
-E_axis_b.axvspan(50.0, 1050.0, ymin=0, ymax=1, color='g', alpha=0.2)
-E_axis_b.xaxis.set_ticks(np.arange(0, trial_len + 1000, 1000))
-E_axis_b.xaxis.set_ticklabels(np.arange(0, 5, 1), fontsize=tick_label_font_size)
+duration = correct_trials.shape[2]
+time_axis_ticks = np.linspace(0, duration, (duration / 20) + 1)
+time_axis_ticklabels = analysis.q2sec(q_time=time_axis_ticks).astype(int)  #np.linspace(0, time_axis_limits[1], duration)
+E_axis_b.set_xticks(time_axis_ticks)
+E_axis_b.set_xticklabels(time_axis_ticklabels, fontsize=tick_label_font_size)
+E_axis_b.set_xlim([0.0, duration])
+E_axis_b.set_ylim([0.0, 130])
+E_axis_b.axvspan(50.0/50, 1050.0/50, ymin=0, ymax=120/130, color='g', alpha=0.2)
+nb.adjust_spines(E_axis_b, ['left', 'bottom'])
 E_axis_b.set_xlabel(
     'Time (ms)', fontsize=axis_label_font_size,
     labelpad=labelpad_x
@@ -430,7 +435,7 @@ for ii in range(duration):
         timelag_corr[ii, jj] = S[0, 1]
 
 #figure1, plot_axes = plt.subplots()
-im = F_axis_a.imshow(timelag_corr)
+im = F_axis_a.imshow(timelag_corr, vmin=0.8)
 F_axis_a.xaxis.tick_top()
 for axis in ['top', 'bottom', 'left', 'right']:
     F_axis_a.spines[axis].set_linewidth(2)
