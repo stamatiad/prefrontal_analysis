@@ -1522,21 +1522,111 @@ def pcaL2(
         plot_axes.elev = 22.5
         plot_axes.azim = 52.4
 
+
+        '''
+        labels = klabels.tolist()
+        nclusters = np.unique(klabels).size
+        #colors_old = cm.Set2(np.linspace(0, 1, nclusters))
+        _, key_labels = np.unique(labels, return_index=True)
+        handles = []
+        for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
+            # Transform colormap to color values:
+            color_values = colors[label - 1](np.linspace(0, 1, duration))
+            for t, c in zip(range(duration - 1), color_values):
+                handle = plot_axes.plot(
+                    t_L_per_trial[0][trial][t:t+2],
+                    t_L_per_trial[1][trial][t:t+2],
+                    t_L_per_trial[2][trial][t:t+2],
+                    color=c,
+                    linewidth=3,
+                    label=f'Cluster {label}'
+                )
+            if i in key_labels:
+                handles.append(handle)
+        # Youmust group handles based on unique labels.
+        plot_axes.legend(
+            handles=handles,
+            labels=named_serial_no('State', len(key_labels)),
+            loc='upper right'
+        )
+        '''
+
         if klabels is not None:
+            # EDIT: decide about that:
+            progressive_colors = True
+            if progressive_colors:
+                # If you have cluster information for the data:
+                # Create custom colormaps for the stimulus and trial period, per label.
+                # Utilize normalized trial times, to create the colormaps.
+                #TODO: make colormap gradient more steep after stimulus.
+                #TODO: Make it read the proper value!
+                stim_stop = 21  # Stim stop in q=50ms
+                stim_stop_norm = stim_stop / duration
+
+                c = mcolors.ColorConverter().to_rgb
+                stim_start_color = 'limegreen'
+                stim_stop_color = 'darkgreen'
+                cluster_a_cm = make_colormap(
+                    [
+                        c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                        c('orange'), c('red'), stim_stop_norm + 0.01,
+                        c('red'), c('darkred'), 0.99,
+                        c('darkred')
+                    ]
+                )
+                cluster_b_cm = make_colormap(
+                    [
+                        c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                        c('orange'), c('violet'), stim_stop_norm + 0.01,
+                        c('violet'), c('darkviolet'), 0.99,
+                        c('darkviolet')
+                    ]
+                )
+                cluster_c_cm = make_colormap(
+                    [
+                        c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                        c('orange'), c('gold'), stim_stop_norm + 0.01,
+                        c('gold'), c('goldenrod'), 0.99,
+                        c('goldenrod')
+                    ]
+                )
+                cluster_d_cm = make_colormap(
+                    [
+                        c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                        c('orange'), c('blue'), stim_stop_norm + 0.01,
+                        c('blue'), c('darkblue'), 0.99,
+                        c('darkblue')
+                    ]
+                )
+                color_values = [
+                    cluster_a_cm, cluster_b_cm, cluster_c_cm, cluster_d_cm
+                ]
             labels = klabels.tolist()
             nclusters = np.unique(klabels).size
             colors = cm.Set2(np.linspace(0, 1, nclusters))
             _, key_labels = np.unique(labels, return_index=True)
             handles = []
             for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
-                x = t_L_per_trial[0][trial][:]
-                y = t_L_per_trial[1][trial][:]
-                handle = plot_axes.plot(x, y,
-                                  range(duration),
-                                  color=colors[label - 1],
-                                  linewidth=3,
-                                  label=f'Cluster {label}'
-                                  )
+                if progressive_colors:
+                    colors = color_values[label - 1](np.linspace(0, 1, duration))
+                    for t, c in zip(range(duration - 1), colors):
+                        handle = plot_axes.plot(
+                            t_L_per_trial[0][trial][t:t+2],
+                            t_L_per_trial[1][trial][t:t+2],
+                            range(t,t+2),
+                            color=c,
+                            linewidth=3,
+                            label=f'Cluster {label}'
+                        )
+                else:
+                    x = t_L_per_trial[0][trial][:]
+                    y = t_L_per_trial[1][trial][:]
+                    handle = plot_axes.plot(x, y,
+                                      range(duration),
+                                      color=colors[label - 1],
+                                      linewidth=3,
+                                      label=f'Cluster {label}'
+                                      )
                 if i in key_labels:
                     handles.append(handle[0])
             # Youmust group handles based on unique labels.

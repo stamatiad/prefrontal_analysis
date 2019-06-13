@@ -26,6 +26,11 @@ import copy
 import notebook_module as nb
 from scipy.signal import savgol_filter
 
+plt.rcParams.update({'font.family': 'Helvetica'})
+plt.rcParams["figure.figsize"] = (15, 15)
+plt.rcParams['pdf.fonttype'] = 42
+plt.rcParams['ps.fonttype'] = 42
+
 def check_requirements():
     # Check that user is running a supported python version and necessary packages:
     dependencies = [
@@ -431,6 +436,7 @@ class Network:
             plot_axis.set_zticks(pca_axis_limits)
             plt.savefig('Network_sn{}_3d_positions.png'.format(self.serial_no))
             plt.savefig('Network_sn{}_3d_positions.svg'.format(self.serial_no))
+            plt.savefig('Network_sn{}_3d_positions.pdf'.format(self.serial_no))
             plt.show()
 
         return
@@ -788,6 +794,9 @@ class Network:
                 )
                 plt.savefig(
                     f'Network_sn{self.serial_no}_clustering_coefficient.svg'
+                )
+                plt.savefig(
+                    f'Network_sn{self.serial_no}_clustering_coefficient.pdf'
                 )
                 plt.show()
 
@@ -1369,6 +1378,7 @@ def plot_reciprocal_across_distance(mat, distance_mat, ground_truth=None, plot=F
 
     plt.savefig('PN-PN_reciprocal_across_distance.png')
     plt.savefig('PN-PN_reciprocal_across_distance.svg')
+    plt.savefig('PN-PN_reciprocal_across_distance.pdf')
     plt.show()
 
 def plot_unidirectional_across_distance(mat, distance_mat, ground_truth=None, plot=False):
@@ -1405,6 +1415,7 @@ def plot_unidirectional_across_distance(mat, distance_mat, ground_truth=None, pl
 
     plt.savefig('PN-PN_unidirectional_across_distance.png')
     plt.savefig('PN-PN_unidirectional_across_distance.svg')
+    plt.savefig('PN-PN_unidirectional_across_distance.pdf')
     plt.show()
 
 def plot_pn_pv_reciprocal_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, ground_truth=None):
@@ -1438,6 +1449,7 @@ def plot_pn_pv_reciprocal_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, ground
     ax.set_ylabel('PN2PV Reciprocal Probability')
     plt.savefig('PN-PV_reciprocal_across_distance.png')
     plt.savefig('PN-PV_reciprocal_across_distance.svg')
+    plt.savefig('PN-PV_reciprocal_across_distance.pdf')
     plt.show()
 
 def plot_pn2pv_unidirectional_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, ground_truth=None, plot=False):
@@ -1472,6 +1484,7 @@ def plot_pn2pv_unidirectional_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, gr
 
     plt.savefig('plot_pn2pv_unidirectional_across_distance.png')
     plt.savefig('plot_pn2pv_unidirectional_across_distance.svg')
+    plt.savefig('plot_pn2pv_unidirectional_across_distance.pdf')
     plt.show()
 
 def plot_pv2pn_unidirectional_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, ground_truth=None, plot=False):
@@ -1506,4 +1519,5 @@ def plot_pv2pn_unidirectional_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, gr
 
     plt.savefig('plot_pv2pn_unidirectional_across_distance.png')
     plt.savefig('plot_pv2pn_unidirectional_across_distance.svg')
+    plt.savefig('plot_pv2pn_unidirectional_across_distance.pdf')
     plt.show()
