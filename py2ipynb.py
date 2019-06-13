@@ -1,3 +1,4 @@
+import nbformat
 from nbformat import v3, v4
 from pathlib import Path
 
@@ -26,7 +27,39 @@ for fig_file in figure_files:
     notebook_v3 = v3.reads_py(python_code)
     notebook_v4 = v4.upgrade(notebook_v3)  # Upgrade v3 to v4
 
+    # Insert a cell that creates/initializes the environment:
+    # Since this is just a placeholder: nbformat.v3.nbbase.NotebookNode()
+    # \nbformat\v4\nbjson.py
+    # Define it as you like:
+    init_cell = nbformat.v3.nbbase.new_code_cell()
+    # init_cell = nbformat.v3.nbbase.NotebookNode()
+    # init_cell.cell_type = u'code'
+    # init_cell.outputs = []
+    init_cell.source = """\
+    # Need to setup tools on our machine first:
+    !sudo apt-get install git-lfs
+    !git clone https://github.com/stamatiad/prefrontal_analysis.git
+
+    import os
+    os.chdir('prefrontal_analysis')
+    !git checkout review
+
+    !git lfs install
+    !git lfs fetch
+    !git lfs checkout
+
+    !pip install -r requirements.txt
+
+    # numpy has issue: use version numpy==1.16.4
+    """
+
+    # add the environment cell after ipynb description:
+    notebook_v4.cells.insert(1, init_cell)
+
+    # Write notebook as a json file:
     jsonform = v4.writes(notebook_v4) + "\n"
+
+    # Write notebook to ipynb file:
     with open(Path(fig_file.stem).with_suffix('.ipynb'), "w") as fpout:
         fpout.write(jsonform)
 

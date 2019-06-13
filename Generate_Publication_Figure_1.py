@@ -49,6 +49,7 @@ subplot_width = 5
 subplot_height = 4
 figure_ratio = subplot_height / subplot_width
 figure1 = plt.figure(figsize=plt.figaspect(figure_ratio))
+figure1.patch.set_facecolor('white')
 
 # c is the size of subplot space/margin, for both h/w (in figure scale).
 # If you are really OCD, you can use a second one, scaled by fig aspect ratio.
@@ -320,7 +321,11 @@ for cellid in range(correct_trials.shape[0]):
             11, 3
         )
     if smoothed_firing_frequency.mean() > ff_threshold:
+        # Remove the negative values made from smoothing:
+        idx = smoothed_firing_frequency < 0
+        smoothed_firing_frequency[idx] = 0
         E_axis_b.plot(smoothed_firing_frequency)
+
 
 #E_axis_b.spines['left'].set_position('zero')
 #E_axis_b.spines['bottom'].set_position('zero')
@@ -435,7 +440,7 @@ for ii in range(duration):
         timelag_corr[ii, jj] = S[0, 1]
 
 #figure1, plot_axes = plt.subplots()
-im = F_axis_a.imshow(timelag_corr, vmin=0.8)
+im = F_axis_a.imshow(timelag_corr, vmin=0.7)
 F_axis_a.xaxis.tick_top()
 for axis in ['top', 'bottom', 'left', 'right']:
     F_axis_a.spines[axis].set_linewidth(2)

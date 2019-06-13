@@ -47,6 +47,7 @@ no_of_animals = 4
 subplot_width = 2
 subplot_height = 1
 figure1 = plt.figure(figsize=plt.figaspect(subplot_height / subplot_width))
+figure1.patch.set_facecolor('white')
 #TODO: I tend to believe that the w/hspace is RELATIVE to the size of this grid.
 # This asks for a absolute number, in order to have a visually pleasing grid.
 gs1 = gridspec.GridSpec(2, 4, left=0.05, right=0.95, top=0.95, bottom=0.10, wspace=0.35, hspace=0.2)

@@ -37,6 +37,7 @@ popt, pcov = curve_fit(func_powerlaw, x, y, maxfev=2000 )
 #array([-7.50259257e+01,  6.42232615e-04,  7.53522217e+01])
 
 fig, ax = plt.subplots()
+fig.patch.set_facecolor('white')
 #plt.figure(figsize=(10, 5))
 ax.plot(x, func_powerlaw(x, *popt), '--', color='k')
 ax.scatter(x, y)

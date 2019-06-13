@@ -46,6 +46,7 @@ subplot_height = 2
 plt.ion()
 figure_ratio = subplot_height / subplot_width
 figure3 = plt.figure(figsize=plt.figaspect(figure_ratio))
+figure3.patch.set_facecolor('white')
 figure3_axis = np.zeros((subplot_height, subplot_width), dtype=object)
 dataset_name = lambda x : f'Network {x}'
 

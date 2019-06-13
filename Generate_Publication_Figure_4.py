@@ -64,6 +64,7 @@ plt.ion()
 subplot_width = 4
 subplot_height = 1
 figure4 = plt.figure(figsize=plt.figaspect(subplot_height / subplot_width))
+figure4.patch.set_facecolor('white')
 
 gs1 = gridspec.GridSpec(
     1, 1, left=0.05, right=0.15, top=0.95, bottom=0.50, wspace=0.35, hspace=0.0

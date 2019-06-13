@@ -1,6 +1,29 @@
 # prefrontal_analysis
 This is the code used to analyse the NEURON simulations produced from [here].
 
+### Run on Google Colab
+> Now you can run the code, replicating the results on Google Colab platform, without the need to setup a python environment.
+
+> :grey_exclamation: These links need to change when I will merge to main branch!
+
+Replicate figures using jupyter notebooks:
+
+
+Figure 1 Notebook [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/stamatiad/prefrontal_analysis/blob/review/Generate_Publication_Figure_1.ipynb)
+
+Figure 2 Notebook [![Open Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/stamatiad/prefrontal_analysis/blob/review/Generate_Publication_Figure_2.ipynb)
+
+Figure 3 Notebook [![Open Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/stamatiad/prefrontal_analysis/blob/review/Generate_Publication_Figure_3.ipynb)
+
+Figure 4 Notebook [![Open Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/stamatiad/prefrontal_analysis/blob/review/Generate_Publication_Figure_4.ipynb)
+
+Figure S2 Notebook [![Open Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/stamatiad/prefrontal_analysis/blob/review/Generate_Publication_Figure_S2.ipynb)
+
+Figure S3 Notebook [![Open Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/stamatiad/prefrontal_analysis/blob/review/Generate_Publication_Figure_S3.ipynb)
+
+
+
+
 ### Recommendations
 This code is pure python 3, although there are some recommendations to run it trouble-free:
 - pip, for easy python package management (included with most python installations).
