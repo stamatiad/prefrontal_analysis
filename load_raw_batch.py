@@ -5,11 +5,14 @@ import numpy as np
 import os
 import pandas as pd
 import re
+import sys
+from collections import defaultdict
 
-print(__name__)
+#TODO: Must rewrite this fine!
 ncores = 2 #mp.cpu_count()
 #data_dir = Path(r'C:\Users\steve\Desktop\data')
-data_dir = Path(r'F:\backendSN2LC1TR0_EB1.750_IB1.500_GBF2.000_NMDAb6.000_AMPAb1.000_randomdur3')
+data_dir = Path(sys.argv[1])
+print(f'data_dir: {data_dir}')
 
 def read_train(fn):
     '''
@@ -39,10 +42,25 @@ def read_somatic_voltage(ncells = 0):
     :return:
     '''
     # Glob all filenames of the somatic voltage trace:
-    files_v_soma = list(data_dir.glob('v_soma*'))
-    #ncells = len(files_v_soma)
-    if ncells < 1:
-        raise FileExistsError('No vsoma files found!')
+    #TODO: this line is wrong, since it is not sorted!
+    # FIX: you must know a priori the number of cells./ or sort them
+    files_v_soma = [
+        data_dir.joinpath(f'v_soma_{id:03}.txt')
+        for id in range(ncells)
+    ]
+    #files_v_soma = list(data_dir.glob('v_soma*')).sort()
+    # Make sure that vsoma files exist:
+    for id, file in enumerate(files_v_soma):
+        if not file.is_file():
+            raise FileNotFoundError(f'File v_soma_{id:03} was not found!')
+
+    #if len(files_v_soma) < 1:
+    #    raise FileExistsError(f'No vsoma files found on {data_dir} !')
+
+    # Use ncells as a validation variable: if the value given is the same as
+    # the one found, raise error:
+    #if len(files_v_soma) != ncells:
+    #    raise ValueError('Ncells provided is not the same as the one found!')
 
     # Length of simulation samples:
     nsamples = len(read_train(files_v_soma[0]))
@@ -53,7 +71,7 @@ def read_somatic_voltage(ncells = 0):
     for cell, fn in enumerate(files_v_soma):
         vsoma[cell][:] = read_train(fn)
 
-    filename = Path(r'F:\vsoma.hdf5')
+    filename = data_dir.joinpath(r'vsoma.hdf5')
     df = pd.DataFrame(vsoma)
     df.to_hdf(filename, key='vsoma', mode='w')
 
@@ -65,12 +83,18 @@ def read_dendritic_voltage(ncells = 0, nsamples = 0, nseg = 5):
     :return:
     '''
     # Glob all filenames of the dendritic voltage trace:
+    #TODO: need to rewrite this!
     files_v_dend = list(data_dir.glob('v_dend*'))
     if len(files_v_dend) < 1:
         print('No dendritic voltage trace files!')
         return
 
-    filename = Path(r'F:\vdend.hdf5')
+    # Use ncells as a validation variable: if the value given is the same as
+    # the one found, raise error:
+    if len(files_v_dend) != ncells:
+        raise ValueError('Ncells provided is not the same as the one found!')
+
+    filename = data_dir.joinpath(r'vdend.hdf5')
     # Touch the file. Is there a better way?
     open(filename, 'w').close()
 
@@ -97,54 +121,72 @@ def read_synapse_info(type=None, alias=None):
     :param alias:
     :return:
     '''
+    #TODO: this does not work! fix it first.
     # Glob all filenames of the PN2PN synaptic locations:
     files = list(data_dir.glob(f'{type}_{alias}*'))
     pid_d = {}
     for fn in files:
         with open(fn, 'r') as f:
             for line in f:
+                print(f'Line is: {line}')
                 # if line.startswith('src='):
                 m = re.search(r'src=(\d+) trg=(\d+)', line)
                 # else, read just the pid:
-                n = re.search(r'\d+.\d+', line)
+                # This regexp is cursed...
+                n = re.search(r'([0-9]{1}[.][0-9]{4})', line)
                 if m is not None:
-                    src = m.group(1)
-                    trg = m.group(2)
+                    src = int(m.group(1))
+                    trg = int(m.group(2))
                     pid_d[(src, trg)] = []
+                    if src == 223 and trg == 243:
+                        print(f'found key {(src, trg)}')
                 elif n is not None:
-                    pid = n.group()
+                    pid = float(n.group(1))
                     pid_d[(src, trg)].append(pid)
                 else:
                     continue
 
+    # BLAH DE BLAH:
+    print(f'PID dict is of length {len(pid_d)}')
+    len_set = {
+        len(v)
+        for v in pid_d.values()
+    }
+    print(f'length of set lengths is: {len(len_set)}')
+    print(len_set)
+
+    for k, v in pid_d.items():
+        if len(v) > 5:
+            print(f'key {k} with value: {v} is wrong!')
+
     df = pd.DataFrame(pid_d)
-    df.to_hdf(Path(fr'F:\{type}_{alias}.hdf5'), key=f'{type}_{alias}', mode='w')
+    df.to_hdf(data_dir.joinpath(fr'{type}_{alias}.hdf5'), key=f'{type}_{alias}', mode='w')
 
 
 def main():
     #  Read somatic voltage:
     print('Reading vsoma.')
-    #nsamples = read_somatic_voltage(ncells = 333)
+    nsamples = read_somatic_voltage(ncells = 333)
 
     # Load dendritic voltage traces, if any:
     print('Reading vdend.')
-    #read_dendritic_voltage(ncells=250, nsamples=nsamples, nseg=5)
+    read_dendritic_voltage(ncells=250, nsamples=nsamples, nseg=5)
 
-    # Read synaptic locations in PN2PN connections:
-    print('Reading pid pyramidal.')
-    read_synapse_info(type='pid',alias='pyramidal')
+    ## Read synaptic locations in PN2PN connections:
+    #print('Reading pid pyramidal.')
+    #read_synapse_info(type='pid',alias='pyramidal')
 
-    # Read synaptic locations in PV2PN connections:
-    print('Reading pid interneurons.')
-    read_synapse_info(type='pid', alias='interneurons')
+    ## Read synaptic locations in PV2PN connections:
+    #print('Reading pid interneurons.')
+    #read_synapse_info(type='pid', alias='interneurons')
 
-    # Read synaptic locations in PN2PN connections:
-    print('Reading delay pyramidal.')
-    read_synapse_info(type='delay', alias='pyramidal')
+    ## Read synaptic locations in PN2PN connections:
+    #print('Reading delay pyramidal.')
+    #read_synapse_info(type='delay', alias='pyramidal')
 
-    # Read synaptic locations in PV2PN connections:
-    print('Reading delay interneurons.')
-    read_synapse_info(type='delay', alias='interneurons')
+    ## Read synaptic locations in PV2PN connections:
+    #print('Reading delay interneurons.')
+    #read_synapse_info(type='delay', alias='interneurons')
 
     # TODO: Check that you can load these.
 

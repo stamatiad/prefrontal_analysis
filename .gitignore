@@ -5,3 +5,4 @@ old/
 deployed/
 *.png
 *.hdf5
+simulations/old_files/

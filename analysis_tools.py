@@ -395,6 +395,119 @@ def create_nwb_validation_file(inputdir=None, outputdir=None,
     with NWBHDF5IO(str(output_file), 'w') as io:
         io.write(nwbfile)
 
+def create_nwb_validation_file_ampatest(inputdir=None, outputdir=None,
+                               synapse_activation=None, location=None,
+                               **kwargs):
+    # Create a NWB file from the results of the validation routines.
+
+    print('Creating NWBfile.')
+    nwbfile = NWBFile(
+        session_description='NEURON validation results.',
+        identifier='excitatory_validation_ampatest',
+        session_start_time=datetime.now(),
+        file_create_date=datetime.now()
+    )
+
+    # Partially automate the loading with the aid of a reading function;
+    # use a generic reading function that you make specific with partial and
+    # then just load all the trials:
+    #TODO: you should put somewhere the external kwargs!!
+    if not synapse_activation:
+        synapse_activation = list(range(1, 25, 1))
+    if not location:
+        location = 'vsoma'
+    basic_kwargs = {'ncells': 1, 'ntrials': len(synapse_activation), \
+                    'stim_start_offset': 100, 'stim_stop_offset': 140,
+                    'trial_len': 700, 'samples_per_ms': 10}
+
+
+    # 'Freeze' some portion of the function, for a simplified one:
+    read_somatic_potential = partial(
+        read_validation_potential,
+        inputdir=inputdir,
+        synapse_activation=synapse_activation,
+        location='vsoma'
+    )
+
+    # Load first batch:
+    import_recordings_to_nwb(
+        nwbfile=nwbfile,
+        read_function=partial(
+            read_somatic_potential,
+            condition='normal',
+            currents='NMDA+AMPA',
+            nmda_bias=6.0,
+            ampa_bias=1.0,
+        ),
+        timeseries_name='normal_NMDA+AMPA',
+        timeseries_description='Validation',
+        **basic_kwargs
+    )
+
+    # Rinse and repeat:
+    import_recordings_to_nwb(
+        nwbfile=nwbfile,
+        read_function=partial(
+            read_somatic_potential,
+            condition='normal',
+            currents='AMPA',
+            nmda_bias=0.0,
+            ampa_bias=1.0,
+        ),
+        timeseries_name='normal_AMPA_only',
+        timeseries_description='Validation',
+        **basic_kwargs
+    )
+
+    '''
+    # Use partial to remove some of the kwargs that are the same:
+    read_dendritic_potential = partial(
+        read_validation_potential,
+        inputdir=inputdir,
+        synapse_activation=synapse_activation,
+        location='vdend'
+    )
+
+    # Load dendritic potential:
+    import_recordings_to_nwb(
+        nwbfile=nwbfile,
+        read_function=partial(
+            read_dendritic_potential,
+            condition='normal',
+            currents='NMDA+AMPA',
+            nmda_bias=6.0,
+            ampa_bias=1.0,
+        ),
+        timeseries_name='vdend_normal_NMDA+AMPA',
+        timeseries_description='Validation',
+        **basic_kwargs
+    )
+
+    # Load dendritic potential:
+    import_recordings_to_nwb(
+        nwbfile=nwbfile,
+        read_function=partial(
+            read_dendritic_potential,
+            condition='normal',
+            currents='AMPA',
+            nmda_bias=0.0,
+            ampa_bias=1.0,
+        ),
+        timeseries_name='vdend_normal_AMPA',
+        timeseries_description='Validation',
+        **basic_kwargs
+    )
+    '''
+
+    # write to file:
+    output_file = outputdir.joinpath(
+        'excitatory_validation_ampatest_1.nwb'
+    )
+    print(f'Writing to NWBfile: {output_file}')
+    with NWBHDF5IO(str(output_file), 'w') as io:
+        io.write(nwbfile)
+
+
 def create_nwb_file(inputdir=None, outputdir=None, \
                     include_membrane_potential=False, **kwargs):
     # Get parameters externally:
