@@ -271,6 +271,9 @@ class Network:
     @property
     def upairs_d(self):
         # Return a copy of the dict, to avoid errors due to accidental mutation.
+        # Thus one can use the util functions that connect upairs, choosing
+        # whether or not the alterations will be retained by the network just
+        # by using the context mananger.
         return copy.deepcopy(self._upairs_d)
 
     @upairs_d.setter
@@ -688,6 +691,7 @@ class Network:
             # This is the overall (total) connection probability, also distance dependend (perin et al., 2011):
             overall_probability = {0: 'total'}
             # Get probabilities instead of the connectivity matrix:
+            #TODO: logika to la8os einai mesa sto connect_all_pairs:
             Pd_upairs = connect_all_pairs(
                 pn_upairs,
                 connection_protocol=overall_probability,
@@ -711,6 +715,14 @@ class Network:
             # Get type '0' connection probability for each pair (this is the total/overall probability):
             prob_f_list = [upair.prob_f[1] for upair in Pd_upairs]
             Pd = np.asmatrix(distance.squareform(prob_f_list))
+            #DEBUG
+            filename = Path.cwd().joinpath('debug_files','error',f'network_debug_PdMat_SN{self.serial_no}.hdf5')
+            df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
+                               'configuration_alias': self.configuration_alias})
+            df.to_hdf(filename, key='attributes', mode='w')
+            df = pd.DataFrame(Pd)
+            df.to_hdf(filename, key='Pd')
+
             sumPd = Pd.sum()
             # run iterative rearrangement:
             f_prob = np.zeros((self.pc_no, self.pc_no, rearrange_iterations))
@@ -811,7 +823,8 @@ class Network:
                     all_upairs, connection_protocol=based_on_distance
                 )
             )
-        connectivity_mat = upairs2mat(self.upairs_d.values())
+        #TODO: Why I do this again? Do the conn mats differ?
+        connectivity_mat2 = upairs2mat(self.upairs_d.values())
 
         #print(f'Random finally {np.random.rand(1)[0]}')
         #with open('connblah1.txt', 'w') as f:
