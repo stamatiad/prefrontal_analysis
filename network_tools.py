@@ -27,8 +27,8 @@ import notebook_module as nb
 from scipy.signal import savgol_filter
 from pathlib import Path
 import pickle
+import json
 
-UPair = namedtuple('UPair', ['a', 'b', 'distance', 'type_cells', 'type_conn', 'prob_f'])
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
 plt.rcParams['pdf.fonttype'] = 42
@@ -663,10 +663,21 @@ class Network:
             # connection probabilities:
             # Filter out non PN cell pairs:
             pn_upairs = [pair for pair in self.upairs_d.values() if pair.type_cells == ('PN_PN')]
-            #TODO: DEBUG: pickle and save:
+            #TODO: DEBUG: json and save:
+            pn_upairs_d_l = []
+            for upair in pn_upairs:
+                upair_d = {'a':upair.a, 'b':upair.b, 'distance':upair.distance,
+                           'type_cells':upair.type_cells,
+                           'type_conn':upair.type_conn, 'prob_f':None}
+                pn_upairs_d_l.append(upair_d)
+
+
             #pn_upars_1:
-            fn_p = Path.cwd().joinpath('debug_files', 'error', f'pn_upairs_1_SN{self.serial_no}.p')
-            pickle.dump(pn_upairs, open(fn_p, "wb"))
+            fn_p = Path.cwd().joinpath('debug_files', 'error', f'pn_upairs_1_SN{self.serial_no}.json')
+            #pickle.dump(pn_upairs, open(fn_p, "wb"))
+            with open(fn_p, 'w') as fp:
+                json.dump(pn_upairs_d_l, fp, indent=4)
+
             # use a dict to instruct what connections you need:
             # This is the distance dependent connection types from Perin et al., 2011:
             based_on_distance = {0: 'reciprocal', 1: 'A2B', 2: 'B2A'}
@@ -682,10 +693,21 @@ class Network:
                 connection_protocol=overall_probability,
                 export_probabilities=True
             )
-            #TODO: DEBUG: pickle and save:
-            #pd_upars_1:
-            fn_p = Path.cwd().joinpath('debug_files', 'error', f'pd_upairs_1_SN{self.serial_no}.p')
-            pickle.dump(Pd_upairs, open(fn_p, "wb"))
+            #TODO: DEBUG: json and save:
+            pd_upairs_d_l = []
+            for upair in Pd_upairs:
+                upair_d = {'a':upair.a, 'b':upair.b, 'distance':upair.distance,
+                           'type_cells':upair.type_cells,
+                           'type_conn':upair.type_conn, 'prob_f':None}
+                pd_upairs_d_l.append(upair_d)
+
+
+            #pn_upars_1:
+            fn_p = Path.cwd().joinpath('debug_files', 'error', f'pd_upairs_1_SN{self.serial_no}.json')
+            #pickle.dump(pn_upairs, open(fn_p, "wb"))
+            with open(fn_p, 'w') as fp:
+                json.dump(pd_upairs_d_l, fp, indent=4)
+
             # Get type '0' connection probability for each pair (this is the total/overall probability):
             prob_f_list = [upair.prob_f[1] for upair in Pd_upairs]
             Pd = np.asmatrix(distance.squareform(prob_f_list))
