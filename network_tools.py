@@ -25,6 +25,7 @@ from contextlib import contextmanager
 import copy
 import notebook_module as nb
 from scipy.signal import savgol_filter
+from pathlib import Path
 
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
@@ -577,70 +578,6 @@ class Network:
 
             return upairs
 
-
-        def randomize_connection_type(upairs, available_types=None):
-            '''
-            Randomize the connection type of the Upair/Upairs given.
-            :param available_types: optional
-            :return:
-            '''
-            #TODO: make this function get all connection types from outside?
-            if not available_types:
-                available_types = ['none', 'A2B', 'B2A', 'reciprocal']
-
-            type_len = len(available_types)
-
-            # Keep your RNG the one of numpy, for reproducability:
-            rnd_idx = np.random.randint(type_len, size=len(upairs))
-            at = np.array(available_types)
-            upair_types = at[(rnd_idx),]
-
-            # Update the connection type of the immutable namedtuples:
-            #updated_upairs = []
-            # Mutate the original upairs, since this is now the workflow:
-            for upair, connection_type in zip(upairs, upair_types):
-                upair.type_conn = connection_type
-                #tmp_d = upair._asdict()
-                #tmp_d['type_conn'] = connection_type
-                #updated_upairs.append(self.UPair(**tmp_d))
-
-            return upairs
-
-        def reduce_reciprocals(upairs, percentage=None):
-            '''
-            Replace reciprocal connections in upairs with unidirectional ones,
-            to match the percentage of the originals. I.e. if the original
-            network have 50% reciprocals and percentage is 50, then
-            the returned connectivity will have 0.5 * 0.5 = 0.25 reciprocal
-            connections.
-            :param upairs:
-            :param percentage:
-            :return:
-            '''
-
-            # Check that only PN2PN upairs are given:
-            if len(set(x.type_cells for x in upairs)) > 1:
-                raise ValueError('Please provide only PN2PN pairs!')
-
-            #TODO: remap reciprocal connections; get reciprocal only, to not
-            # change the overall connection probability, and remap them.
-            reciprocal_upairs = np.array([x for x in upairs if x.type_conn == 'reciprocal'])
-            # nonconnected_upairs = np.array([x for x in upairs if x.type_conn == 'none'])
-            # Random permute the lists:
-            idx_reciprocal = np.random.permutation(reciprocal_upairs.size)
-            # idx_nonconnected = np.random.permutation(nonconnected_upairs.size)
-            # Replace % of the reciprocal pairs with non connected:
-            percentage_no = int(reciprocal_upairs.size * percentage)
-            upairs_to_randomize = reciprocal_upairs[idx_reciprocal[:percentage_no]].tolist()
-            # The updated pairs will be saved since this is called inside
-            # a context mananger, so no need to return anything.
-            randomize_connection_type(
-                list(upairs_to_randomize),
-                available_types=['A2B', 'B2A']
-            )
-
-
-
         @time_it
         def upairs2mat(upairs):
             '''
@@ -717,12 +654,6 @@ class Network:
             return upairs2mat(connected_upairs)
 
 
-        def perform_reduce_reciprocals(percentage=50):
-            with self.get_upairs(cell_type='PN_PN') as pn_upairs:
-                reduce_reciprocals(
-                    pn_upairs, percentage=percentage
-                )
-
 
         def perform_structured_connectivity():
             #TODO: einai ta reciprocals sxedon ta misa?
@@ -788,6 +719,15 @@ class Network:
                         connection_protocol=based_on_distance
                     )
                     reformed_conn_mat = upairs2mat(new_upairs)
+                    #TODO: DEBUG: save the connection matrix for each iteration
+                    #to debug it againts the working commit: 6063a41
+                    filename = Path.cwd().joinpath('debug_files','d23a58a',f'iter_{t}_network_debug_SN{self.serial_no}.hdf5')
+                    df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
+                                       'configuration_alias': self.configuration_alias})
+                    df.to_hdf(filename, key='attributes', mode='w')
+                    df = pd.DataFrame(reformed_conn_mat)
+                    df.to_hdf(filename, key='reformed_conn_mat')
+
 
                 #TODO: the context manager will update the upairs: are the
                 # distances correct? Fix them?
@@ -849,57 +789,6 @@ class Network:
         # Plot to see the validated results of the connectivity routines:
         if plot:
             plt.ion()
-            '''
-            # Plot PN-PN reciprocal:
-            plot_connectivity_across_distance(
-                conn_mat=connectivity_mat[:self.pc_no, :self.pc_no],
-                distance_mat=self.dist_mat[:self.pc_no, :self.pc_no],
-                conn_pair='PN_PN',
-                conn_type='reciprocal',
-                conn_functions_dict=connection_functions_d
-            )
-            # Plot PN-PN unidirectional:
-            plot_connectivity_across_distance(
-                conn_mat=connectivity_mat[:self.pc_no, :self.pc_no],
-                distance_mat=self.dist_mat[:self.pc_no, :self.pc_no],
-                conn_pair='PN_PN',
-                conn_type='unidirectional',
-                conn_functions_dict=connection_functions_d
-            )
-            # Plot PN-PV unidirectional:
-            plot_connectivity_across_distance(
-                conn_mat=[
-                    connectivity_mat[:self.pc_no, self.pc_no:],
-                    connectivity_mat[self.pc_no:, :self.pc_no]
-                ],
-                distance_mat=self.dist_mat[:self.pc_no, self.pc_no:],
-                conn_pair='PN_PV',
-                conn_type='A2B',
-                conn_functions_dict=connection_functions_d
-            )
-            # Plot PV-PN unidirectional:
-            plot_connectivity_across_distance(
-                conn_mat=[
-                    connectivity_mat[:self.pc_no, self.pc_no:],
-                    connectivity_mat[self.pc_no:, :self.pc_no]
-                ],
-                distance_mat=self.dist_mat[:self.pc_no, self.pc_no:],
-                conn_pair='PN_PV',
-                conn_type='B2A',
-                conn_functions_dict=connection_functions_d
-            )
-            # Plot PN-PV reciprocals:
-            plot_connectivity_across_distance(
-                conn_mat=[
-                    connectivity_mat[:self.pc_no, self.pc_no:],
-                    connectivity_mat[self.pc_no:, :self.pc_no]
-                ],
-                distance_mat=self.dist_mat[:self.pc_no, self.pc_no:],
-                conn_pair='PN_PV',
-                conn_type='reciprocal',
-                conn_functions_dict=connection_functions_d
-            )
-           '''
             plot_reciprocal_across_distance(connectivity_mat[:self.pc_no, :self.pc_no],
                                             self.dist_mat[:self.pc_no, :self.pc_no],
                                             self.connection_functions_d['PN_PN']['reciprocal'],
@@ -932,17 +821,6 @@ class Network:
         # if configuration is structured,
         if self.configuration_alias is 'structured':
             excitatory_conn_mat = perform_structured_connectivity()
-
-
-        if self.configuration_alias is 'structured_half_reciprocals':
-            perform_structured_connectivity()
-            perform_reduce_reciprocals(percentage=50)
-            pn_upairs = [
-                pair 
-                for pair in self.upairs_d.values() 
-                if pair.type_cells == ('PN_PN')
-                ]
-            excitatory_conn_mat = upairs2mat(pn_upairs)
 
         # Save resulting connectivity matrix to the network:
         connectivity_mat[:self.pc_no, :self.pc_no] = excitatory_conn_mat

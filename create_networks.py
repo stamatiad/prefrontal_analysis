@@ -45,7 +45,7 @@ if False:
     sys.exit(0)
 
 #TODO: make sure that nothing changes with the edits in network_tools and commit them.
-for serial_no in range(1, 5):
+for serial_no in range(1, 2):
     # Create a network configuration with given serial number (used to seed the RNG for reproducability)
     net_structured = nt.Network(serial_no=serial_no, pc_no=pn_no, pv_no=pv_no)
 
@@ -54,7 +54,7 @@ for serial_no in range(1, 5):
 
     # Create both structured and random configurations:
     net_structured.create_connections(
-        alias='structured', rearrange_iterations=1000, plot=False
+        alias='structured', rearrange_iterations=100, plot=False
     )
 
     net_structured.create_weights()
@@ -64,11 +64,12 @@ for serial_no in range(1, 5):
     net_structured.initialize_trials(trial_no=trial_no)
 
     # Export parameters to NEURON hoc files:
-    net_structured.export_network_parameters(export_path=Path.cwd().joinpath('new_files'))
+    net_structured.export_network_parameters(export_path=Path.cwd().joinpath('d23a58a'))
 
     # Save Network parameters and data to a HDF5 file:
-    net_structured.save_data(export_path=Path.cwd().joinpath('new_files'))
+    net_structured.save_data(export_path=Path.cwd().joinpath('d23a58a'))
 
+    '''
     ## Create a random network as a copy of the structured:
     #net_random = copy.deepcopy(net_structured)
     # Create a network configuration with given serial number (used to seed the RNG for reproducability)
@@ -95,3 +96,4 @@ for serial_no in range(1, 5):
 
     # Save Network parameters and data to a HDF5 file:
     net_random.save_data(export_path=Path.cwd().joinpath('new_files'))
+    '''
