@@ -54,7 +54,7 @@ for serial_no in range(1, 2):
 
     # Create both structured and random configurations:
     net_structured.create_connections(
-        alias='structured', rearrange_iterations=100, plot=False
+        alias='structured', rearrange_iterations=10, plot=False
     )
 
     net_structured.create_weights()
@@ -64,10 +64,10 @@ for serial_no in range(1, 2):
     net_structured.initialize_trials(trial_no=trial_no)
 
     # Export parameters to NEURON hoc files:
-    net_structured.export_network_parameters(export_path=Path.cwd().joinpath('d23a58a'))
+    net_structured.export_network_parameters(export_path=Path.cwd().joinpath('error'))
 
     # Save Network parameters and data to a HDF5 file:
-    net_structured.save_data(export_path=Path.cwd().joinpath('d23a58a'))
+    net_structured.save_data(export_path=Path.cwd().joinpath('error'))
 
     '''
     ## Create a random network as a copy of the structured:

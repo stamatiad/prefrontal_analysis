@@ -26,7 +26,9 @@ import copy
 import notebook_module as nb
 from scipy.signal import savgol_filter
 from pathlib import Path
+import pickle
 
+UPair = namedtuple('UPair', ['a', 'b', 'distance', 'type_cells', 'type_conn', 'prob_f'])
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
 plt.rcParams['pdf.fonttype'] = 42
@@ -661,6 +663,10 @@ class Network:
             # connection probabilities:
             # Filter out non PN cell pairs:
             pn_upairs = [pair for pair in self.upairs_d.values() if pair.type_cells == ('PN_PN')]
+            #TODO: DEBUG: pickle and save:
+            #pn_upars_1:
+            fn_p = Path.cwd().joinpath('debug_files', 'error', f'pn_upairs_1_SN{self.serial_no}.p')
+            pickle.dump(pn_upairs, open(fn_p, "wb"))
             # use a dict to instruct what connections you need:
             # This is the distance dependent connection types from Perin et al., 2011:
             based_on_distance = {0: 'reciprocal', 1: 'A2B', 2: 'B2A'}
@@ -676,6 +682,10 @@ class Network:
                 connection_protocol=overall_probability,
                 export_probabilities=True
             )
+            #TODO: DEBUG: pickle and save:
+            #pd_upars_1:
+            fn_p = Path.cwd().joinpath('debug_files', 'error', f'pd_upairs_1_SN{self.serial_no}.p')
+            pickle.dump(Pd_upairs, open(fn_p, "wb"))
             # Get type '0' connection probability for each pair (this is the total/overall probability):
             prob_f_list = [upair.prob_f[1] for upair in Pd_upairs]
             Pd = np.asmatrix(distance.squareform(prob_f_list))
@@ -721,12 +731,12 @@ class Network:
                     reformed_conn_mat = upairs2mat(new_upairs)
                     #TODO: DEBUG: save the connection matrix for each iteration
                     #to debug it againts the working commit: 6063a41
-                    filename = Path.cwd().joinpath('debug_files','d23a58a',f'iter_{t}_network_debug_SN{self.serial_no}.hdf5')
-                    df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
-                                       'configuration_alias': self.configuration_alias})
-                    df.to_hdf(filename, key='attributes', mode='w')
-                    df = pd.DataFrame(reformed_conn_mat)
-                    df.to_hdf(filename, key='reformed_conn_mat')
+                    #filename = Path.cwd().joinpath('debug_files','d23a58a',f'iter_{t}_network_debug_SN{self.serial_no}.hdf5')
+                    #df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
+                    #                   'configuration_alias': self.configuration_alias})
+                    #df.to_hdf(filename, key='attributes', mode='w')
+                    #df = pd.DataFrame(reformed_conn_mat)
+                    #df.to_hdf(filename, key='reformed_conn_mat')
 
 
                 #TODO: the context manager will update the upairs: are the
