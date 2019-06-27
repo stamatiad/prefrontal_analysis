@@ -564,6 +564,22 @@ class Network:
                                                          (len(connection_protocol)+1, 1))).flatten('F'), len(matching_upairs))
                 print(f'Length of matching pairs {len(matching_upairs)}')
                 rnd_arr_flat = np.add(np.random.rand(1, len(matching_upairs)), np.arange(len(matching_upairs)))
+                #DEBUG
+                if False:
+                    filename = Path.cwd().joinpath('debug_files','error',f'network_debug_rnd_arr_flat_time_2_SN{self.serial_no}.hdf5')
+                    df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
+                                       'configuration_alias': self.configuration_alias})
+                    df.to_hdf(filename, key='attributes', mode='w')
+                    df = pd.DataFrame(rnd_arr_flat)
+                    df.to_hdf(filename, key='rnd_arr_flat')
+
+                    filename = Path.cwd().joinpath('debug_files','error',f'network_debug_prob_arr_time_2_SN{self.serial_no}.hdf5')
+                    df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
+                                       'configuration_alias': self.configuration_alias})
+                    df.to_hdf(filename, key='attributes', mode='w')
+                    df = pd.DataFrame(prob_arr)
+                    df.to_hdf(filename, key='prob_arr')
+                #END DEBUG
                 blah = np.histogram(rnd_arr_flat, bins=prob_arr_flat)[0]
                 blah2 = np.nonzero(blah)[0]
                 blah3 = np.arange(0, prob_arr_flat.size, len(connection_protocol)+1)
@@ -666,20 +682,22 @@ class Network:
             # connection probabilities:
             # Filter out non PN cell pairs:
             pn_upairs = [pair for pair in self.upairs_d.values() if pair.type_cells == ('PN_PN')]
-            #TODO: DEBUG: json and save:
-            pn_upairs_d_l = []
-            for upair in pn_upairs:
-                upair_d = {'a':upair.a, 'b':upair.b, 'distance':upair.distance,
-                           'type_cells':upair.type_cells,
-                           'type_conn':upair.type_conn, 'prob_f':None}
-                pn_upairs_d_l.append(upair_d)
+
+            if False:
+                #TODO: DEBUG: json and save:
+                pn_upairs_d_l = []
+                for upair in pn_upairs:
+                    upair_d = {'a':upair.a, 'b':upair.b, 'distance':upair.distance,
+                               'type_cells':upair.type_cells,
+                               'type_conn':upair.type_conn, 'prob_f':None}
+                    pn_upairs_d_l.append(upair_d)
 
 
-            #pn_upars_1:
-            fn_p = Path.cwd().joinpath('debug_files', 'error', f'pn_upairs_1_SN{self.serial_no}.json')
-            #pickle.dump(pn_upairs, open(fn_p, "wb"))
-            with open(fn_p, 'w') as fp:
-                json.dump(pn_upairs_d_l, fp, indent=4)
+                #pn_upars_1:
+                fn_p = Path.cwd().joinpath('debug_files', 'error', f'pn_upairs_1_SN{self.serial_no}.json')
+                #pickle.dump(pn_upairs, open(fn_p, "wb"))
+                with open(fn_p, 'w') as fp:
+                    json.dump(pn_upairs_d_l, fp, indent=4)
 
             # use a dict to instruct what connections you need:
             # This is the distance dependent connection types from Perin et al., 2011:
@@ -691,37 +709,38 @@ class Network:
             # This is the overall (total) connection probability, also distance dependend (perin et al., 2011):
             overall_probability = {0: 'total'}
             # Get probabilities instead of the connectivity matrix:
-            #TODO: logika to la8os einai mesa sto connect_all_pairs:
             Pd_upairs = connect_all_pairs(
                 pn_upairs,
                 connection_protocol=overall_probability,
                 export_probabilities=True
             )
-            #TODO: DEBUG: json and save:
-            pd_upairs_d_l = []
-            for upair in Pd_upairs:
-                upair_d = {'a':upair.a, 'b':upair.b, 'distance':upair.distance,
-                           'type_cells':upair.type_cells,
-                           'type_conn':upair.type_conn, 'prob_f':None}
-                pd_upairs_d_l.append(upair_d)
+            if False:
+                #TODO: DEBUG: json and save:
+                pd_upairs_d_l = []
+                for upair in Pd_upairs:
+                    upair_d = {'a':upair.a, 'b':upair.b, 'distance':upair.distance,
+                               'type_cells':upair.type_cells,
+                               'type_conn':upair.type_conn, 'prob_f':None}
+                    pd_upairs_d_l.append(upair_d)
 
 
-            #pn_upars_1:
-            fn_p = Path.cwd().joinpath('debug_files', 'error', f'pd_upairs_1_SN{self.serial_no}.json')
-            #pickle.dump(pn_upairs, open(fn_p, "wb"))
-            with open(fn_p, 'w') as fp:
-                json.dump(pd_upairs_d_l, fp, indent=4)
+                #pn_upars_1:
+                fn_p = Path.cwd().joinpath('debug_files', 'error', f'pd_upairs_1_SN{self.serial_no}.json')
+                #pickle.dump(pn_upairs, open(fn_p, "wb"))
+                with open(fn_p, 'w') as fp:
+                    json.dump(pd_upairs_d_l, fp, indent=4)
 
             # Get type '0' connection probability for each pair (this is the total/overall probability):
             prob_f_list = [upair.prob_f[1] for upair in Pd_upairs]
             Pd = np.asmatrix(distance.squareform(prob_f_list))
             #DEBUG
-            filename = Path.cwd().joinpath('debug_files','error',f'network_debug_PdMat_SN{self.serial_no}.hdf5')
-            df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
-                               'configuration_alias': self.configuration_alias})
-            df.to_hdf(filename, key='attributes', mode='w')
-            df = pd.DataFrame(Pd)
-            df.to_hdf(filename, key='Pd')
+            if False:
+                filename = Path.cwd().joinpath('debug_files','error',f'network_debug_PdMat_SN{self.serial_no}.hdf5')
+                df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
+                                   'configuration_alias': self.configuration_alias})
+                df.to_hdf(filename, key='attributes', mode='w')
+                df = pd.DataFrame(Pd)
+                df.to_hdf(filename, key='Pd')
 
             sumPd = Pd.sum()
             # run iterative rearrangement:
@@ -826,7 +845,7 @@ class Network:
         #TODO: Why I do this again? Do the conn mats differ?
         connectivity_mat2 = upairs2mat(self.upairs_d.values())
 
-        #print(f'Random finally {np.random.rand(1)[0]}')
+        print(f'Random finally {np.random.rand(1)[0]}')
         #with open('connblah1.txt', 'w') as f:
         #    for element in connectivity_mat[-1, :]:
         #        f.write(f'{element}\n')

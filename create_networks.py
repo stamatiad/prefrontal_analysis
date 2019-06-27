@@ -54,7 +54,7 @@ for serial_no in range(1, 2):
 
     # Create both structured and random configurations:
     net_structured.create_connections(
-        alias='structured', rearrange_iterations=10, plot=False
+        alias='structured', rearrange_iterations=1000, plot=False
     )
 
     net_structured.create_weights()
