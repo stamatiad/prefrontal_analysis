@@ -31,6 +31,7 @@ import pandas as pd
 import seaborn as sb
 import scipy.stats
 import math
+import matplotlib.colors as mcolors
 
 # <markdowncell>
 # ## Create figure 4
@@ -88,8 +89,8 @@ nb.mark_figure_letter(C_axis_a, 'C')
 
 # Plot same animal model, different learning conditions:
 NWBfile = analysis.load_nwb_file(
-    animal_model=3,
-    learning_condition=3,
+    animal_model=1,
+    learning_condition=2,
     experiment_config='structured',
     type='bn',
     data_path=simulations_dir
@@ -121,6 +122,7 @@ A_axis_a.axvspan(0.0, 500.0, ymin=0, ymax=1, color='g', alpha=0.2)
 nb.adjust_spines(A_axis_a, ['left', 'bottom'])
 A_axis_a.xaxis.set_ticks_position('none')
 A_axis_a.xaxis.set_ticklabels([])
+A_axis_a.set_ylabel('Firing Frequency (Hz)')
 nb.mark_figure_letter(A_axis_a, 'a')
 
 # First decomposition: stimulus to delay transition:
@@ -154,6 +156,8 @@ B_axis_c.xaxis.set_ticklabels([])
 B_axis_c.yaxis.set_ticks_position('none')
 B_axis_c.yaxis.set_ticklabels([])
 B_axis_c.set_xlabel('Time (ms)')
+B_axis_b.set_ylabel('Assembly activation')
+B_axis_b.yaxis.set_label_position("right")
 nb.mark_figure_letter(B_axis_a, 'b')
 
 
@@ -165,6 +169,8 @@ W_components, *_ = analysis.NNMF(
     smooth=True,
     plot=False
 )
+
+nb.report_value('No of trials with PA in C', W_components.shape[1])
 
 E_ax = [C_axis_a, C_axis_b, C_axis_c]
 klabels = K_labels
@@ -247,9 +253,48 @@ _, key_labels = np.unique(labels, return_index=True)
 handles = []
 total_trials = W_components.shape[1]
 duration = W_components.shape[2]
-colors = {1: cm.Greens(np.linspace(0, 1, duration - 1)),
-          2: cm.Blues(np.linspace(0, 1, duration - 1)),
-          3: cm.Oranges(np.linspace(0, 1, duration - 1)),
+# Use same colors:
+stim_stop = 21  # Stim stop in q=50ms
+stim_stop_norm = stim_stop / duration
+c = mcolors.ColorConverter().to_rgb
+stim_start_color = 'limegreen'
+stim_stop_color = 'darkgreen'
+cluster_a_cm = analysis.make_colormap(
+    [
+        c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+        c('orange'), c('red'), stim_stop_norm + 0.01,
+        c('red'), c('darkred'), 0.99,
+        c('darkred')
+    ]
+)
+cluster_b_cm = analysis.make_colormap(
+    [
+        c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+        c('orange'), c('violet'), stim_stop_norm + 0.01,
+        c('violet'), c('darkviolet'), 0.99,
+        c('darkviolet')
+    ]
+)
+cluster_c_cm = analysis.make_colormap(
+    [
+        c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+        c('orange'), c('gold'), stim_stop_norm + 0.01,
+        c('gold'), c('goldenrod'), 0.99,
+        c('goldenrod')
+    ]
+)
+cluster_d_cm = analysis.make_colormap(
+    [
+        c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+        c('orange'), c('blue'), stim_stop_norm + 0.01,
+        c('blue'), c('darkblue'), 0.99,
+        c('darkblue')
+    ]
+)
+
+colors = {1: cluster_a_cm(np.linspace(0, 1, duration - 1)),
+          2: cluster_b_cm(np.linspace(0, 1, duration - 1)),
+          3: cluster_c_cm(np.linspace(0, 1, duration - 1)),
           }
 for i, (trial, label) in enumerate(zip(range(total_trials), labels)):
     capture_artist = True
