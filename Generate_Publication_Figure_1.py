@@ -369,9 +369,9 @@ custom_range = (0, int(trial_len / 50))
 
 # Plot velocity from raw network activity:
 #TODO: all the data and how many Ls in PCA? Must be all!
-# This is Hz/Sec.
-net_activity = analysis.get_correct_trials(NWBfile)
 # Filter only trials with PA
+net_activity = analysis.get_correct_trials(NWBfile)
+# This is Hz/Sec.
 energy = analysis.energy(data=net_activity)
 G_axis_a.cla()
 G_axis_a.plot(energy.T, color='gray', alpha=0.2)
@@ -383,7 +383,7 @@ time_axis_ticklabels = analysis.q2sec(q_time=time_axis_ticks).astype(int)  #np.l
 G_axis_a.set_xticks(time_axis_ticks)
 G_axis_a.set_xticklabels(time_axis_ticklabels, fontsize=tick_label_font_size)
 G_axis_a.set_ylabel(
-    'Energy (Hz/s)', fontsize=axis_label_font_size,
+    'Energy Velocity (Hz/s)', fontsize=axis_label_font_size,
     labelpad=labelpad_x
 )
 G_axis_a.set_xlabel(
@@ -404,7 +404,7 @@ H_axis_a.plot(np.mean(velocity.T, axis=1), color='k', linewidth=2)
 H_axis_a.set_xticks(time_axis_ticks)
 H_axis_a.set_xticklabels(time_axis_ticklabels, fontsize=tick_label_font_size)
 H_axis_a.set_ylabel(
-    'Velocity (Hz/s)', fontsize=axis_label_font_size,
+    'Multidimensional Velocity (Hz/s)', fontsize=axis_label_font_size,
     labelpad=labelpad_y
 )
 H_axis_a.set_xlabel(

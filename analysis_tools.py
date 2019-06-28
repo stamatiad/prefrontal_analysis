@@ -1115,7 +1115,7 @@ def energy(data=None):
     # Get frobenius norm:
     #TODO: na balw swsta to 50 (q_size):
     energy = np.array([
-        np.sum(data[:, trial, :] * dt, axis=0) / 50
+        np.abs(np.diff(np.sum(data[:, trial, :] * dt, axis=0) /250 ))
         for trial in range(ntrials)
     ])
     return energy
