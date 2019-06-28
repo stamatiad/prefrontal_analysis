@@ -46,27 +46,38 @@ no_of_animals = 4
 #===============================================================================
 subplot_width = 2
 subplot_height = 1
-figure1 = plt.figure(figsize=plt.figaspect(subplot_height / subplot_width))
+figure_ratio = subplot_height / subplot_width
+figure1 = plt.figure(figsize=plt.figaspect(figure_ratio))
 figure1.patch.set_facecolor('white')
 #TODO: I tend to believe that the w/hspace is RELATIVE to the size of this grid.
 # This asks for a absolute number, in order to have a visually pleasing grid.
-gs1 = gridspec.GridSpec(2, 4, left=0.05, right=0.95, top=0.95, bottom=0.10, wspace=0.35, hspace=0.2)
-#gs1.update(left=0.05, right=0.30, wspace=0.05)
-A_axis_a = plt.subplot(gs1[0, 0])
-A_axis_b = plt.subplot(gs1[1, 0])
+
+# c is the size of subplot space/margin, for both h/w (in figure scale).
+# If you are really OCD, you can use a second one, scaled by fig aspect ratio.
+cw = 0.05
+ch = cw / figure_ratio
+a_gs = nb.split_gridspec(2, 4, ch, cw, left=0.05, right=0.95, top=0.99, bottom=0.08)
+b_gs = nb.split_gridspec(3, 1, ch, cw, gs=a_gs[:, 1])
+c_gs = nb.split_gridspec(3, 1, ch, cw, gs=a_gs[:, 2])
+d_gs = nb.split_gridspec(3, 1, ch, cw, gs=a_gs[:, 3])
+
+A_axis_a = plt.subplot(a_gs[0, 0])
+A_axis_b = plt.subplot(a_gs[1, 0])
 nb.mark_figure_letter(A_axis_a, 'a')
 
-#gs1.update(left=0.05, right=0.30, wspace=0.05)
-B_axis_a = plt.subplot(gs1[0, 1])
-B_axis_b = plt.subplot(gs1[1, 1])
+B_axis_a = plt.subplot(b_gs[0, :])
+B_axis_b = plt.subplot(b_gs[1, :])
+B_axis_c = plt.subplot(b_gs[2, :])
 nb.mark_figure_letter(B_axis_a, 'b')
 
-C_axis_a = plt.subplot(gs1[0, 2])
-C_axis_b = plt.subplot(gs1[1, 2])
+C_axis_a = plt.subplot(c_gs[0, :])
+C_axis_b = plt.subplot(c_gs[1, :])
+C_axis_c = plt.subplot(c_gs[2, :])
 nb.mark_figure_letter(C_axis_a, 'c')
 
-D_axis_a = plt.subplot(gs1[0, 3])
-D_axis_b = plt.subplot(gs1[1, 3])
+D_axis_a = plt.subplot(d_gs[0, :])
+D_axis_b = plt.subplot(d_gs[1, :])
+D_axis_c = plt.subplot(d_gs[2, :])
 nb.mark_figure_letter(D_axis_a, 'd')
 
 # Figure 1A
@@ -194,6 +205,64 @@ if False:
 
     print('Done converting validation params and exiting.')
 
+def plot_cross_correlation(NWBfile, plot_axis):
+    # Add cross correlation:
+    trial_len, pn_no, ntrials, trial_q_no = analysis.get_acquisition_parameters(
+        input_NWBfile=NWBfile,
+        requested_parameters=['trial_len', 'pn_no', 'ntrials', 'trial_q_no']
+    )
+    custom_range = (0, int(trial_len / 50))
+    # Load binned acquisition (all trials together)
+    binned_network_activity = NWBfile.acquisition['binned_activity'] \
+                                  .data[:pn_no, :] \
+        .reshape(pn_no, ntrials, trial_q_no)
+
+    # Perform correlation in each time bin state:
+    #TODO: giati ta trials einai 9 (pou shmainei oti anixneftikan only PA ones),
+    # alla to trial 0 den exei PA?
+    single_trial_activity = binned_network_activity[
+                            :pn_no, 7, custom_range[0]:custom_range[1]
+                            ]
+    duration = single_trial_activity.shape[1]
+    timelag_corr = np.zeros((duration, duration))
+    for ii in range(duration):
+        for jj in range(duration):
+            S = np.corrcoef(
+                single_trial_activity[:, ii],
+                single_trial_activity[:, jj]
+            )
+            timelag_corr[ii, jj] = S[0, 1]
+
+    #figure1, plot_axes = plt.subplots()
+    im = plot_axis.imshow(timelag_corr, vmin=0.7)
+    plot_axis.xaxis.tick_top()
+    for axis in ['top', 'bottom', 'left', 'right']:
+        plot_axis.spines[axis].set_linewidth(2)
+    plot_axis.xaxis.set_tick_params(width=2)
+    plot_axis.yaxis.set_tick_params(width=2)
+    time_axis_limits = (0, duration)
+    #TODO: change the 20 with a proper variable (do I have one?)
+    time_axis_ticks = np.linspace(0, duration, (duration / 20) + 1)
+    time_axis_ticklabels = analysis.q2sec(q_time=time_axis_ticks).astype(int)  #np.linspace(0, time_axis_limits[1], duration)
+    plot_axis.set_xticks(time_axis_ticks)
+    plot_axis.set_xticklabels(time_axis_ticklabels, fontsize=tick_label_font_size)
+    plot_axis.set_yticks(time_axis_ticks)
+    plot_axis.set_yticklabels(time_axis_ticklabels, fontsize=tick_label_font_size)
+    plot_axis.set_ylabel(
+        'Time (s)', fontsize=axis_label_font_size,
+        labelpad=labelpad_y
+    )
+    #plot_axis.set_xlabel('')
+    # create an axes on the right side of ax. The width of cax will be 5%
+    # of ax and the padding between cax and ax will be fixed at 0.05 inch.
+    divider = make_axes_locatable(plot_axis)
+    cax = divider.append_axes('bottom', size='5%', pad=0.05)
+    figure1.colorbar(im, orientation='horizontal', fraction=0.05,
+                     cax=cax)
+    cax.set_xlabel(
+        'Correlation', fontsize=axis_label_font_size,
+        labelpad=labelpad_x
+    )
 # Call the analysis on it:
 input_NWBfile = simulations_dir.joinpath('excitatory_dense_validation.nwb')
 nwbfile = NWBHDF5IO(str(input_NWBfile), 'r').read()
@@ -224,6 +293,8 @@ A_axis_a.plot(normal_amplitude[:25], color='C0')
 A_axis_a.plot(ampa_amplitude[:25], color='C1')
 A_axis_a.set_xlabel('Stimulus intensity', fontsize=axis_label_font_size)
 A_axis_a.set_ylabel('Amplitude (mV)', fontsize=axis_label_font_size)
+A_axis_a.set_xticks(range(0, len(normal_amplitude[:25]), 5))
+A_axis_a.set_xticklabels(range(1, len(normal_amplitude[:25]) + 1, 5))
 nb.axis_normal_plot(axis=A_axis_a)
 nb.adjust_spines(A_axis_a, ['left', 'bottom'])
 
@@ -231,6 +302,8 @@ A_axis_b.plot(normal_amplitude[:25], color='C0')
 A_axis_b.plot(mg_amplitude[:25], color='C1')
 A_axis_b.set_xlabel('Stimulus intensity', fontsize=axis_label_font_size)
 A_axis_b.set_ylabel('Amplitude (mV)', fontsize=axis_label_font_size)
+A_axis_b.set_xticks(range(0, len(normal_amplitude[:25]), 5))
+A_axis_b.set_xticklabels(range(1, len(normal_amplitude[:25]) + 1, 5))
 nb.axis_normal_plot(axis=A_axis_b)
 nb.adjust_spines(A_axis_b, ['left', 'bottom'])
 
@@ -336,6 +409,9 @@ B_axis_b.set_ylabel(
 nb.axis_normal_plot(axis=B_axis_b)
 nb.adjust_spines(B_axis_b, ['left', 'bottom'])
 nb.mark_figure_letter(B_axis_a, 'b')
+plot_cross_correlation(NWBfile, B_axis_c)
+
+
 
 # Figure S2c
 # Plot firing frequencies of non-Mg, random configurations.
@@ -439,6 +515,7 @@ C_axis_b.set_ylabel(
 nb.axis_normal_plot(axis=C_axis_b)
 nb.adjust_spines(C_axis_b, ['left', 'bottom'])
 nb.mark_figure_letter(C_axis_a, 'c')
+plot_cross_correlation(NWBfile, C_axis_c)
 
 # Figure S2d
 # Plot firing frequencies of non-Mg, random configurations.
@@ -542,6 +619,7 @@ D_axis_b.set_ylabel(
 nb.axis_normal_plot(axis=D_axis_b)
 nb.adjust_spines(D_axis_b, ['left', 'bottom'])
 nb.mark_figure_letter(D_axis_a, 'd')
+plot_cross_correlation(NWBfile, D_axis_c)
 
 
 plt.show()
