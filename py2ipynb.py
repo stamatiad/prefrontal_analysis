@@ -17,6 +17,7 @@ figure_files = [
     Path('Generate_Publication_Figure_2.py'),
     Path('Generate_Publication_Figure_3.py'),
     Path('Generate_Publication_Figure_4.py'),
+    Path('Generate_Publication_Figure_S1.py'),
     Path('Generate_Publication_Figure_S2.py'),
     Path('Generate_Publication_Figure_S3.py'),
 ]
@@ -38,7 +39,13 @@ for fig_file in figure_files:
     init_cell.source = """\
     # Need to setup tools on our machine first:
     !sudo apt-get install git-lfs
-    !git clone https://github.com/stamatiad/prefrontal_analysis.git
+    
+    # Due to github limitation in git lfs, I clone from an identical
+    # repo over bitbucket. To make sure the code in Github is identical
+    # you can clone the Github repo and run:
+    # >git diff review remotes/bitbucket/review
+    #!git clone https://github.com/stamatiad/prefrontal_analysis.git
+    !git clone https://bitbucket.org/stevest/prefrontal_analysis.git
 
     import os
     os.chdir('prefrontal_analysis')
