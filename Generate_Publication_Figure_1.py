@@ -37,7 +37,6 @@ tick_label_font_size = 12
 labelpad_x = 10
 labelpad_y = 10
 
-plt.ion()
 no_of_conditions = 10
 no_of_animals = 4
 #===============================================================================
@@ -98,8 +97,6 @@ nb.mark_figure_letter(G_axis_a, 'g')
 H_axis_a = plt.subplot(FGH_gs[1, 2])
 nb.mark_figure_letter(H_axis_a, 'h')
 
-plt.show()
-figure1.savefig('FINAL.png')
 print('Tutto pronto!')
 
 
@@ -159,9 +156,7 @@ NWBfile = analysis.load_nwb_file(
     learning_condition=1,
     experiment_config='structured',
     type='mp',
-    data_path=glia_dir
-    #type='bn',
-    #data_path=simulations_dir
+    data_path=simulations_dir
 )
 
 pyramidal_axes = [C_axis_a, C_axis_b, C_axis_c]
