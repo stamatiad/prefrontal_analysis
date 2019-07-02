@@ -8,6 +8,7 @@
 import notebook_module as nb
 import analysis_tools as analysis
 import numpy as np
+from numpy import matlib
 import matplotlib.pyplot as plt
 from collections import defaultdict
 from functools import partial
@@ -278,7 +279,7 @@ for idx, animal_model in enumerate([2]):
 
     # Plot the annotated clustering results:
     #TODO: are these correctly labeled?
-    K_labels = np.matlib.repmat(np.arange(1, len(NWBfiles) + 1), ntrials, 1) \
+    K_labels = matlib.repmat(np.arange(1, len(NWBfiles) + 1), ntrials, 1) \
         .T.reshape(ntrials, -1).reshape(1, -1)[0]
     analysis.pcaL2(
         NWBfile_array=NWBfiles,
