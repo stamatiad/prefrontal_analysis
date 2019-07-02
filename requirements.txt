@@ -1,6 +1,7 @@
 astroid==2.1.0
 backcall==0.1.0
 bleach==3.1.0
+certifi==2019.3.9
 chardet==3.0.4
 colorama==0.4.1
 colorspacious==1.1.2
@@ -26,8 +27,12 @@ kiwisolver==1.0.1
 lazy-object-proxy==1.3.1
 MarkupSafe==1.1.0
 matplotlib==3.0.2
+matplotlib-scalebar==0.5.1
 mccabe==0.6.1
 mistune==0.8.4
+mkl-fft==1.0.13
+mkl-random==1.0.4
+mock==3.0.5
 mpmath==1.1.0
 nbconvert==5.4.0
 nbformat==4.4.0
@@ -38,6 +43,7 @@ pandas==0.23.4
 pandocfilters==1.4.2
 parso==0.3.2
 pickleshare==0.7.5
+pipdeptree==0.13.2
 pipenv==2018.11.26
 prometheus-client==0.5.0
 prompt-toolkit==2.0.8
@@ -54,11 +60,12 @@ requests==2.21.0
 ruamel.yaml==0.15.87
 scikit-learn==0.20.2
 scipy==1.1.0
+seaborn==0.9.0
 Send2Trash==1.5.0
 six==1.11.0
 sklearn==0.0
 sympy==1.3
-tables==3.4.4
+tables==3.5.2
 terminado==0.8.1
 testpath==0.4.2
 tornado==5.1.1
