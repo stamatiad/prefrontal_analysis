@@ -55,12 +55,6 @@ plt.rcParams.update({'font.family': 'Helvetica'})
 # Beginning of Figure 4
 #===============================================================================
 #===============================================================================
-plt.ion()
-
-# I must discover the optimal number of NNMF components:
-#fig, axblah = plt.subplots(1,1)
-#plt.cla()
-#plt.ion()
 
 subplot_width = 4
 subplot_height = 1
@@ -397,11 +391,6 @@ models_list = range(1, no_of_animals + 1)
 for pos, animal in enumerate(models_list):
     K_s.append(list(optimal_clusters_of_group[dataset_name(animal)][:,0]))
     K_s_CV.append(list(optimal_clusters_of_group[dataset_name(animal)][:,1]))
-
-#test the correlation, scattering the data (eyeball it first):
-fig, ax = plt.subplots(1,1)
-ax.scatter(x=list(chain(*K_s)), y=list(chain(*K_s_CV)))
-fig.savefig('scatter_K_CV.png')
 
 X = np.array(list(chain(*K_s)), dtype=int)
 Y = np.array(list(chain(*K_s_CV)), dtype=int) + 1
