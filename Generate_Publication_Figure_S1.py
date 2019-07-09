@@ -96,40 +96,170 @@ A_axis.set_xticks(pca_axis_limits)
 A_axis.set_yticks(pca_axis_limits)
 A_axis.set_zticks(pca_axis_limits)
 
-nt.plot_unidirectional_across_distance(
-    connectivity_mat[:pc_no, :pc_no],
-    dist_mat[:pc_no, :pc_no],
-    net_tmp.connection_functions_d['PN_PN']['unidirectional'],
-    plot_axis=B_axis
-)
-nt.plot_reciprocal_across_distance(
-    connectivity_mat[:pc_no, :pc_no],
-    dist_mat[:pc_no, :pc_no],
-    net_tmp.connection_functions_d['PN_PN']['reciprocal'],
-    plot_axis=C_axis
-)
-nt.plot_pn2pv_unidirectional_across_distance(
-    mat_pn_pv=connectivity_mat[:pc_no, pc_no:],
-    mat_pv_pn=connectivity_mat[pc_no:, :pc_no],
-    dist_mat=dist_mat[:pc_no, pc_no:],
-    ground_truth=net_tmp.connection_functions_d['PN_PV']['A2B'],
-    plot_axis=D_axis
-)
-nt.plot_pv2pn_unidirectional_across_distance(
-    mat_pn_pv=connectivity_mat[:pc_no, pc_no:],
-    mat_pv_pn=connectivity_mat[pc_no:, :pc_no],
-    dist_mat=dist_mat[:pc_no, pc_no:],
-    ground_truth=net_tmp.connection_functions_d['PN_PV']['B2A'],
-    plot_axis=E_axis
-)
-nt.plot_pn_pv_reciprocal_across_distance(
-    connectivity_mat[:pc_no, pc_no:],
-    connectivity_mat[pc_no:, :pc_no],
-    dist_mat[:pc_no, pc_no:],
-    net_tmp.connection_functions_d['PN_PV']['reciprocal'],
-    plot_axis=F_axis
-)
+#TODO: replace these network spesific functions with paper-wise ones:
+# Figure S1B
+# Paper-wise connectivity across distance:
+#TODO: hardcoded histo len.
+histo_acc = np.full([4, 15], 0)
+histo_dist_acc = np.full([4, 15], 0)
+ground_truth_acc = []
+for sn in range(1, 5):
+    # Load network attributes/data for each serial no:
+    filename = attributes_dir.joinpath(f'structured_network_SN{sn}.hdf5')
+    connectivity_mat = pd.read_hdf(filename, key='connectivity_mat').values
+    dist_mat = pd.read_hdf(filename, key='dist_mat').values
 
+
+    histo, histo_bins, histo_dist, ground_truth, bin_width = \
+        nt.compute_unidirectional_across_distance(
+        connectivity_mat[:pc_no, :pc_no],
+        dist_mat[:pc_no, :pc_no],
+        net_tmp.connection_functions_d['PN_PN']['unidirectional'],
+        plot=False
+    )
+
+    # accumulate all network instances:
+    histo_acc[sn - 1, :] = histo
+    histo_dist_acc[sn - 1, :] = histo_dist
+    ground_truth_acc.append(ground_truth)
+    print('blah!')
+
+nt.plot_average_connectivity(
+    histo_acc, histo_bins, histo_dist_acc, ground_truth_acc, bin_width,
+ax=B_axis)
+#B_axis.set_xticks(np.arange(0, 160, 20))
+#B_axis.set_xticklabels(np.arange(0, 160, 20))
+B_axis.set_xlabel('Distance (um)')
+B_axis.set_ylabel('PN-PN Unidirectional Probability')
+
+# Fig S1C
+histo_acc = np.full([4, 15], 0)
+histo_dist_acc = np.full([4, 15], 0)
+ground_truth_acc = []
+for sn in range(1, 5):
+    # Load network attributes/data for each serial no:
+    filename = attributes_dir.joinpath(f'structured_network_SN{sn}.hdf5')
+    connectivity_mat = pd.read_hdf(filename, key='connectivity_mat').values
+    dist_mat = pd.read_hdf(filename, key='dist_mat').values
+
+
+    histo, histo_bins, histo_dist, ground_truth, bin_width = \
+        nt.compute_reciprocal_across_distance(
+            connectivity_mat[:pc_no, :pc_no],
+            dist_mat[:pc_no, :pc_no],
+            net_tmp.connection_functions_d['PN_PN']['reciprocal'],
+            plot=False
+        )
+
+    # accumulate all network instances:
+    histo_acc[sn - 1, :] = histo
+    histo_dist_acc[sn - 1, :] = histo_dist
+    ground_truth_acc.append(ground_truth)
+    print('blah!')
+
+nt.plot_average_connectivity(
+    histo_acc, histo_bins, histo_dist_acc, ground_truth_acc, bin_width,
+    ax=C_axis)
+#C_axis.set_xticks(np.arange(0, 200, 20))
+#C_axis.set_xticklabels(np.arange(0, 200, 20))
+C_axis.set_xlabel('Distance (um)')
+C_axis.set_ylabel('PN-PN Reciprocal Probability')
+
+# Fig S1D:
+histo_acc = np.full([4, 15], 0)
+histo_dist_acc = np.full([4, 15], 0)
+ground_truth_acc = []
+for sn in range(1, 5):
+    # Load network attributes/data for each serial no:
+    filename = attributes_dir.joinpath(f'structured_network_SN{sn}.hdf5')
+    connectivity_mat = pd.read_hdf(filename, key='connectivity_mat').values
+    dist_mat = pd.read_hdf(filename, key='dist_mat').values
+
+
+    histo, histo_bins, histo_dist, ground_truth, bin_width = \
+        nt.compute_pn2pv_unidirectional_across_distance(
+            mat_pn_pv=connectivity_mat[:pc_no, pc_no:],
+            mat_pv_pn=connectivity_mat[pc_no:, :pc_no],
+            dist_mat=dist_mat[:pc_no, pc_no:],
+            ground_truth=net_tmp.connection_functions_d['PN_PV']['A2B'],
+            plot=False
+        )
+
+    # accumulate all network instances:
+    histo_acc[sn - 1, :] = histo
+    histo_dist_acc[sn - 1, :] = histo_dist
+    ground_truth_acc.append(ground_truth)
+    print('blah!')
+
+nt.plot_average_connectivity(
+    histo_acc, histo_bins, histo_dist_acc, ground_truth_acc, bin_width,
+    ax=D_axis)
+D_axis.set_xlabel('Distance (um)')
+D_axis.set_ylabel('PN2PV Unidirectional Probability')
+
+# Fig S1E
+histo_acc = np.full([4, 15], 0)
+histo_dist_acc = np.full([4, 15], 0)
+ground_truth_acc = []
+for sn in range(1, 5):
+    # Load network attributes/data for each serial no:
+    filename = attributes_dir.joinpath(f'structured_network_SN{sn}.hdf5')
+    connectivity_mat = pd.read_hdf(filename, key='connectivity_mat').values
+    dist_mat = pd.read_hdf(filename, key='dist_mat').values
+
+
+    histo, histo_bins, histo_dist, ground_truth, bin_width = \
+        nt.compute_pv2pn_unidirectional_across_distance(
+            mat_pn_pv=connectivity_mat[:pc_no, pc_no:],
+            mat_pv_pn=connectivity_mat[pc_no:, :pc_no],
+            dist_mat=dist_mat[:pc_no, pc_no:],
+            ground_truth=net_tmp.connection_functions_d['PN_PV']['B2A'],
+            plot=False
+        )
+
+    # accumulate all network instances:
+    histo_acc[sn - 1, :] = histo
+    histo_dist_acc[sn - 1, :] = histo_dist
+    ground_truth_acc.append(ground_truth)
+    print('blah!')
+
+nt.plot_average_connectivity(
+    histo_acc, histo_bins, histo_dist_acc, ground_truth_acc, bin_width,
+    ax=E_axis)
+E_axis.set_xlabel('Distance (um)')
+E_axis.set_ylabel('PV2PN Unidirectional Probability')
+
+# Fig S1F
+histo_acc = np.full([4, 15], 0)
+histo_dist_acc = np.full([4, 15], 0)
+ground_truth_acc = []
+for sn in range(1, 5):
+    # Load network attributes/data for each serial no:
+    filename = attributes_dir.joinpath(f'structured_network_SN{sn}.hdf5')
+    connectivity_mat = pd.read_hdf(filename, key='connectivity_mat').values
+    dist_mat = pd.read_hdf(filename, key='dist_mat').values
+
+
+    histo, histo_bins, histo_dist, ground_truth, bin_width = \
+        nt.compute_pn_pv_reciprocal_across_distance(
+            connectivity_mat[:pc_no, pc_no:],
+            connectivity_mat[pc_no:, :pc_no],
+            dist_mat[:pc_no, pc_no:],
+            net_tmp.connection_functions_d['PN_PV']['reciprocal'],
+            plot=False
+        )
+
+    # accumulate all network instances:
+    histo_acc[sn - 1, :] = histo
+    histo_dist_acc[sn - 1, :] = histo_dist
+    ground_truth_acc.append(ground_truth)
+    print('blah!')
+
+nt.plot_average_connectivity(
+    histo_acc, histo_bins, histo_dist_acc, ground_truth_acc, bin_width,
+    ax=F_axis)
+F_axis.set_xlabel('Distance (um)')
+F_axis.set_ylabel('PN2PV Reciprocal Probability')
 plt.show()
 
 

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 # Check python version and installed packages:
-nt.check_requirements()
+#nt.check_requirements()
 
 # set parameters:
 pn_no = 250
@@ -45,7 +45,7 @@ if False:
     sys.exit(0)
 
 #TODO: make sure that nothing changes with the edits in network_tools and commit them.
-for serial_no in range(1, 2):
+for serial_no in range(1, 5):
     # Create a network configuration with given serial number (used to seed the RNG for reproducability)
     net_structured = nt.Network(serial_no=serial_no, pc_no=pn_no, pv_no=pv_no)
 
@@ -64,12 +64,11 @@ for serial_no in range(1, 2):
     net_structured.initialize_trials(trial_no=trial_no)
 
     # Export parameters to NEURON hoc files:
-    net_structured.export_network_parameters(export_path=Path.cwd().joinpath('error'))
+    net_structured.export_network_parameters(export_path=Path.cwd().joinpath('new_files'))
 
     # Save Network parameters and data to a HDF5 file:
-    net_structured.save_data(export_path=Path.cwd().joinpath('error'))
+    net_structured.save_data(export_path=Path.cwd().joinpath('new_files'))
 
-    '''
     ## Create a random network as a copy of the structured:
     #net_random = copy.deepcopy(net_structured)
     # Create a network configuration with given serial number (used to seed the RNG for reproducability)
@@ -96,4 +95,3 @@ for serial_no in range(1, 2):
 
     # Save Network parameters and data to a HDF5 file:
     net_random.save_data(export_path=Path.cwd().joinpath('new_files'))
-    '''
