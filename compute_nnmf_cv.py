@@ -40,15 +40,15 @@ def compute_nnmf_cv(inputs):
 
     blah = analysis.determine_number_of_ensembles(
         NWBfile_array=[NWBfile],
-        max_clusters=2,
+        K_max=20,
         custom_range=custom_range,
-        K=2,
-        rng_max_iters=2
+        K_cv=10,
+        rng_max_iters=20
     )
 
 if __name__ == '__main__':
     cwd = Path.cwd()
-    parallel = False
+    parallel = True
 
     # run in parallel:
     if parallel:
