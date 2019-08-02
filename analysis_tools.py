@@ -2018,7 +2018,7 @@ def nnmf(A, k, M_train=None, **kwargs):
     :return:
     '''
     # maximum multiplicative rules iterations
-    max_iters = 1000
+    max_iters = 100
 
     # Initialize W and H:
     W = np.random.rand(A.shape[0], k) * 70
@@ -2029,26 +2029,30 @@ def nnmf(A, k, M_train=None, **kwargs):
     else:
         M_train = np.ones(A.shape)
 
-    W_dist = np.zeros((max_iters))
-    H_dist = np.zeros((max_iters))
+    #W_dist = np.zeros((max_iters))
+    #H_dist = np.zeros((max_iters))
 
     for iter in range(max_iters):
+        '''
         W_previous = W
         H_previous = H
+        '''
         W = np.maximum(W * ((A @ H.T) / ((M_train * (W @ H)) @ H.T)), 1e-16)
         H = np.maximum(H * ((W.T @ A) / (W.T @ (M_train * (W @ H)))), 1e-16)
+        '''
         W_dist[iter] = \
             np.linalg.norm((W_previous - W), ord='fro') / \
             np.sqrt(A.shape[0] * A.shape[1])
         H_dist[iter] = \
             np.linalg.norm((H_previous - H), ord='fro') / \
             np.sqrt(A.shape[0] * A.shape[1])
+        '''
 
         # Break for efficiency if converged:
-        if W_dist[iter] < 1e-12 and H_dist[iter] < 1e-12:
-            break
+        #if W_dist[iter] < 1e-12 and H_dist[iter] < 1e-12:
+            #break
 
-    return W, H, W_dist, H_dist
+    return W, H#, W_dist, H_dist
 
 def NNMF(
         NWBfile_array=[], plot_2d=False, plot_3d=False, custom_range=None,
@@ -3095,7 +3099,21 @@ def determine_number_of_ensembles(
         )
 
     # Check if you need to continue:
-    filename = Path(f'cross_validation_errors_structured_AM{animal_model_id}_LC{learning_condition_id}.hdf')
+    fn_str = (
+        'cross_validation_errors_structured'
+        '_AM{animal_model_id}'
+        '_LC{learning_condition_id}'
+        '_Kmax{K_max}'
+        '_Kcv{K_cv}'
+        '_RI{rng_max_iters}.hdf').format
+    filename = Path(fn_str(
+        animal_model_id=animal_model_id,
+        learning_condition_id=learning_condition_id,
+        K_max=K_max,
+        K_cv=K_cv,
+        rng_max_iters=rng_max_iters
+    ))
+    #filename = Path(f'cross_validation_errors_structured_AM{animal_model_id}_LC{learning_condition_id}_RI{rng_max_iters}.hdf')
     if filename.is_file():
         #return (1, 1, 1)
         pass
@@ -3120,56 +3138,66 @@ def determine_number_of_ensembles(
     error_test_rm = np.zeros((K_max, K_cv, rng_max_iters))
     for k in range(1, K_max + 1):
         print(f'No of components {k}')
-        # Divide data into K_cv partitions:
-        #TODO: make sure this is always doable!
-        rnd_idx = np.random.permutation(data.size)
-        K_idx = np.zeros(data.size)
-        partition_size = int(np.floor(data.size / K_cv))
-        for partition_id, (start, end) in enumerate(generate_slices(size=partition_size, number=K_cv)):
-            K_idx[rnd_idx[start:end]] = partition_id
-        K_idx = K_idx.reshape(data.shape)
+        for rng_iteration in range(rng_max_iters):
+            # Divide data into K_cv partitions:
+            #TODO: make sure this is always doable!
+            rnd_idx = np.random.permutation(data.size)
+            K_idx = np.zeros(data.size)
+            partition_size = int(np.floor(data.size / K_cv))
+            for partition_id, (start, end) in enumerate(generate_slices(size=partition_size, number=K_cv)):
+                K_idx[rnd_idx[start:end]] = partition_id
+            K_idx = K_idx.reshape(data.shape)
 
-        # Run NNMF in a K_cv-1 fashion:
-        for k_fold in range(K_cv):
-            print(f'k_fold is {k_fold}')
-            # M_test einai to M_test, einai ta liga, ta left outs.
-            M_test = K_idx == k_fold
-            # Afto einai to M_train
-            M_train = np.logical_not(M_test)
-            #TODO: You need to perform NNMF multiple times, to avoid (must you?) the
-            # variations due to the random initialization.
-            for rng_iteration in range(rng_max_iters):
-                W, H, W_dist, H_dist = nnmf(
+            # Run NNMF in a K_cv-1 fashion:
+            for k_fold in range(K_cv):
+                print(f'k_fold is {k_fold}')
+                #tic = time.perf_counter()
+                # M_test einai to M_test, einai ta liga, ta left outs.
+                M_test = K_idx == k_fold
+                # Afto einai to M_train
+                M_train = np.logical_not(M_test)
+                #toc = time.perf_counter()
+                #print(f'M matrices took {toc-tic} seconds.')
+                #TODO: You need to perform NNMF multiple times, to avoid (must you?) the
+                # variations due to the random initialization.
+                #tic = time.perf_counter()
+                W, H = nnmf(
                     data, k, M_train=M_train,
                     input_NWBfile=NWBfile_array[0], rng_iter=rng_iteration
                 )
+                #toc = time.perf_counter()
+                #print(f'NNMF took {toc-tic} seconds.')
 
-                # ready made NNMF algo:
-                estimator = decomposition.NMF(
-                    n_components=k, init='nndsvd', tol=5e-3
-                )
-                W_rm = estimator.fit_transform(M_train * data)
-                H_rm = estimator.components_
-                #TODO: to error bar rm ypologizetai kala, opote gia poio logo
-                #xreiazetai pragmatika na xrhsimopoihsw gradient descent?
-                #TODO: Deftero: blepw oti ta data mou exoun para poly variation
-                # otan xrhsimopoiw diaforetiko random sto GD. Mhpws afto
-                # shmainei oti den xrhsimopoiw polla iterations? Den 8a eprepe
-                # (efoson to partition einai to idio) na mou dinei k_fold arketa
-                # paromoia apotelesmata?
-                error_train_rm[k-1, k_fold, rng_iteration] = \
-                    np.linalg.norm(M_train * (W_rm @ H_rm - data), ord='fro') / \
-                    np.sqrt(norm_factor)
-                error_test_rm[k-1, k_fold, rng_iteration] = \
-                    np.linalg.norm(M_test * (W_rm @ H_rm - data), ord='fro') / \
-                    np.sqrt(norm_factor)
+                if False:
+                    # ready made NNMF algo:
+                    estimator = decomposition.NMF(
+                        n_components=k, init='nndsvd', tol=5e-3
+                    )
+                    W_rm = estimator.fit_transform(M_train * data)
+                    H_rm = estimator.components_
+                    #TODO: to error bar rm ypologizetai kala, opote gia poio logo
+                    #xreiazetai pragmatika na xrhsimopoihsw gradient descent?
+                    #TODO: Deftero: blepw oti ta data mou exoun para poly variation
+                    # otan xrhsimopoiw diaforetiko random sto GD. Mhpws afto
+                    # shmainei oti den xrhsimopoiw polla iterations? Den 8a eprepe
+                    # (efoson to partition einai to idio) na mou dinei k_fold arketa
+                    # paromoia apotelesmata?
+                    error_train_rm[k-1, k_fold, rng_iteration] = \
+                        np.linalg.norm(M_train * (W_rm @ H_rm - data), ord='fro') / \
+                        np.sqrt(norm_factor)
+                    error_test_rm[k-1, k_fold, rng_iteration] = \
+                        np.linalg.norm(M_test * (W_rm @ H_rm - data), ord='fro') / \
+                        np.sqrt(norm_factor)
 
+                #tic = time.perf_counter()
                 error_train[k-1, k_fold, rng_iteration] = \
                     np.linalg.norm(M_train * (W @ H - data), ord='fro') / \
-                        np.sqrt(norm_factor)
+                    (partition_size * (K_cv - 1))
                 error_test[k-1, k_fold, rng_iteration] = \
                     np.linalg.norm(M_test * (W @ H - data), ord='fro') / \
-                        np.sqrt(norm_factor)
+                    partition_size
+                #toc = time.perf_counter()
+                #print(f'Frobenius norm took {toc-tic} seconds.')
 
                 # This runs.
                 #W, H, info = NMF_HALS().run(data.T, k)
@@ -3187,12 +3215,12 @@ def determine_number_of_ensembles(
     df.to_hdf(str(filename), key='attributes', mode='w')
     df = pd.DataFrame(error_train.reshape(-1, 1))
     df.to_hdf(str(filename), key='error_train')
-    df = pd.DataFrame(error_train_rm.reshape(-1, 1))
-    df.to_hdf(str(filename), key='error_train_rm')
+    #df = pd.DataFrame(error_train_rm.reshape(-1, 1))
+    #df.to_hdf(str(filename), key='error_train_rm')
     df = pd.DataFrame(error_test.reshape(-1, 1))
     df.to_hdf(str(filename), key='error_test')
-    df = pd.DataFrame(error_test_rm.reshape(-1, 1))
-    df.to_hdf(str(filename), key='error_test_rm')
+    #df = pd.DataFrame(error_test_rm.reshape(-1, 1))
+    #df.to_hdf(str(filename), key='error_test_rm')
 
     ## Plot the errors to get the picture:
     #fig = plt.figure()
