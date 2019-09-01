@@ -1493,9 +1493,17 @@ def pcaL2(
     pca = decomposition.PCA(n_components=L)
     t_L = pca.fit_transform(pool_array.T).T
     latent = pca.explained_variance_
-    tmp_latent = latent / latent.max()
-    blah = np.diff(tmp_latent / np.sum(tmp_latent))
-    L = np.nonzero(np.greater(blah, -0.02))[0][0] + 1
+
+    #total_variance = np.sum(latent)
+    #explained_variance = latent / total_variance
+    #cum_explained_variance = np.cumsum(explained_variance)
+    #L = np.nonzero(np.less(cum_explained_variance, 0.8))[0].size
+
+    #norm_eigenvals = latent / latent.max()
+    #eigenval_diff = np.abs(np.diff(norm_eigenvals))
+    #L = np.nonzero(np.greater(eigenval_diff, 0.02))[0].size
+    L = np.nonzero(np.greater(latent, 1.0))[0].size
+
     print(f'L found to be: {L}')
     # Reshape PCA results into separate trials for plotting.
     #t_L_per_trial = t_L.reshape(L, correct_trials_no, duration, order='C')
@@ -1686,7 +1694,7 @@ def pcaL2(
                     color_values.append(make_colormap(
                             [
                                 c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-                                c('orange'), c('red'), stim_stop_norm + 0.01,
+                                c('red'), c('red'), stim_stop_norm + 0.01,
                                 c('red'), c('darkred'), 0.99,
                                 c('darkred')
                             ]
@@ -1695,7 +1703,7 @@ def pcaL2(
                     color_values.append(make_colormap(
                             [
                                 c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-                                c('orange'), c('violet'), stim_stop_norm + 0.01,
+                                c('violet'), c('violet'), stim_stop_norm + 0.01,
                                 c('violet'), c('darkviolet'), 0.99,
                                 c('darkviolet')
                             ]
@@ -1704,7 +1712,7 @@ def pcaL2(
                     color_values.append(make_colormap(
                             [
                                 c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-                                c('orange'), c('gold'), stim_stop_norm + 0.01,
+                                c('gold'), c('gold'), stim_stop_norm + 0.01,
                                 c('gold'), c('goldenrod'), 0.99,
                                 c('goldenrod')
                             ]
@@ -1713,7 +1721,7 @@ def pcaL2(
                     color_values.append(make_colormap(
                             [
                                 c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-                                c('orange'), c('blue'), stim_stop_norm + 0.01,
+                                c('blue'), c('blue'), stim_stop_norm + 0.01,
                                 c('blue'), c('darkblue'), 0.99,
                                 c('darkblue')
                             ]
@@ -1722,7 +1730,7 @@ def pcaL2(
                     color_values.append(make_colormap(
                             [
                                 c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-                                c('orange'), c('deepskyblue'), stim_stop_norm + 0.01,
+                                c('deepskyblue'), c('deepskyblue'), stim_stop_norm + 0.01,
                                 c('deepskyblue'), c('dodgerblue'), 0.99,
                                 c('dodgerblue')
                             ]
@@ -1731,25 +1739,43 @@ def pcaL2(
                     color_values.append(make_colormap(
                             [
                                 c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-                                c('orange'), c('lightgray'), stim_stop_norm + 0.01,
+                                c('lightgray'), c('lightgray'), stim_stop_norm + 0.01,
                                 c('lightgray'), c('darkgray'), 0.99,
                                 c('darkgray')
                             ]
                         )
                     )
                     color_values.append(make_colormap(
+                        [
+                            c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                            c('magenta'), c('magenta'), stim_stop_norm + 0.01,
+                            c('magenta'), c('darkmagenta'), 0.99,
+                            c('darkmagenta')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                            c('darkturquoise'), c('darkturquoise'), stim_stop_norm + 0.01,
+                            c('darkturquoise'), c('teal'), 0.99,
+                            c('teal')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
                             [
                                 c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-                                c('orange'), c('magenta'), stim_stop_norm + 0.01,
-                                c('magenta'), c('darkmagenta'), 0.99,
-                                c('darkmagenta')
+                                c('lime'), c('lime'), stim_stop_norm + 0.01,
+                                c('lime'), c('limegreen'), 0.99,
+                                c('limegreen')
                             ]
                         )
                     )
                 else:
                     color_values.append(make_colormap(
                         [
-                            c('orange'), c('red'), 0.0,
+                            c('red'), c('red'), 0.0,
                             c('red'), c('darkred'), 0.99,
                             c('darkred')
                         ]
@@ -1757,7 +1783,7 @@ def pcaL2(
                     )
                     color_values.append(make_colormap(
                         [
-                            c('orange'), c('violet'), 0.0,
+                            c('violet'), c('violet'), 0.0,
                             c('violet'), c('darkviolet'), 0.99,
                             c('darkviolet')
                         ]
@@ -1765,7 +1791,7 @@ def pcaL2(
                     )
                     color_values.append(make_colormap(
                         [
-                            c('orange'), c('gold'), 0.0,
+                            c('gold'), c('gold'), 0.0,
                             c('gold'), c('goldenrod'), 0.99,
                             c('goldenrod')
                         ]
@@ -1773,7 +1799,7 @@ def pcaL2(
                     )
                     color_values.append(make_colormap(
                         [
-                            c('orange'), c('blue'), 0.0,
+                            c('blue'), c('blue'), 0.0,
                             c('blue'), c('darkblue'), 0.99,
                             c('darkblue')
                         ]
@@ -1781,7 +1807,7 @@ def pcaL2(
                     )
                     color_values.append(make_colormap(
                         [
-                            c('orange'), c('deepskyblue'), 0.0,
+                            c('deepskyblue'), c('deepskyblue'), 0.0,
                             c('deepskyblue'), c('dodgerblue'), 0.99,
                             c('dodgerblue')
                         ]
@@ -1789,7 +1815,7 @@ def pcaL2(
                     )
                     color_values.append(make_colormap(
                         [
-                            c('orange'), c('lightgray'), 0.0,
+                            c('lightgray'), c('lightgray'), 0.0,
                             c('lightgray'), c('darkgray'), 0.99,
                             c('darkgray')
                         ]
@@ -1797,9 +1823,25 @@ def pcaL2(
                     )
                     color_values.append(make_colormap(
                         [
-                            c('orange'), c('darkturquoise'), 0.0,
+                            c('magenta'), c('magenta'), 0.0,
+                            c('magenta'), c('darkmagenta'), 0.99,
+                            c('darkmagenta')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('darkturquoise'), c('darkturquoise'), 0.0,
                             c('darkturquoise'), c('teal'), 0.99,
                             c('teal')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('lime'), c('lime'), 0.0,
+                            c('lime'), c('limegreen'), 0.99,
+                            c('limegreen')
                         ]
                     )
                     )
@@ -2111,7 +2153,11 @@ def NNMF(
         print('Must be k < min(n,m)!')
         n_components = np.min(pool_array.shape)
 
-    W, H, info = NMF_HALS().run(pool_array.T, n_components, M=M)
+    W, H = nnmf(
+        pool_array.T, n_components,
+        input_NWBfile=NWBfile_array[0]
+    )
+    #W, H, info = NMF_HALS().run(pool_array.T, n_components, M=M)
     H = H.T
     #TODO: return the fit error and test error!
     error_bar = None
@@ -2837,7 +2883,13 @@ def kmeans_clustering(data=None, k=2, max_iterations=100, plot=False, **kwargs):
 
     return klabels, J_k, md_array, md_params_d
 
-def evaluate_clustering(klabels=None, md_array=None, md_params=None, **kwargs):
+def evaluate_clustering(
+        klabels=None,
+        md_array=None,
+        md_params=None,
+        no_optimal_L=None,
+        **kwargs
+):
     # Calculate likelihood of each trial, given the cluster centroid:
     nclusters, ntrials = md_array.shape
 
@@ -2858,11 +2910,11 @@ def evaluate_clustering(klabels=None, md_array=None, md_params=None, **kwargs):
             if S.shape == ():
                 ln_L[0, trial] = \
                     np.exp(-1/2 * mdist) / \
-                    np.sqrt((2*np.pi)**nclusters * float(S))
+                    np.sqrt((2*np.pi)**no_optimal_L * float(S))
             else:
                 ln_L[0, trial] = \
                     np.exp(-1/2 * mdist) / \
-                    np.sqrt((2*np.pi)**nclusters * np.linalg.det(S))
+                    np.sqrt((2*np.pi)**no_optimal_L * np.linalg.det(S))
         except Exception as e:
             print('Something went wrong while evaluating BIC!')
             print(str(e))
@@ -2961,6 +3013,9 @@ def determine_number_of_clusters(
         plot=False
     )
 
+    # Keep only prominent principal components from the data set:
+    data_pca = data_pca[:no_optimal_L, :, :]
+
     dims, ntrials, duration = data_pca.shape
 
     try:
@@ -3020,7 +3075,8 @@ def determine_number_of_clusters(
                 break
             else:
                 BIC = evaluate_clustering(
-                    klabels=klabels, md_array=md_array, md_params=md_params_d, **kwargs
+                    klabels=klabels, md_array=md_array, md_params=md_params_d,
+                    no_optimal_L=no_optimal_L, **kwargs
                 )
                 BIC_all[i] = BIC
                 kmeans_labels[i, :] = klabels.T

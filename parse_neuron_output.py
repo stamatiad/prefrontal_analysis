@@ -195,8 +195,8 @@ def structured_nonmda():
 parse_neuron['structured_nonmda'] = structured_nonmda
 
 def structured_nomg(
-    inputdir=Path(r'G:\Glia\noMg'),
-    outputdir=Path(r'G:\Glia')
+    inputdir=Path(r'G:\Glia\noMg_NEWER'),
+    outputdir=Path(r'G:\Glia\noMg_NEWER')
     ):
     # for No Mg condition:
     for animal_model in range(1, 2):
@@ -224,6 +224,9 @@ def structured_nomg(
     print('Done and exiting.')
     sys.exit()
 parse_neuron['structured_nomg'] = structured_nomg
+
+parse_neuron['structured_nomg']()
+sys.exit()
 
 # Plot AMPA saturation to test it:
 #parse_neuron['excitatory_validation_ampatest']()

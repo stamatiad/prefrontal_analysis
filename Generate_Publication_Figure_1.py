@@ -212,10 +212,10 @@ for animal_model in range(1, no_of_animals + 1):
         delay_ISI_all.append(delay_ISIs)
         delay_ISI_CV_all.append(delay_ISIs_CV)
 
-stim_ISI = list(chain(*stim_ISI_all))
-delay_ISI = list(chain(*delay_ISI_all))
-stim_ISI_CV = list(chain(*stim_ISI_CV_all))
-delay_ISI_CV = list(chain(*delay_ISI_CV_all))
+stim_ISI = np.array(list(chain(*stim_ISI_all)))
+delay_ISI = np.array(list(chain(*delay_ISI_all)))
+stim_ISI_CV = np.array(list(chain(*stim_ISI_CV_all)))
+delay_ISI_CV = np.array(list(chain(*delay_ISI_CV_all)))
 step_isi = 20
 step_cv = 0.2
 bins_isi = np.arange(0, 200, step_isi)
@@ -226,19 +226,37 @@ delay_isi_hist, *_ = np.histogram(delay_ISI, bins=bins_isi)
 stim_isi_cv_hist, *_ = np.histogram(stim_ISI_CV, bins=bins_cv)
 delay_isi_cv_hist, *_ = np.histogram(delay_ISI_CV, bins=bins_cv)
 
-# Do Kruskar Wallis test on distributions:
-kruskal_result_cv = stats.kruskal(stim_ISI_CV, delay_ISI_CV, nan_policy='omit')
-kruskal_result_isi = stats.kruskal(stim_ISI, delay_ISI, nan_policy='omit')
+#TODO: write it more elegantly:
+stim_ISI_CV = stim_ISI_CV[~np.isnan(stim_ISI_CV)]
+delay_ISI_CV = delay_ISI_CV[~np.isnan(delay_ISI_CV)]
+stim_ISI = stim_ISI[~np.isnan(stim_ISI)]
+delay_ISI = delay_ISI[~np.isnan(delay_ISI)]
+
+mannwhitneyu_result_cv = stats.mannwhitneyu(stim_ISI_CV, delay_ISI_CV)
+mannwhitneyu_result_isi = stats.mannwhitneyu(stim_ISI, delay_ISI)
+
+nb.report_value(f'Mann Whitney U pvalue:CV Stimulus VS Delay ', mannwhitneyu_result_cv.pvalue)
+nb.report_value(f'Mann Whitney U pvalue:ISI Stimulus VS Delay ', mannwhitneyu_result_isi.pvalue)
 
 average_stim_isi = np.mean(stim_ISI)
 average_delay_isi = np.mean(delay_ISI)
-average_stim_cv = np.nanmean(stim_ISI_CV)
-average_delay_cv = np.nanmean(delay_ISI_CV)
-
+average_stim_cv = np.mean(stim_ISI_CV)
+average_delay_cv = np.mean(delay_ISI_CV)
 std_stim_isi = np.std(stim_ISI)
 std_delay_isi = np.std(delay_ISI)
-std_stim_cv = np.nanstd(stim_ISI_CV)
-std_delay_cv = np.nanstd(delay_ISI_CV)
+std_stim_cv = np.std(stim_ISI_CV)
+std_delay_cv = np.std(delay_ISI_CV)
+
+nb.report_value(f'CV Stimulus: mean', average_stim_cv)
+nb.report_value(f'CV Stimulus: std', std_stim_cv)
+nb.report_value(f'CV Post-stimulus: mean', average_delay_cv)
+nb.report_value(f'CV Post-stimulus: std', std_delay_cv)
+
+nb.report_value(f'ISI Stimulus: mean', average_stim_isi)
+nb.report_value(f'ISI Stimulus: std', std_stim_isi)
+nb.report_value(f'ISI Post-stimulus: mean', average_delay_isi)
+nb.report_value(f'ISI Post-stimulus: std', std_delay_isi)
+
 
 D_axis_a.plot(stim_isi_hist / stim_isi_hist.sum(), color='C0')
 D_axis_a.axvline(np.mean(stim_ISI) / step_isi, color='C0', linestyle='--')

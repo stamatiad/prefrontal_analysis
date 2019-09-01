@@ -25,6 +25,7 @@ import matplotlib.gridspec as gridspec
 from matplotlib.patches import Rectangle
 import matplotlib.axes._subplots as mpsp
 import matplotlib.projections as mppr
+from itertools import chain
 
 def p_figure_space(h, c, r):
     return (c*r)/(h-c*r+c)
@@ -312,3 +313,136 @@ def set_horizontal_scalebar(axis=None, label=None, relativesize=None,
 def report_value(name, value):
     print(f'Reporting value: \n\t{name} -> {value}\n')
     pass
+
+
+def compute_isi_cv(
+        no_of_animals=4,
+        no_of_conditions=10,
+        data_path=None,
+        experiment_config=None,
+        report_prefix=None,
+        plot_axis_a=None,
+        plot_axis_b=None,
+        axis_label_font_size=None,
+        tick_label_font_size=None,
+        labelpad_x=None,
+        labelpad_y=None
+):
+    stim_ISI_all = []
+    stim_ISI_CV_all = []
+    delay_ISI_all = []
+    delay_ISI_CV_all = []
+    for animal_model in range(1, no_of_animals + 1):
+        for learning_condition in range(1, no_of_conditions + 1):
+            NWBfile = analysis.load_nwb_file(
+                animal_model=animal_model,
+                learning_condition=learning_condition,
+                experiment_config=experiment_config,
+                type='bn',
+                data_path=data_path
+            )
+            # Calculate ISI and its CV:
+            stim_ISIs, stim_ISIs_CV = analysis.calculate_stimulus_isi(NWBfile)
+            delay_ISIs, delay_ISIs_CV = analysis.calculate_delay_isi(NWBfile)
+
+            stim_ISI_all.append(stim_ISIs)
+            stim_ISI_CV_all.append(stim_ISIs_CV)
+            delay_ISI_all.append(delay_ISIs)
+            delay_ISI_CV_all.append(delay_ISIs_CV)
+
+    stim_ISI = np.array(list(chain(*stim_ISI_all)))
+    delay_ISI = np.array(list(chain(*delay_ISI_all)))
+    stim_ISI_CV = np.array(list(chain(*stim_ISI_CV_all)))
+    delay_ISI_CV = np.array(list(chain(*delay_ISI_CV_all)))
+    step_isi = 20
+    step_cv = 0.2
+    bins_isi = np.arange(0, 200, step_isi)
+    bins_cv = np.arange(0, 2, step_cv)
+    # Histograms can contain less values, if original mats have NaNs!
+    stim_isi_hist, *_ = np.histogram(stim_ISI, bins=bins_isi)
+    delay_isi_hist, *_ = np.histogram(delay_ISI, bins=bins_isi)
+    stim_isi_cv_hist, *_ = np.histogram(stim_ISI_CV, bins=bins_cv)
+    delay_isi_cv_hist, *_ = np.histogram(delay_ISI_CV, bins=bins_cv)
+
+    #TODO: write it more elegantly:
+    stim_ISI_CV = stim_ISI_CV[~np.isnan(stim_ISI_CV)]
+    delay_ISI_CV = delay_ISI_CV[~np.isnan(delay_ISI_CV)]
+    stim_ISI = stim_ISI[~np.isnan(stim_ISI)]
+    delay_ISI = delay_ISI[~np.isnan(delay_ISI)]
+
+    mannwhitneyu_result_cv = stats.mannwhitneyu(stim_ISI_CV, delay_ISI_CV)
+    mannwhitneyu_result_isi = stats.mannwhitneyu(stim_ISI, delay_ISI)
+
+    average_stim_isi = np.mean(stim_ISI)
+    average_delay_isi = np.mean(delay_ISI)
+    average_stim_cv = np.mean(stim_ISI_CV)
+    average_delay_cv = np.mean(delay_ISI_CV)
+    std_stim_isi = np.std(stim_ISI)
+    std_delay_isi = np.std(delay_ISI)
+    std_stim_cv = np.std(stim_ISI_CV)
+    std_delay_cv = np.std(delay_ISI_CV)
+
+    report_value(f'{report_prefix} CV Stimulus: mean', average_stim_cv)
+    report_value(f'{report_prefix} CV Stimulus: std', std_stim_cv)
+    report_value(f'{report_prefix} CV Post-stimulus: mean', average_delay_cv)
+    report_value(f'{report_prefix} CV Post-stimulus: std', std_delay_cv)
+
+    report_value(f'{report_prefix} ISI Stimulus: mean', average_stim_isi)
+    report_value(f'{report_prefix} ISI Stimulus: std', std_stim_isi)
+    report_value(f'{report_prefix} ISI Post-stimulus: mean', average_delay_isi)
+    report_value(f'{report_prefix} ISI Post-stimulus: std', std_delay_isi)
+
+    report_value(f'{report_prefix} Mann Whitney U pvalue:CV Stimulus VS Delay ', mannwhitneyu_result_cv.pvalue)
+    report_value(f'{report_prefix} Mann Whitney U pvalue:ISI Stimulus VS Delay ', mannwhitneyu_result_isi.pvalue)
+
+    plot_axis_a.plot(stim_isi_hist / stim_isi_hist.sum(), color='C0')
+    plot_axis_a.axvline(np.mean(stim_ISI) / step_isi, color='C0', linestyle='--')
+    plot_axis_a.plot(delay_isi_hist / delay_isi_hist.sum(), color='C1')
+    plot_axis_a.axvline(np.mean(delay_ISI) / step_isi, color='C1', linestyle='--')
+    plot_axis_a.set_xticks(range(0, bins_isi.size, 2))
+    plot_axis_a.set_xticklabels(np.round(bins_isi * 2, 1), fontsize=tick_label_font_size)
+    plot_axis_a.set_xlim([0.0, bins_isi.size])
+    plot_axis_a.set_xlabel(
+        'ISI length (ms)', fontsize=axis_label_font_size,
+        labelpad=labelpad_x
+    )
+    plot_axis_a.set_ylabel(
+        'Relative Frequency', fontsize=axis_label_font_size,
+        labelpad=labelpad_y
+    )
+
+    plot_axis_b.plot(stim_isi_cv_hist / stim_isi_cv_hist.sum(), color='C0')
+    plot_axis_b.axvline(np.nanmean(stim_ISI_CV) / step_cv, color='C0', linestyle='--')
+    plot_axis_b.plot(delay_isi_cv_hist / delay_isi_cv_hist.sum(), color='C1')
+    plot_axis_b.axvline(np.nanmean(delay_ISI_CV) / step_cv, color='C1', linestyle='--')
+    plot_axis_b.set_xticks(range(0, bins_cv.size, 2))
+    plot_axis_b.set_xticklabels(np.round(bins_cv * 2, 1), fontsize=tick_label_font_size)
+    plot_axis_b.set_xlim([0.0, bins_cv.size])
+    plot_axis_b.set_xlabel(
+        'Coefficient of Variation', fontsize=axis_label_font_size,
+        labelpad=labelpad_x
+    )
+    plot_axis_b.set_ylabel(
+        'Relative Frequency', fontsize=axis_label_font_size,
+        labelpad=labelpad_y
+    )
+    axis_normal_plot(axis=plot_axis_a)
+    adjust_spines(plot_axis_a, ['left', 'bottom'])
+    axis_normal_plot(axis=plot_axis_b)
+    adjust_spines(plot_axis_b, ['left', 'bottom'])
+
+    results_d={}
+    results_d['stim_isi_hist'] = stim_isi_hist
+    results_d['stim_ISI'] = stim_ISI
+    results_d['delay_isi_hist'] = delay_isi_hist
+    results_d['delay_ISI'] = delay_ISI
+    results_d['stim_isi_cv_hist'] = stim_isi_cv_hist
+    results_d['stim_ISI_CV'] = stim_ISI_CV
+    results_d['delay_isi_cv_hist'] = delay_isi_cv_hist
+    results_d['delay_ISI_CV'] = delay_ISI_CV
+    results_d['step_isi'] = step_isi
+    results_d['bins_isi'] = bins_isi
+    results_d['step_cv'] = step_cv
+    results_d['bins_cv'] = bins_cv
+
+    return results_d, NWBfile

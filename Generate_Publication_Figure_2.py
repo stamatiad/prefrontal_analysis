@@ -55,7 +55,8 @@ trial_len, pn_no, ntrials, trial_q_no = analysis.get_acquisition_parameters(
     input_NWBfile=NWBfile,
     requested_parameters=['trial_len', 'pn_no', 'ntrials', 'trial_q_no']
 )
-custom_range = (0, int(trial_len / 50))
+#TODO: yparxei kapoios logos pou dinw edw KAI to stimulus?
+custom_range = (20, int(trial_len / 50))
 K_star, K_labels, BIC_val, _ = analysis.determine_number_of_clusters(
     NWBfile_array=[NWBfile],
     max_clusters=no_of_conditions,
@@ -68,6 +69,7 @@ A_axis = figure2.add_subplot(
     subplot_height, subplot_width, 1, projection='3d'
 )
 nb.mark_figure_letter(A_axis, 'i')
+custom_range = (0, int(trial_len / 50))
 analysis.plot_pca_in_3d(
     NWBfile=NWBfile, custom_range=custom_range, smooth=True, plot_axes=A_axis,
     klabels=K_labels
@@ -90,7 +92,8 @@ analysis.pcaL2(
     klabels=K_labels,
     custom_range=custom_range,
     smooth=True, plot_3d=True,
-    plot_axes=B_axis
+    plot_axes=B_axis,
+    plot_stim_color=True
 )
 nb.mark_figure_letter(B_axis, 'b')
 
@@ -164,7 +167,8 @@ analysis.pcaL2(
     klabels=K_labels,
     custom_range=custom_range,
     smooth=True, plot_3d=True,
-    plot_axes=D_axis
+    plot_axes=D_axis,
+    plot_stim_color=True
 )
 nb.mark_figure_letter(D_axis, 'd')
 
@@ -224,7 +228,8 @@ analysis.pcaL2(
     klabels=K_labels,
     custom_range=custom_range,
     smooth=True, plot_3d=True,
-    plot_axes=F_axis
+    plot_axes=F_axis,
+    plot_stim_color=True
 )
 #F_axis.set_title(f'')
 nb.mark_figure_letter(F_axis, 'f')
@@ -237,8 +242,8 @@ plt.show()
 
 
 # <codecell>
-figure2.savefig('Figure_2_final.png')
-figure2.savefig('Figure_2_final.pdf')
+figure2.savefig('Figure_2_final_right.png')
+figure2.savefig('Figure_2_final_right.pdf')
 print('Tutto pronto!')
 
 

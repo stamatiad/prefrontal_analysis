@@ -40,7 +40,7 @@ def compute_nnmf_cv(inputs):
 
     blah = analysis.determine_number_of_ensembles(
         NWBfile_array=[NWBfile],
-        K_max=10,
+        K_max=20,
         custom_range=custom_range,
         K_cv=20,
         rng_max_iters=1
