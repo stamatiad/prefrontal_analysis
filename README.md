@@ -1,5 +1,5 @@
 # prefrontal_analysis
-This is the code used to analyse the NEURON simulations produced from [here].
+This is the code used to analyse the NEURON simulations produced from [NEURON model](https://bitbucket.org/stevest/prefrontal-micro/).
 
 ### Run on Google Colab
 > Now you can run the code, replicating the results on Google Colab platform, without the need to setup a python environment.
