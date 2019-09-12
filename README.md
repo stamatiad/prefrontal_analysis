@@ -1,5 +1,5 @@
 # prefrontal_analysis
-This is the code used to analyse the NEURON simulations produced from [here].
+This is the code used to analyse the NEURON simulations produced from [NEURON model](https://bitbucket.org/stevest/prefrontal-micro/).
 
 ### Run on Google Colab
 > Now you can run the code, replicating the results on Google Colab platform, without the need to setup a python environment.
@@ -21,6 +21,12 @@ Figure S2 Notebook [![Open Colab](https://colab.research.google.com/assets/colab
 
 Figure S3 Notebook [![Open Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/stamatiad/prefrontal_analysis/blob/review/Generate_Publication_Figure_S3.ipynb)
 
+> __Note__
+> 
+> Due to GitHub restrictions in git LFS, all result files (very large; not python analysis code),
+> have been moved over to a Bitbucket repo. If you want to include those when you download the code,
+> please clone the other repo instead:
+> ```git clone https://bitbucket.org/stevest/prefrontal_analysis.git```
 
 
 
@@ -28,7 +34,8 @@ Figure S3 Notebook [![Open Colab](https://colab.research.google.com/assets/colab
 This code is pure python 3, although there are some recommendations to run it trouble-free:
 - pip, for easy python package management (included with most python installations).
 - git VCS.
-- About 200 MB of storage, because the repo includes parts of the simulations for easy figure reproducibility. 
+- About 800 MB of storage, because the repo includes parts of the simulations for easy figure reproducibility 
+(this is only for the Bitbucket repo).
 - Jupyter notebook, for an annotated and concise way of presenting the results.
 You can install a python 3.7 [anaconda distribution](https://www.anaconda.com/distribution/), that will contain most of the required packages. 
 
@@ -48,7 +55,8 @@ To run the code please:
 mkdir prefrontal_analysis && cd prefrontal_analysis
 git clone https://github.com/stamatiad/prefrontal_analysis.git
 ```
-This *might take a while*, since repo contains parts of the simulations (~200MB).
+This *might take a while*, since repo contains parts of the simulations 
+(Update: this is only for the Bitbucket repo, ~800MB).
 > !!! Since this is work in progress, please change from master to the review branch!
 
 ```
