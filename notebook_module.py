@@ -26,6 +26,32 @@ from matplotlib.patches import Rectangle
 import matplotlib.axes._subplots as mpsp
 import matplotlib.projections as mppr
 
+class traversable_1d_array(object):
+    '''
+    Make a callback class to traverse an array, column wise
+    This is intended to be used in a notebook, so no fancy plot stuff.
+    '''
+    def __init__(self, plt_handle, np_array):
+        self.ind = 0
+        self.max_idx = np_array.shape[1]
+        self.h = plt_handle
+        self.data = np_array
+
+    def next(self, event):
+        # get next column:
+        self.ind += 1
+        i = self.ind % self.max_idx
+        # Can I set multiple lines' data?
+        self.h.set_data(self.data[:, self.idx])
+        plt.draw()
+
+    def prev(self, event):
+        self.ind -= 1
+        i = self.ind % self.max_idx
+        # Can I set multiple lines' data?
+        self.h.set_data(self.data[:, self.idx])
+        plt.draw()
+
 def p_figure_space(h, c, r):
     return (c*r)/(h-c*r+c)
 

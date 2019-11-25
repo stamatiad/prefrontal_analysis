@@ -19,6 +19,7 @@ from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 import matplotlib.font_manager as fm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy import stats
+from scipy.signal import savgol_filter
 
 # <markdowncell>
 # # Create figure 1.
@@ -36,7 +37,6 @@ tick_label_font_size = 12
 labelpad_x = 10
 labelpad_y = 10
 
-plt.ion()
 no_of_conditions = 10
 no_of_animals = 4
 #===============================================================================
@@ -48,6 +48,7 @@ subplot_width = 5
 subplot_height = 4
 figure_ratio = subplot_height / subplot_width
 figure1 = plt.figure(figsize=plt.figaspect(figure_ratio))
+figure1.patch.set_facecolor('white')
 
 # c is the size of subplot space/margin, for both h/w (in figure scale).
 # If you are really OCD, you can use a second one, scaled by fig aspect ratio.
@@ -96,8 +97,6 @@ nb.mark_figure_letter(G_axis_a, 'g')
 H_axis_a = plt.subplot(FGH_gs[1, 2])
 nb.mark_figure_letter(H_axis_a, 'h')
 
-plt.show()
-figure1.savefig('FINAL.png')
 print('Tutto pronto!')
 
 
@@ -157,9 +156,7 @@ NWBfile = analysis.load_nwb_file(
     learning_condition=1,
     experiment_config='structured',
     type='mp',
-    data_path=glia_dir
-    #type='bn',
-    #data_path=simulations_dir
+    data_path=simulations_dir
 )
 
 pyramidal_axes = [C_axis_a, C_axis_b, C_axis_c]
@@ -215,10 +212,10 @@ for animal_model in range(1, no_of_animals + 1):
         delay_ISI_all.append(delay_ISIs)
         delay_ISI_CV_all.append(delay_ISIs_CV)
 
-stim_ISI = list(chain(*stim_ISI_all))
-delay_ISI = list(chain(*delay_ISI_all))
-stim_ISI_CV = list(chain(*stim_ISI_CV_all))
-delay_ISI_CV = list(chain(*delay_ISI_CV_all))
+stim_ISI = np.array(list(chain(*stim_ISI_all)))
+delay_ISI = np.array(list(chain(*delay_ISI_all)))
+stim_ISI_CV = np.array(list(chain(*stim_ISI_CV_all)))
+delay_ISI_CV = np.array(list(chain(*delay_ISI_CV_all)))
 step_isi = 20
 step_cv = 0.2
 bins_isi = np.arange(0, 200, step_isi)
@@ -229,19 +226,37 @@ delay_isi_hist, *_ = np.histogram(delay_ISI, bins=bins_isi)
 stim_isi_cv_hist, *_ = np.histogram(stim_ISI_CV, bins=bins_cv)
 delay_isi_cv_hist, *_ = np.histogram(delay_ISI_CV, bins=bins_cv)
 
-# Do Kruskar Wallis test on distributions:
-kruskal_result_cv = stats.kruskal(stim_ISI_CV, delay_ISI_CV, nan_policy='omit')
-kruskal_result_isi = stats.kruskal(stim_ISI, delay_ISI, nan_policy='omit')
+#TODO: write it more elegantly:
+stim_ISI_CV = stim_ISI_CV[~np.isnan(stim_ISI_CV)]
+delay_ISI_CV = delay_ISI_CV[~np.isnan(delay_ISI_CV)]
+stim_ISI = stim_ISI[~np.isnan(stim_ISI)]
+delay_ISI = delay_ISI[~np.isnan(delay_ISI)]
+
+mannwhitneyu_result_cv = stats.mannwhitneyu(stim_ISI_CV, delay_ISI_CV)
+mannwhitneyu_result_isi = stats.mannwhitneyu(stim_ISI, delay_ISI)
+
+nb.report_value(f'Mann Whitney U pvalue:CV Stimulus VS Delay ', mannwhitneyu_result_cv.pvalue)
+nb.report_value(f'Mann Whitney U pvalue:ISI Stimulus VS Delay ', mannwhitneyu_result_isi.pvalue)
 
 average_stim_isi = np.mean(stim_ISI)
 average_delay_isi = np.mean(delay_ISI)
-average_stim_cv = np.nanmean(stim_ISI_CV)
-average_delay_cv = np.nanmean(delay_ISI_CV)
-
+average_stim_cv = np.mean(stim_ISI_CV)
+average_delay_cv = np.mean(delay_ISI_CV)
 std_stim_isi = np.std(stim_ISI)
 std_delay_isi = np.std(delay_ISI)
-std_stim_cv = np.nanstd(stim_ISI_CV)
-std_delay_cv = np.nanstd(delay_ISI_CV)
+std_stim_cv = np.std(stim_ISI_CV)
+std_delay_cv = np.std(delay_ISI_CV)
+
+nb.report_value(f'CV Stimulus: mean', average_stim_cv)
+nb.report_value(f'CV Stimulus: std', std_stim_cv)
+nb.report_value(f'CV Post-stimulus: mean', average_delay_cv)
+nb.report_value(f'CV Post-stimulus: std', std_delay_cv)
+
+nb.report_value(f'ISI Stimulus: mean', average_stim_isi)
+nb.report_value(f'ISI Stimulus: std', std_stim_isi)
+nb.report_value(f'ISI Post-stimulus: mean', average_delay_isi)
+nb.report_value(f'ISI Post-stimulus: std', std_delay_isi)
+
 
 D_axis_a.plot(stim_isi_hist / stim_isi_hist.sum(), color='C0')
 D_axis_a.axvline(np.mean(stim_ISI) / step_isi, color='C0', linestyle='--')
@@ -287,8 +302,9 @@ nb.mark_figure_letter(D_axis_a, 'd')
 #TODO: opws einai to NWBfile einai ena tyxaio apo to loop pio panw!
 # Exemplar network rasterplot:
 # Trials that have pa: 2, 6. The 6 is quite nice!
+fig_1e_trial_id = 6
 nb.plot_trial_spiketrains(
-    NWBfile=NWBfile, trialid=6, plot_axis=E_axis_a,
+    NWBfile=NWBfile, trialid=fig_1e_trial_id, plot_axis=E_axis_a,
     axis_label_font_size=axis_label_font_size,
     tick_label_font_size=tick_label_font_size,
     labelpad_x=labelpad_x, labelpad_y=labelpad_y
@@ -308,26 +324,33 @@ trial_len = \
     )
 
 # Dynamic network response:
-trial_inst_ff = analysis.trial_instantaneous_frequencies(
-    NWBfile=NWBfile, trialid=6, smooth=True
-)
-ff_threshold = 20  # Hz
-#fig, plot_axis =plt.subplots(1,1)
-#plt.ion()
-for cellid, inst_ff in trial_inst_ff:
-    if inst_ff.mean() > ff_threshold:
-        E_axis_b.plot(inst_ff)
-    #plt.title(f'cellid {cellid}')
-    #plt.waitforbuttonpress()
-    #plt.cla()
-E_axis_b.set_xlim([0.0, 5000])
-E_axis_b.set_ylim([0.0, 160])
-nb.adjust_spines(E_axis_b, ['left', 'bottom'])
+ff_threshold = 10  # Hz
+
+correct_trials = analysis.get_correct_trials(NWBfile)
+for cellid in range(correct_trials.shape[0]):
+    smoothed_firing_frequency = \
+        savgol_filter(
+            np.multiply(correct_trials[cellid, fig_1e_trial_id, :].T, 20),
+            11, 3
+        )
+    if smoothed_firing_frequency.mean() > ff_threshold:
+        # Remove the negative values made from smoothing:
+        idx = smoothed_firing_frequency < 0
+        smoothed_firing_frequency[idx] = 0
+        E_axis_b.plot(smoothed_firing_frequency)
+
+
 #E_axis_b.spines['left'].set_position('zero')
 #E_axis_b.spines['bottom'].set_position('zero')
-E_axis_b.axvspan(50.0, 1050.0, ymin=0, ymax=1, color='g', alpha=0.2)
-E_axis_b.xaxis.set_ticks(np.arange(0, trial_len + 1000, 1000))
-E_axis_b.xaxis.set_ticklabels(np.arange(0, 5, 1), fontsize=tick_label_font_size)
+duration = correct_trials.shape[2]
+time_axis_ticks = np.linspace(0, duration, (duration / 20) + 1)
+time_axis_ticklabels = analysis.q2sec(q_time=time_axis_ticks).astype(int)  #np.linspace(0, time_axis_limits[1], duration)
+E_axis_b.set_xticks(time_axis_ticks)
+E_axis_b.set_xticklabels(time_axis_ticklabels, fontsize=tick_label_font_size)
+E_axis_b.set_xlim([0.0, duration])
+E_axis_b.set_ylim([0.0, 130])
+E_axis_b.axvspan(50.0/50, 1050.0/50, ymin=0, ymax=120/130, color='g', alpha=0.2)
+nb.adjust_spines(E_axis_b, ['left', 'bottom'])
 E_axis_b.set_xlabel(
     'Time (ms)', fontsize=axis_label_font_size,
     labelpad=labelpad_x
@@ -359,9 +382,9 @@ custom_range = (0, int(trial_len / 50))
 
 # Plot velocity from raw network activity:
 #TODO: all the data and how many Ls in PCA? Must be all!
-# This is Hz/Sec.
-net_activity = analysis.get_correct_trials(NWBfile)
 # Filter only trials with PA
+net_activity = analysis.get_correct_trials(NWBfile)
+# This is Hz/Sec.
 energy = analysis.energy(data=net_activity)
 G_axis_a.cla()
 G_axis_a.plot(energy.T, color='gray', alpha=0.2)
@@ -373,7 +396,7 @@ time_axis_ticklabels = analysis.q2sec(q_time=time_axis_ticks).astype(int)  #np.l
 G_axis_a.set_xticks(time_axis_ticks)
 G_axis_a.set_xticklabels(time_axis_ticklabels, fontsize=tick_label_font_size)
 G_axis_a.set_ylabel(
-    'Energy (Hz/s)', fontsize=axis_label_font_size,
+    'Energy Velocity (Hz/s)', fontsize=axis_label_font_size,
     labelpad=labelpad_x
 )
 G_axis_a.set_xlabel(
@@ -394,7 +417,7 @@ H_axis_a.plot(np.mean(velocity.T, axis=1), color='k', linewidth=2)
 H_axis_a.set_xticks(time_axis_ticks)
 H_axis_a.set_xticklabels(time_axis_ticklabels, fontsize=tick_label_font_size)
 H_axis_a.set_ylabel(
-    'Velocity (Hz/s)', fontsize=axis_label_font_size,
+    'Multidimensional Velocity (Hz/s)', fontsize=axis_label_font_size,
     labelpad=labelpad_y
 )
 H_axis_a.set_xlabel(
@@ -430,7 +453,7 @@ for ii in range(duration):
         timelag_corr[ii, jj] = S[0, 1]
 
 #figure1, plot_axes = plt.subplots()
-im = F_axis_a.imshow(timelag_corr)
+im = F_axis_a.imshow(timelag_corr, vmin=0.7)
 F_axis_a.xaxis.tick_top()
 for axis in ['top', 'bottom', 'left', 'right']:
     F_axis_a.spines[axis].set_linewidth(2)

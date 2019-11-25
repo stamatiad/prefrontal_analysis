@@ -8,6 +8,7 @@
 import notebook_module as nb
 import analysis_tools as analysis
 import numpy as np
+from numpy import matlib
 import matplotlib.pyplot as plt
 from collections import defaultdict
 from functools import partial
@@ -46,6 +47,7 @@ subplot_height = 2
 plt.ion()
 figure_ratio = subplot_height / subplot_width
 figure3 = plt.figure(figsize=plt.figaspect(figure_ratio))
+figure3.patch.set_facecolor('white')
 figure3_axis = np.zeros((subplot_height, subplot_width), dtype=object)
 dataset_name = lambda x : f'Network {x}'
 
@@ -55,19 +57,20 @@ cw = 0.05
 ch = cw / figure_ratio
 main_gs = nb.split_gridspec(2, 1, ch, cw, left=0.05, right=0.95, top=0.95, bottom=0.05)
 upper_gs = nb.split_gridspec(1, 3, ch, cw, gs=main_gs[0, :])
-lower_gs = nb.split_gridspec(1, 4, ch, cw, gs=main_gs[1, :])
+lower_gs = nb.split_gridspec(1, 3, ch, cw, gs=main_gs[1, :])
 A_axis = plt.subplot(upper_gs[0, 0], projection='3d')
 B_axis = plt.subplot(upper_gs[0, 1], projection='3d')
 C_axis = plt.subplot(upper_gs[0, 2], projection='3d')
 
 D_axis = plt.subplot(lower_gs[0, 0])
 E_axis = plt.subplot(lower_gs[0, 1])
-F_axis = plt.subplot(lower_gs[0, 2])
-G_axis = plt.subplot(lower_gs[0, 3])
+#F_axis = plt.subplot(lower_gs[0, 2])
+G_axis = plt.subplot(lower_gs[0, 2])
 
 # Plot same animal model, different learning conditions:
 conditions = [1,2,3]
 condition_axes = [A_axis, B_axis, C_axis]
+color_skips = [0, 3, 0, 5]
 for axis, (idx, learning_condition) in zip(condition_axes, enumerate(conditions)):
     NWBfile = analysis.load_nwb_file(
         animal_model=1,
@@ -90,6 +93,7 @@ for axis, (idx, learning_condition) in zip(condition_axes, enumerate(conditions)
         custom_range=custom_range
     )
     print(f'LC:{learning_condition}: K*:{K_star}')
+    color_skips[idx + 1] = color_skips[idx] + K_star
 
     TR_sp = analysis.sparsness(NWBfile, custom_range)
     nb.report_value(f'Fig 3{idx+1}: BIC', BIC_val)
@@ -106,7 +110,9 @@ for axis, (idx, learning_condition) in zip(condition_axes, enumerate(conditions)
         axis_label_font_size=axis_label_font_size,
         tick_label_font_size=tick_label_font_size,
         labelpad_x=labelpad_x,
-        labelpad_y=labelpad_y
+        labelpad_y=labelpad_y,
+        color_skip=color_skips[idx],
+        plot_stim_color=False
     )
 
 nb.mark_figure_letter(A_axis, 'a')
@@ -135,6 +141,8 @@ for animal_model in range(1, no_of_animals + 1):
             requested_parameters=['trial_len', 'q_size']
         )
 
+        custom_range = (20, int(trial_len / 50))
+
         # TODO: Where is custom range needed? determine a global way
         # of passing it around...
         #custom_range = (20, int(trial_len / 50))
@@ -154,39 +162,40 @@ for animal_model in range(1, no_of_animals + 1):
     optimal_clusters_of_group[dataset_name(animal_model)] = \
         K_star_over_trials
 
-# Scatter plot PC VS clusters
-F_axis.cla()
-#F_axis.set_title('Optimal no of clusters')
-K_s = []
-PC_no = []
-models_list = range(1, no_of_animals + 1)
-for pos, animal in enumerate(models_list):
-    K_s.append(list(optimal_clusters_of_group[dataset_name(animal)][:,0]))
-    PC_no.append(list(optimal_clusters_of_group[dataset_name(animal)][:,1]))
+if False:
+    # Scatter plot PC VS clusters
+    F_axis.cla()
+    #F_axis.set_title('Optimal no of clusters')
+    K_s = []
+    PC_no = []
+    models_list = range(1, no_of_animals + 1)
+    for pos, animal in enumerate(models_list):
+        K_s.append(list(optimal_clusters_of_group[dataset_name(animal)][:,0]))
+        PC_no.append(list(optimal_clusters_of_group[dataset_name(animal)][:,1]))
 
-sb.regplot(x=list(chain(*K_s)), y=list(chain(*PC_no)), ax=F_axis, marker='.', color='C0')
-scipy.stats.pearsonr(list(chain(*K_s)), list(chain(*PC_no)))
-xlim = (1 - 0.2, np.array(list(chain(*K_s))).max() + 0.2)
-ylim = (1 - 0.2, np.array(list(chain(*PC_no))).max() + 0.2)
-F_axis.set_xlim(xlim[0], xlim[1])
-F_axis.set_ylim(ylim[0], ylim[1])
-F_axis.set_xticks(
-    list(range(math.ceil(xlim[0]), int(xlim[1]) + 1))
-)
-F_axis.set_yticks(
-    list(range(math.ceil(ylim[0]), int(ylim[1]) + 1))
-)
-F_axis.set_xlabel(
-    'K*', fontsize=axis_label_font_size,
-    labelpad=labelpad_x
-)
-F_axis.set_ylabel(
-    '#PCA components', fontsize=axis_label_font_size,
-    labelpad=labelpad_y
-)
-nb.mark_figure_letter(F_axis, 'f')
-nb.axis_normal_plot(F_axis)
-nb.adjust_spines(F_axis, ['left', 'bottom'])
+    sb.regplot(x=list(chain(*K_s)), y=list(chain(*PC_no)), ax=F_axis, marker='.', color='C0')
+    scipy.stats.pearsonr(list(chain(*K_s)), list(chain(*PC_no)))
+    xlim = (1 - 0.2, np.array(list(chain(*K_s))).max() + 0.2)
+    ylim = (1 - 0.2, np.array(list(chain(*PC_no))).max() + 0.2)
+    F_axis.set_xlim(xlim[0], xlim[1])
+    F_axis.set_ylim(ylim[0], ylim[1])
+    F_axis.set_xticks(
+        list(range(math.ceil(xlim[0]), int(xlim[1]) + 1))
+    )
+    F_axis.set_yticks(
+        list(range(math.ceil(ylim[0]), int(ylim[1]) + 1))
+    )
+    F_axis.set_xlabel(
+        'K*', fontsize=axis_label_font_size,
+        labelpad=labelpad_x
+    )
+    F_axis.set_ylabel(
+        '#PCA components', fontsize=axis_label_font_size,
+        labelpad=labelpad_y
+    )
+    nb.mark_figure_letter(F_axis, 'f')
+    nb.axis_normal_plot(F_axis)
+    nb.adjust_spines(F_axis, ['left', 'bottom'])
 
 
 # Fig 3E
@@ -251,47 +260,48 @@ if False:
 
 # Fig 3D
 # Plot whole animal model state space:
-for idx, animal_model in enumerate([2]):
-    NWBfiles = [
-        analysis.load_nwb_file(
-            animal_model=animal_model,
-            learning_condition=learning_condition,
-            experiment_config='structured',
-            type='bn',
-            data_path=simulations_dir
+if False:
+    for idx, animal_model in enumerate([2]):
+        NWBfiles = [
+            analysis.load_nwb_file(
+                animal_model=animal_model,
+                learning_condition=learning_condition,
+                experiment_config='structured',
+                type='bn',
+                data_path=simulations_dir
+            )
+            for learning_condition in range(1, no_of_conditions + 1)
+        ]
+
+        trial_len, ntrials = analysis.get_acquisition_parameters(
+            input_NWBfile=NWBfiles[0],
+            requested_parameters=['trial_len', 'ntrials']
         )
-        for learning_condition in range(1, no_of_conditions + 1)
-    ]
+        custom_range = (20, int(trial_len / 50))
 
-    trial_len, ntrials = analysis.get_acquisition_parameters(
-        input_NWBfile=NWBfiles[0],
-        requested_parameters=['trial_len', 'ntrials']
-    )
-    custom_range = (20, int(trial_len / 50))
+        #K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+        #    NWBfile_array=NWBfiles,
+        #    max_clusters=no_of_conditions * ntrials,
+        #    custom_range=custom_range
+        #)
 
-    #K_star, K_labels, *_ = analysis.determine_number_of_clusters(
-    #    NWBfile_array=NWBfiles,
-    #    max_clusters=no_of_conditions * ntrials,
-    #    custom_range=custom_range
-    #)
+        # Plot the annotated clustering results:
+        #TODO: are these correctly labeled?
+        K_labels = matlib.repmat(np.arange(1, len(NWBfiles) + 1), ntrials, 1) \
+            .T.reshape(ntrials, -1).reshape(1, -1)[0]
+        analysis.pcaL2(
+            NWBfile_array=NWBfiles,
+            klabels=K_labels,
+            custom_range=custom_range,
+            smooth=True, plot_2d=True,
+            plot_axes=D_axis,
+            axis_label_font_size=axis_label_font_size,
+            tick_label_font_size=tick_label_font_size,
+            labelpad_x=labelpad_x,
+            labelpad_y=labelpad_y
+        )
 
-    # Plot the annotated clustering results:
-    #TODO: are these correctly labeled?
-    K_labels = np.matlib.repmat(np.arange(1, len(NWBfiles) + 1), ntrials, 1) \
-        .T.reshape(ntrials, -1).reshape(1, -1)[0]
-    analysis.pcaL2(
-        NWBfile_array=NWBfiles,
-        klabels=K_labels,
-        custom_range=custom_range,
-        smooth=True, plot_2d=True,
-        plot_axes=D_axis,
-        axis_label_font_size=axis_label_font_size,
-        tick_label_font_size=tick_label_font_size,
-        labelpad_x=labelpad_x,
-        labelpad_y=labelpad_y
-    )
-
-nb.mark_figure_letter(D_axis, 'd')
+    nb.mark_figure_letter(D_axis, 'd')
 
 # Fig 3G
 # Scatter plot PC VS clusters
@@ -371,7 +381,7 @@ G_axis.set_xlabel('K*', fontsize=axis_label_font_size)
 G_axis.set_ylabel('Relative Frequency', fontsize=axis_label_font_size)
 nb.axis_normal_plot(axis=G_axis)
 nb.adjust_spines(G_axis, ['left', 'bottom'])
-nb.mark_figure_letter(G_axis, 'g')
+nb.mark_figure_letter(G_axis, 'f')
 
 
 plt.subplots_adjust(top=0.92, bottom=0.15, left=0.10, right=0.95, hspace=0.25,
@@ -380,8 +390,8 @@ plt.subplots_adjust(top=0.92, bottom=0.15, left=0.10, right=0.95, hspace=0.25,
 
 
 # <codecell>
-figure3.savefig('Figure_3_final.pdf')
-figure3.savefig('Figure_3_final.png')
+figure3.savefig('Figure_3_final_right.pdf')
+figure3.savefig('Figure_3_final_right.png')
 print('Tutto pronto!')
 
 

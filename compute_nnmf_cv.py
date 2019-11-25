@@ -8,8 +8,8 @@ import pandas as pd
 
 simulations_dir = Path.cwd().joinpath('simulations')
 
-no_of_conditions = 1
-no_of_animals = 1
+no_of_conditions = 10
+no_of_animals = 4
 param_pairs = []
 for animal_model in range(1, no_of_animals + 1):
     for learning_condition in range(1, no_of_conditions + 1):
@@ -40,15 +40,15 @@ def compute_nnmf_cv(inputs):
 
     blah = analysis.determine_number_of_ensembles(
         NWBfile_array=[NWBfile],
-        max_clusters=2,
+        K_max=20,
         custom_range=custom_range,
-        K=2,
-        rng_max_iters=2
+        K_cv=20,
+        rng_max_iters=1
     )
 
 if __name__ == '__main__':
     cwd = Path.cwd()
-    parallel = False
+    parallel = True
 
     # run in parallel:
     if parallel:

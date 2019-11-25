@@ -1,4 +1,6 @@
 from nbformat import v3, v4
+from pathlib import Path
+import sys
 
 '''
 This script converts python files to ipython notebooks. Since in the v4
@@ -10,15 +12,29 @@ https://github.com/jupyter/nbformat/blob/master/nbformat/v3/nbpy.py
 stamatiad.st@gmail.com 
 '''
 
-for id in range(1, 5):
-    with open(f'Generate_Publication_Figure_{id}.py') as python_file:
+def convert_file(filename: Path):
+    if not filename.is_file():
+        print(f'File: {filename} was not found!')
+        raise FileNotFoundError
+
+    outputfile = filename.with_suffix('.ipynb')
+    print('File exists. Attempting to convert it...')
+    # Get a python file
+    with open(filename) as python_file:
         python_code = python_file.read()
 
     notebook_v3 = v3.reads_py(python_code)
     notebook_v4 = v4.upgrade(notebook_v3)  # Upgrade v3 to v4
 
     jsonform = v4.writes(notebook_v4) + "\n"
-    with open(f'Generate_Publication_Figure_{id}.ipynb', "w") as fpout:
+    with open(outputfile, 'w') as fpout:
         fpout.write(jsonform)
 
-print('Done converting python files to ipython notebooks!')
+    print(f'Done converting python file: {filename}\n to ipython notebook: {outputfile}\n')
+
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print('py2ipynb takes one argument: the python filename!\nExiting...')
+        sys.exit(-1)
+
+    convert_file(Path(sys.argv[1]))

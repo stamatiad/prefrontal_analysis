@@ -944,8 +944,10 @@ class Network:
 
 
     def common_neighbors(self, adjmat):
-        adj = np.logical_or(adjmat, adjmat.getT())
-        adj = adj.astype(float) * adj.getT().astype(float)
+        #TODO: THIS SHOULD BE MATRIX MULTIPLICATION, WHY ITS A SIMPLE ONE?
+        #DOES IT WORK IN THE ORIGINAL PAPER?
+        adj = np.logical_or(adjmat, adjmat.T)
+        adj = adj.astype(float) @ adj.T.astype(float)
         adj = self.zero_diagonal(adj)
         return adj
 
@@ -1088,7 +1090,6 @@ class Network:
         df = pd.DataFrame(self.stats, index=[0])
         df.to_hdf(filename, key='stats')
         #blah = pd.read_hdf(filename, key='attributes')
-        pass
 
 def isdirected(adj):
     '''

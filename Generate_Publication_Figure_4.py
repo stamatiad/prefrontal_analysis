@@ -1,16 +1,16 @@
 # <markdowncell>
 # # # Generate Figure 4
-# Population activity in neuronal pattern space, shows that different neuronal 
-# assemblies are active for each population activity trajectories. A. Smoothed 
-# single neuron activity for 0.5 sec of stimulus (green area) and 0.5 sec of 
-# delay epoch. B. Same population activity as in A, but now reduced with NNMF 
-# to 3 components (assembly space). The dynamic and highly irregular single 
-# neuron activity, appears smooth in the assembly space. Also the change from 
-# the stimulus to delay epoch is evident. C. Activity of 7 trials with delay 
-# epoch response (out of 10), colored as three k-means identified states, 
-# presented each time with respect to an assembly activity. It is evident 
-# that stable population states that cluster in state space (similar colors), 
-# appear to correspond to activity of a specific assembly. D. Same data as C, 
+# Population activity in neuronal pattern space, shows that different neuronal
+# assemblies are active for each population activity trajectories. A. Smoothed
+# single neuron activity for 0.5 sec of stimulus (green area) and 0.5 sec of
+# delay epoch. B. Same population activity as in A, but now reduced with NNMF
+# to 3 components (assembly space). The dynamic and highly irregular single
+# neuron activity, appears smooth in the assembly space. Also the change from
+# the stimulus to delay epoch is evident. C. Activity of 7 trials with delay
+# epoch response (out of 10), colored as three k-means identified states,
+# presented each time with respect to an assembly activity. It is evident
+# that stable population states that cluster in state space (similar colors),
+# appear to correspond to activity of a specific assembly. D. Same data as C,
 # now plotted in assembly space.
 # <markdowncell>
 # Import necessary modules:
@@ -31,6 +31,7 @@ import pandas as pd
 import seaborn as sb
 import scipy.stats
 import math
+import matplotlib.colors as mcolors
 
 # <markdowncell>
 # ## Create figure 4
@@ -54,16 +55,11 @@ plt.rcParams.update({'font.family': 'Helvetica'})
 # Beginning of Figure 4
 #===============================================================================
 #===============================================================================
-plt.ion()
-
-# I must discover the optimal number of NNMF components:
-#fig, axblah = plt.subplots(1,1)
-#plt.cla()
-#plt.ion()
 
 subplot_width = 4
 subplot_height = 1
 figure4 = plt.figure(figsize=plt.figaspect(subplot_height / subplot_width))
+figure4.patch.set_facecolor('white')
 
 gs1 = gridspec.GridSpec(
     1, 1, left=0.05, right=0.15, top=0.95, bottom=0.50, wspace=0.35, hspace=0.0
@@ -87,8 +83,8 @@ nb.mark_figure_letter(C_axis_a, 'C')
 
 # Plot same animal model, different learning conditions:
 NWBfile = analysis.load_nwb_file(
-    animal_model=3,
-    learning_condition=3,
+    animal_model=1,
+    learning_condition=2,
     experiment_config='structured',
     type='bn',
     data_path=simulations_dir
@@ -120,6 +116,7 @@ A_axis_a.axvspan(0.0, 500.0, ymin=0, ymax=1, color='g', alpha=0.2)
 nb.adjust_spines(A_axis_a, ['left', 'bottom'])
 A_axis_a.xaxis.set_ticks_position('none')
 A_axis_a.xaxis.set_ticklabels([])
+A_axis_a.set_ylabel('Firing Frequency (Hz)')
 nb.mark_figure_letter(A_axis_a, 'a')
 
 # First decomposition: stimulus to delay transition:
@@ -153,9 +150,12 @@ B_axis_c.xaxis.set_ticklabels([])
 B_axis_c.yaxis.set_ticks_position('none')
 B_axis_c.yaxis.set_ticklabels([])
 B_axis_c.set_xlabel('Time (ms)')
+B_axis_b.set_ylabel('Assembly activation')
+B_axis_b.yaxis.set_label_position("right")
 nb.mark_figure_letter(B_axis_a, 'b')
 
 
+custom_range = (20, int(trial_len / 50))
 
 W_components, *_ = analysis.NNMF(
     NWBfile_array=[NWBfile],
@@ -164,6 +164,8 @@ W_components, *_ = analysis.NNMF(
     smooth=True,
     plot=False
 )
+
+nb.report_value('No of trials with PA in C', W_components.shape[1])
 
 E_ax = [C_axis_a, C_axis_b, C_axis_c]
 klabels = K_labels
@@ -228,7 +230,7 @@ plot_axes.set_xlabel('Assembly 1')
 plot_axes.set_ylabel('Assembly 2')
 plot_axes.set_zlabel('Assembly 3')
 #TODO: Someway the W_components are smaller (NNMF seems the culprit). Investigate
-pca_axis_limits = (0, 0.1)
+pca_axis_limits = (0, 0.5)
 plot_axes.set_xlim(pca_axis_limits)
 plot_axes.set_ylim(pca_axis_limits)
 plot_axes.set_zlim(pca_axis_limits)
@@ -246,9 +248,44 @@ _, key_labels = np.unique(labels, return_index=True)
 handles = []
 total_trials = W_components.shape[1]
 duration = W_components.shape[2]
-colors = {1: cm.Greens(np.linspace(0, 1, duration - 1)),
-          2: cm.Blues(np.linspace(0, 1, duration - 1)),
-          3: cm.Oranges(np.linspace(0, 1, duration - 1)),
+# Use same colors:
+stim_stop = 21  # Stim stop in q=50ms
+stim_stop_norm = stim_stop / duration
+c = mcolors.ColorConverter().to_rgb
+
+cluster_a_cm = analysis.make_colormap(
+    [
+        c('red'), c('red'), 0.0,
+        c('red'), c('darkred'), 0.99,
+        c('darkred')
+    ]
+)
+cluster_b_cm = analysis.make_colormap(
+    [
+        c('violet'), c('violet'), 0.0,
+        c('violet'), c('darkviolet'), 0.99,
+        c('darkviolet')
+    ]
+)
+cluster_c_cm = analysis.make_colormap(
+    [
+        c('gold'), c('gold'), 0.0,
+        c('gold'), c('goldenrod'), 0.99,
+        c('goldenrod')
+    ]
+)
+cluster_d_cm = analysis.make_colormap(
+    [
+        c('blue'), c('blue'), 0.0,
+        c('blue'), c('darkblue'), 0.99,
+        c('darkblue')
+    ]
+)
+
+colors = {1: cluster_a_cm(np.linspace(0, 1, duration - 1)),
+          2: cluster_b_cm(np.linspace(0, 1, duration - 1)),
+          3: cluster_c_cm(np.linspace(0, 1, duration - 1)),
+          4: cluster_d_cm(np.linspace(0, 1, duration - 1)),
           }
 for i, (trial, label) in enumerate(zip(range(total_trials), labels)):
     capture_artist = True
@@ -266,7 +303,7 @@ for i, (trial, label) in enumerate(zip(range(total_trials), labels)):
                 handles.append(handle[0])
                 capture_artist = False
 # Youmust group handles based on unique labels.
-plot_axes.legend(handles=handles, labels=['State 1', 'State 2', 'State 3'])
+plot_axes.legend(handles=handles, labels=['Trajectory 1', 'Trajectory 2', 'Trajectory 3', 'Trajectory 4'])
 nb.mark_figure_letter(D_axis_a, 'd')
 
 #TODO: na pros8eseis ena graph. h timh sto text pou na leei to cosine dist
@@ -281,20 +318,34 @@ K_star_mat = np.zeros((no_of_animals, no_of_conditions), dtype=int)
 for animal_model in range(1, no_of_animals + 1):
     for learning_condition in range(1, no_of_conditions + 1):
         print(f'NT:{animal_model}, LC:{learning_condition}')
-        inputfile = data_dir.joinpath(
-            f'cross_valid_errors_structured{animal_model}_{learning_condition}.hdf'
-        )
+        K_max = 20
+        K_cv = 20
+        rng_max_iters = 1
+        fn_str = (
+            'cross_validation_errors_structured'
+            '_AM{animal_model_id}'
+            '_LC{learning_condition_id}'
+            '_Kmax{K_max}'
+            '_Kcv{K_cv}'
+            '_RI{rng_max_iters}.hdf').format
+        inputfile = data_dir.joinpath(fn_str(
+            animal_model_id=animal_model,
+            learning_condition_id=learning_condition,
+            K_max=K_max,
+            K_cv=K_cv,
+            rng_max_iters=rng_max_iters
+        ))
         # Read CV results.
         try:
-            attribs = pd.read_hdf(inputfile, key='attributes').to_dict()
-            K = attribs['K'][0]
-            max_clusters = attribs['max_clusters'][0]
-            rng_max_iters = attribs['rng_max_iters'][0]
-            error_bar = pd.read_hdf(inputfile, key='error_bar') \
-                .values.reshape(max_clusters, K, rng_max_iters) \
+            #attribs = pd.read_hdf(inputfile, key='attributes').to_dict()
+            #K_cv = attribs['K_cv'][0]
+            #K_max = attribs['K_max'][0]
+            #rng_max_iters = attribs['rng_max_iters'][0]
+            error_train = pd.read_hdf(inputfile, key='error_train') \
+                .values.reshape(K_max, K_cv, rng_max_iters) \
                     .mean(axis=2)
             error_test = pd.read_hdf(inputfile, key='error_test') \
-                .values.reshape(max_clusters, K, rng_max_iters) \
+                .values.reshape(K_max, K_cv, rng_max_iters) \
                     .mean(axis=2)
             K_str_cv = np.argmin(error_test.mean(axis=1))
             K_star_mat[animal_model - 1, learning_condition - 1] = K_str_cv
@@ -352,11 +403,6 @@ for pos, animal in enumerate(models_list):
     K_s.append(list(optimal_clusters_of_group[dataset_name(animal)][:,0]))
     K_s_CV.append(list(optimal_clusters_of_group[dataset_name(animal)][:,1]))
 
-#test the correlation, scattering the data (eyeball it first):
-fig, ax = plt.subplots(1,1)
-ax.scatter(x=list(chain(*K_s)), y=list(chain(*K_s_CV)))
-fig.savefig('scatter_K_CV.png')
-
 X = np.array(list(chain(*K_s)), dtype=int)
 Y = np.array(list(chain(*K_s_CV)), dtype=int) + 1
 sb.regplot(X, Y, ax=E_axis_a, marker='.', color='C0')
@@ -378,8 +424,8 @@ nb.adjust_spines(E_axis_a, ['left', 'bottom'])
 nb.mark_figure_letter(E_axis_a, 'e')
 
 # <codecell>
-figure4.savefig('Figure_4_final.pdf')
-figure4.savefig('Figure_4_final.png')
+figure4.savefig('Figure_4_final_right.pdf')
+figure4.savefig('Figure_4_final_right.png')
 print('Tutto pronto!')
 
 

@@ -15,6 +15,7 @@ from scipy.signal import savgol_filter
 from itertools import chain
 
 from datetime import datetime
+#TODO: this is some namespace mangling, rename NWBFile in your code please.
 from pynwb import NWBFile
 from pynwb import NWBHDF5IO
 from pynwb.form.backends.hdf5.h5_utils import H5DataIO
@@ -22,6 +23,9 @@ from pynwb import TimeSeries
 from collections import defaultdict
 from functools import partial
 import matrix_utils as matu
+
+import load_raw_batch as load_raw
+from sklearn.cluster import AffinityPropagation as AP
 
 def time_it(function):
     @wraps(function)
@@ -38,9 +42,9 @@ def nwb_unique_rng(function):
     def seed_rng(*args, **kwargs):
         # Determine first the NWB file:
         if kwargs.get('input_NWBfile', None):
-            NWBFile = kwargs.get('input_NWBfile', None)
+            NWBfile = kwargs.get('input_NWBfile', None)
         elif kwargs.get('NWBfile_array', None):
-            NWBFile = kwargs.get('NWBfile_array', None)[0]
+            NWBfile = kwargs.get('NWBfile_array', None)[0]
         else:
             raise ValueError('Input NWBfile is nonexistent!')
 
@@ -52,7 +56,7 @@ def nwb_unique_rng(function):
 
         animal_model_id, learning_condition_id = \
             get_acquisition_parameters(
-                input_NWBfile=NWBFile,
+                input_NWBfile=NWBfile,
                 requested_parameters=[
                     'animal_model_id', 'learning_condition_id'
                 ]
@@ -86,7 +90,9 @@ simulation_template = (
     '_GBF2.000'
     '_NMDAb{nmda_bias:.3f}'
     '_AMPAb{ampa_bias:.3f}'
-    '_{experiment_config}_simdur{sim_duration}').format
+    '_CP{cp}'
+    '_{experiment_config}_simdur{sim_duration}'
+    '{postfix}').format
 
 #TODO: name them correctly:
 excitatory_validation_template = (
@@ -185,6 +191,7 @@ def read_validation_potential(cellid=0, trialid=0, \
         )
     )
     # In this instance just reads a txt file:
+    #TODO: make try/except in case file is nonexistent!
     with open(inputfile, 'r') as f:
         timeseries = list(map(float, f.readlines()))
     return timeseries
@@ -395,15 +402,222 @@ def create_nwb_validation_file(inputdir=None, outputdir=None,
     with NWBHDF5IO(str(output_file), 'w') as io:
         io.write(nwbfile)
 
+def create_nwb_validation_file_ampatest(inputdir=None, outputdir=None,
+                               synapse_activation=None, location=None,
+                               **kwargs):
+    # Create a NWB file from the results of the validation routines.
+
+    print('Creating NWBfile.')
+    nwbfile = NWBFile(
+        session_description='NEURON validation results.',
+        identifier='excitatory_validation_ampatest',
+        session_start_time=datetime.now(),
+        file_create_date=datetime.now()
+    )
+
+    # Partially automate the loading with the aid of a reading function;
+    # use a generic reading function that you make specific with partial and
+    # then just load all the trials:
+    #TODO: you should put somewhere the external kwargs!!
+    if not synapse_activation:
+        synapse_activation = list(range(1, 25, 1))
+    if not location:
+        location = 'vsoma'
+    basic_kwargs = {'ncells': 1, 'ntrials': len(synapse_activation), \
+                    'stim_start_offset': 100, 'stim_stop_offset': 140,
+                    'trial_len': 700, 'samples_per_ms': 10}
+
+
+    # 'Freeze' some portion of the function, for a simplified one:
+    read_somatic_potential = partial(
+        read_validation_potential,
+        inputdir=inputdir,
+        synapse_activation=synapse_activation,
+        location='vsoma'
+    )
+
+    # Load first batch:
+    import_recordings_to_nwb(
+        nwbfile=nwbfile,
+        read_function=partial(
+            read_somatic_potential,
+            condition='normal',
+            currents='NMDA+AMPA',
+            nmda_bias=6.0,
+            ampa_bias=1.0,
+        ),
+        timeseries_name='normal_NMDA+AMPA',
+        timeseries_description='Validation',
+        **basic_kwargs
+    )
+
+    # Rinse and repeat:
+    import_recordings_to_nwb(
+        nwbfile=nwbfile,
+        read_function=partial(
+            read_somatic_potential,
+            condition='normal',
+            currents='AMPA',
+            nmda_bias=0.0,
+            ampa_bias=1.0,
+        ),
+        timeseries_name='normal_AMPA_only',
+        timeseries_description='Validation',
+        **basic_kwargs
+    )
+
+    '''
+    # Use partial to remove some of the kwargs that are the same:
+    read_dendritic_potential = partial(
+        read_validation_potential,
+        inputdir=inputdir,
+        synapse_activation=synapse_activation,
+        location='vdend'
+    )
+
+    # Load dendritic potential:
+    import_recordings_to_nwb(
+        nwbfile=nwbfile,
+        read_function=partial(
+            read_dendritic_potential,
+            condition='normal',
+            currents='NMDA+AMPA',
+            nmda_bias=6.0,
+            ampa_bias=1.0,
+        ),
+        timeseries_name='vdend_normal_NMDA+AMPA',
+        timeseries_description='Validation',
+        **basic_kwargs
+    )
+
+    # Load dendritic potential:
+    import_recordings_to_nwb(
+        nwbfile=nwbfile,
+        read_function=partial(
+            read_dendritic_potential,
+            condition='normal',
+            currents='AMPA',
+            nmda_bias=0.0,
+            ampa_bias=1.0,
+        ),
+        timeseries_name='vdend_normal_AMPA',
+        timeseries_description='Validation',
+        **basic_kwargs
+    )
+    '''
+
+    # write to file:
+    output_file = outputdir.joinpath(
+        'excitatory_validation_ampatest_1.nwb'
+    )
+    print(f'Writing to NWBfile: {output_file}')
+    with NWBHDF5IO(str(output_file), 'w') as io:
+        io.write(nwbfile)
+
+def load_nwb_from_neuron(
+    data_folder,
+    new_params=None,
+    reload_raw=False,
+    include_membrane_potential=False,
+    **kwargs):
+    #TODO:  the reload_raw parameter should bleed into the import_raw neuron 
+    # data, inside the create_nwb_file? Or add a second flag to do that?
+    # Do I need that is the question?
+    analysis_parameters = {
+        'stim_start_offset': 50,
+        'stim_stop_offset': 1050,
+        'q_size': 50,
+        'total_qs': None,
+        'ntrials': 1,
+        'ncells': 333,
+        'spike_upper_threshold': 0,
+        'spike_lower_threshold': -10,
+        'data_dim': 2,
+        'samples_per_ms': 10,
+        'q_size': 50,
+        'nmda_bias': 3.0,
+        'ampa_bias': 1.0,
+        'animal_model': 1,
+        'learning_condition': 1,
+        'prefix': '',
+        'postfix': '',
+        'trial': 0,
+        'sps': 10,
+    }
+
+    all_input_params = {**analysis_parameters, **new_params}
+    all_input_params['trial_len'] = \
+        all_input_params['sim_duration'] * 1000
+    all_input_params['total_qs'] = \
+        int(np.floor(all_input_params['trial_len'] / all_input_params['q_size']))
+
+    # TODO: make sure you dont confuse files with multiple trials:
+    all_output_params = all_input_params
+    # If I have more than one trials:
+    if all_output_params['ntrials'] > all_output_params['trial']:
+        all_output_params['trial'] = all_output_params['ntrials'] - 1
+
+    outfn = simulation_template(
+        **all_output_params
+    ) + '.nwb'
+    filename = data_folder.joinpath(
+        outfn
+    )
+    already_converted = filename.exists()
+
+    if reload_raw or not already_converted:
+        try:
+            create_nwb_file(
+                inputdir=data_folder,
+                outputdir=data_folder,
+                same_io_folder=True,
+                include_membrane_potential=include_membrane_potential,
+                reload_raw=reload_raw,
+                **all_input_params
+            )
+        except Exception as e:
+            print(str(e))
+            return None
+    else:
+        print(f'Run dir {data_folder} is already converted to NWB!')
+
+    if not Path.is_file(filename):
+        raise FileNotFoundError(f'The file {filename} was not found :(')
+
+    print(f'Loading NWB file2: \n{str(filename)}')
+    nwbfile = NWBHDF5IO(str(filename), 'r').read()
+
+    return nwbfile
+
+
+def load_raw_neuron(inputdir, rundir, reload_raw=False):
+    try:
+        inputfile = inputdir.joinpath(rundir).joinpath('vsoma.hdf5')
+        # If input hdf file exists, just take the traces.
+        if reload_raw or not inputfile.exists():
+            print(fr'Converting data to HDF in dir\n \t{rundir}')
+            try:
+                load_raw.main(inputdir.joinpath(rundir))
+            except Exception as e:
+                print(f'Exception while reading voltage files: {str(e)}\n maybe simulation is not complete!')
+                raise FileNotFoundError
+        # Convert dataframe to ndarray:
+        voltage_traces = pd.read_hdf(inputfile, key='vsoma').values
+        return voltage_traces
+    except FileNotFoundError as e:
+        print(f'NEURON file {rundir} not found! Returning None.')
+        return None
+
 def create_nwb_file(inputdir=None, outputdir=None, \
                     include_membrane_potential=False, **kwargs):
     # Get parameters externally:
     experiment_config, animal_model, learning_condition, ntrials, trial_len, ncells, stim_start_offset, \
     stim_stop_offset, samples_per_ms, spike_upper_threshold, spike_lower_threshold, excitation_bias, \
-        inhibition_bias, nmda_bias, ampa_bias, sim_duration, q_size, fn_prefix = \
+        inhibition_bias, nmda_bias, ampa_bias, sim_duration, q_size, fn_prefix, fn_postfix, cp= \
         getargs('experiment_config', 'animal_model', 'learning_condition', 'ntrials', 'trial_len', 'ncells', 'stim_start_offset', \
                    'stim_stop_offset', 'samples_per_ms', 'spike_upper_threshold', 'spike_lower_threshold', \
-                'excitation_bias', 'inhibition_bias', 'nmda_bias', 'ampa_bias', 'sim_duration', 'q_size', 'fn_prefix', kwargs)
+                'excitation_bias', 'inhibition_bias', 'nmda_bias', 'ampa_bias', 'sim_duration', 'q_size', 'prefix', 'postfix', 'cp',kwargs)
+    reload_raw = kwargs.get('reload_raw', False)
 
     # the base unit of time is the ms:
     samples2ms_factor = 1 / samples_per_ms
@@ -438,9 +652,11 @@ def create_nwb_file(inputdir=None, outputdir=None, \
     membrane_potential = np.array([])
     vsoma = np.zeros((ncells, nsamples), dtype=float)
     trial_offset_samples = 0
+    trials_loaded = []
     for trial, (trial_start_t, trial_end_t) in enumerate(generate_slices(size=nsamples, number=ntrials)):
         # Search inputdir for files specified in the parameters
-        inputfile = inputdir.joinpath(
+        # get input dir and search for hdf file. if non existent create it.
+        rundir = inputdir.joinpath(
             simulation_template(
                 prefix=fn_prefix,
                 excitation_bias=excitation_bias,
@@ -451,11 +667,14 @@ def create_nwb_file(inputdir=None, outputdir=None, \
                 animal_model=animal_model,
                 learning_condition=learning_condition,
                 trial=trial,
-                experiment_config=experiment_config
-            )).joinpath('vsoma.hdf5')
-        if inputfile.exists():
-            # Convert dataframe to ndarray:
-            voltage_traces = pd.read_hdf(inputfile, key='vsoma').values
+                experiment_config=experiment_config,
+                cp=cp,
+                postfix=fn_postfix
+            ))
+        voltage_traces = load_raw_neuron(inputdir, rundir, reload_raw=reload_raw)
+        if voltage_traces is not None:
+            # Register trial as existing:
+            trials_loaded.append(trial)
             vsoma = voltage_traces[:ncells, :nsamples]
             # Offset trial start, in case of any missing trials occuring.
             trial_start_t -= trial_offset_samples
@@ -504,10 +723,13 @@ def create_nwb_file(inputdir=None, outputdir=None, \
                 membrane_potential = vsoma
             print(f'Trial {trial}, processed successfully.')
         else:
-            print(f'Trial {trial} NEURON file is missing!\n\t{str(inputfile)}')
+            print(f'Trial {trial} NEURON file is missing!\n\t{str(rundir)}')
             # Inform next trials to skip the ms of the missing file
             trial_offset_samples += nsamples
 
+    if len(trials_loaded) == 0:
+        print('ERROR no trials found whatsoever for this folder!\nReturning None!')
+        raise FileNotFoundError
 
     if include_membrane_potential:
         # Chunk and compress the data:
@@ -610,14 +832,33 @@ def create_nwb_file(inputdir=None, outputdir=None, \
     else:
         type = 'bn'
 
-    output_file = outputdir.joinpath(
-        experiment_config_filename(
+    if kwargs.get('same_io_folder', False):
+        outfn = simulation_template(
+            prefix=fn_prefix,
+            excitation_bias=excitation_bias,
+            inhibition_bias=inhibition_bias,
+            nmda_bias=nmda_bias,
+            ampa_bias=ampa_bias,
+            sim_duration=sim_duration,
             animal_model=animal_model,
             learning_condition=learning_condition,
+            trial=trial,
             experiment_config=experiment_config,
-            type=type
+            cp=cp,
+            postfix=fn_postfix
+        ) + '.nwb'
+        output_file = inputdir.joinpath(
+            outfn
         )
-    )
+    else:
+        output_file = outputdir.joinpath(
+            experiment_config_filename(
+                animal_model=animal_model,
+                learning_condition=learning_condition,
+                experiment_config=experiment_config,
+                type=type
+            )
+        )
     print(f'Writing to NWBfile: {output_file}')
     with NWBHDF5IO(str(output_file), 'w') as io:
         io.write(nwbfile)
@@ -654,12 +895,15 @@ def get_acquisition_potential(NWBfile=None, acquisition_name=None, cellid=None, 
     # Unpack trial start/stop.
     trialid, trial_start_ms, trial_stop_ms, *_ = trials[trialid]
 
+    # cellid can also be a vector, describing the requested cells' voltages:
     potential = NWBfile.acquisition['membrane_potential']. \
                     data[cellid, int(trial_start_ms * samples_per_ms): \
                                  int(trial_stop_ms * samples_per_ms): \
                                  int(samples_per_ms)]
 
-    return potential
+    # Return the transposed of the potential so you can matplotlib.pyplot the
+    # result with a single command.
+    return potential.T
 
 
 def get_acquisition_spikes(NWBfile=None, acquisition_name=None, group_per_trial=True):
@@ -1002,7 +1246,7 @@ def energy(data=None):
     # Get frobenius norm:
     #TODO: na balw swsta to 50 (q_size):
     energy = np.array([
-        np.sum(data[:, trial, :] * dt, axis=0) / 50
+        np.abs(np.diff(np.sum(data[:, trial, :] * dt, axis=0) /250 ))
         for trial in range(ntrials)
     ])
     return energy
@@ -1041,7 +1285,7 @@ def velocity(data=None):
     #end
     return velocity
 
-def get_correct_trials(NWBfile, custom_range=None):
+def get_binned_activity(NWBfile, custom_range=None):
     # Return only trials with persistent activity (see text).
     animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
     trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
@@ -1053,9 +1297,6 @@ def get_correct_trials(NWBfile, custom_range=None):
                 'correct_trials_idx', 'correct_trials_no'
             ]
         )
-
-    if correct_trials_no < 1:
-        raise ValueError('No correct trials were found in the NWBfile!')
 
     # Use custom_range to compute PCA only on a portion of the original data:
     if custom_range is not None:
@@ -1074,8 +1315,38 @@ def get_correct_trials(NWBfile, custom_range=None):
                                   acquisition['binned_activity']. \
                                   data[:pn_no, :]. \
         reshape(pn_no, ntrials, trial_q_no)
+
+    return binned_network_activity, trial_slice_start, trial_slice_stop
+
+
+def get_correct_trials(NWBfile, custom_range=None):
+    # Return only trials with persistent activity (see text).
+    binned_network_activity, trial_slice_start, trial_slice_stop = \
+        get_binned_activity(
+            NWBfile,
+            custom_range=custom_range
+        )
+
+    animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
+    trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
+        get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=[
+                'animal_model_id', 'learning_condition_id', 'ncells',
+                'pn_no', 'ntrials', 'trial_len', 'q_size', 'trial_q_no',
+                'correct_trials_idx', 'correct_trials_no'
+            ]
+        )
+
+    if correct_trials_no < 1:
+        raise ValueError('No correct trials were found in the NWBfile!')
+
     # Slice out non correct trials and unwanted trial periods:
-    response_array = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
+    response_array = binned_network_activity[
+                     :,
+                     correct_trials_idx,
+                     trial_slice_start:trial_slice_stop
+                     ]
 
     return response_array
 
@@ -1305,6 +1576,521 @@ def q2sec(q_size=50, q_time=0):
     return np.divide(q_time, (1000 / q_size))
 
 @nwb_unique_rng
+def stim_variance_captured(
+        input_NWBfile=None, S=None, T=None,plot_2d=False, plot_3d=False, custom_range=None,
+        klabels=None, pca_components=20, smooth=False, plot_axes=None,
+        axis_label_font_size=12, tick_label_font_size=12, labelpad_x=10,
+        labelpad_y=10, **kwargs
+):
+    '''
+    This function reads binned activity from a list of files and performs PCA
+    with L=2 on it.
+    :param NWBfile_array:
+    :param plot:
+    :param custom_range:
+    :param klabels:
+    :param smooth:
+    :param kwargs:
+    :return:
+    '''
+
+    data = get_correct_trials(input_NWBfile, custom_range=custom_range)
+    #TODO: make sure you don't get the stimulus period also
+    data_over_stimuli = data.mean(axis=2)
+    data_over_time = data.mean(axis=1)
+    # number of correct trials (stimuli):
+    N = data.shape[0]
+    M = data.shape[1]
+    r_m = data_over_stimuli.mean(axis=1)
+    max_delta_t = 80
+    V_t = np.full((max_delta_t, data.shape[2]), np.nan)
+    # An kai nomizw oti einai xazo afto :
+    for delta_t in range(1,max_delta_t):
+        for t in range(data.shape[2]-delta_t-1):
+            X = data[:,:,t+delta_t].T - r_m
+            C = (X.T @ X) / (M - 1)
+            V_t[delta_t, t] = np.trace(S @ C @ S.T) / N
+
+    fig,ax = plt.subplots()
+    ax.plot(np.nanmean(V_t,axis=1), color='blue')
+
+    # Stim variance captured for dynamic subspace:
+    V_Dt = np.full((max_delta_t, data.shape[2]), np.nan)
+    for delta_t in range(1,max_delta_t):
+        #delta_t = 3
+        for t in range(data.shape[2]-delta_t-1):
+            X = data[:,:,t+delta_t].T - r_m
+            C = (X.T @ X) / (M - 1)
+            V_Dt[delta_t, t] = np.trace(T[t] @ C @ T[t].T) / N
+
+    #fig,ax = plt.subplots()
+    ax.plot(np.nanmean(V_Dt,axis=1), color='red')
+    print('tutto pronto!')
+
+
+@nwb_unique_rng
+def pcaL2_with_time_variance(
+        input_NWBfile=None, plot_2d=False, plot_3d=False, custom_range=None,
+        klabels=None, pca_components=20, smooth=False, plot_axes=None,
+        axis_label_font_size=12, tick_label_font_size=12, labelpad_x=10,
+        labelpad_y=10, **kwargs
+):
+    '''
+    This function reads binned activity from a list of files and performs PCA
+    with L=2 on it.
+    :param NWBfile_array:
+    :param plot:
+    :param custom_range:
+    :param klabels:
+    :param smooth:
+    :param kwargs:
+    :return:
+    '''
+    data = get_correct_trials(input_NWBfile, custom_range=custom_range)
+    #TODO: make sure you don't get the stimulus period also
+    data_over_stimuli = data.mean(axis=2)
+    data_over_time = data.mean(axis=1)
+
+    # Get mnemonic subspace, S:
+    # Do the two (stim/time) PCAs and then orthogonalize the time axis:
+    # how many PCA components over different stimuli?
+    # Use max pca components, then decide how many to keep based on threshold.
+    L = 2
+    pca = decomposition.PCA(n_components=L)
+    t_L_stimuli = pca.fit_transform(data_over_stimuli.T).T
+    components_stimuli = pca.components_
+    latent_stimuli = pca.explained_variance_
+    t_L_time = pca.fit_transform(data_over_time.T).T
+    components_time = pca.components_
+    latent_time = pca.explained_variance_
+
+    #todo: cross product?
+    time_component = \
+        components_time[0] \
+        - (components_stimuli[0].T @ components_time[0]) * components_stimuli[0]\
+        - (components_stimuli[1].T @ components_time[0]) * components_stimuli[1]
+    # project data to components:
+    S = np.concatenate((components_stimuli,time_component.reshape(-1,1).T), axis=0)
+
+    # Get dynamic subspace T:
+    L = 2
+    pca = decomposition.PCA(n_components=L)
+    T = []
+    for t in range(1, data.shape[2] -1):
+        _ = pca.fit_transform(data[:,:,t].T).T
+        components_stimuli = pca.components_
+        _ = pca.fit_transform(data_over_time[:,t:t+2].T).T
+        components_time = pca.components_
+
+        #todo: cross product?
+        time_component = \
+            components_time[0] \
+            - (components_stimuli[0].T @ components_time[0]) * components_stimuli[0] \
+            - (components_stimuli[1].T @ components_time[0]) * components_stimuli[1]
+        T.append(np.concatenate((components_stimuli,time_component.reshape(-1,1).T), axis=0))
+
+
+    correct_trials_no = data.shape[1]
+    duration = data.shape[2]
+    t_L_per_trial = np.empty([3,correct_trials_no,duration])
+    for trial in range(correct_trials_no):
+        #TODO: have you forgot to remove the mean?
+        blah = S @ data[:,trial,:]
+        if t_L_per_trial.size:
+            t_L_per_trial[:,trial,:] = blah
+            pass
+        else:
+            t_L_per_trial[:,0,:] = blah
+
+    if False:
+        # If not part of a subfigure, create one:
+        if not plot_axes:
+            fig = plt.figure()
+            plt.ion()
+            plot_axes = fig.add_subplot(111, projection='3d')
+        #TODO: set title outside (you have the axis handle)
+        #plot_axes.set_title(f'Synaptic Reconfiguration {learning_condition_id}')
+        # Stylize the 3d plot:
+        plot_axes.w_xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+        plot_axes.w_yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+        plot_axes.w_zaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+        plot_axes.set_xlabel(
+            'PC1', fontsize=axis_label_font_size, labelpad=labelpad_x
+        )
+        plot_axes.set_ylabel(
+            'PC2', fontsize=axis_label_font_size, labelpad=labelpad_x
+        )
+        plot_axes.set_zlabel(
+            'Time', fontsize=axis_label_font_size, labelpad=labelpad_x
+        )
+        pc1_max = int(np.max(blah[0, :].reshape(-1, 1)))
+        pc1_min = int(np.min(blah[0, :].reshape(-1, 1)))
+        pc2_max = int(np.max(blah[1, :].reshape(-1, 1)))
+        pc2_min = int(np.min(blah[1, :].reshape(-1, 1)))
+        pc3_max = int(np.max(blah[2, :].reshape(-1, 1)))
+        pc3_min = int(np.min(blah[2, :].reshape(-1, 1)))
+        pc1_axis_limits = (pc1_min, pc1_max)
+        pc2_axis_limits = (pc2_min, pc2_max)
+        pc3_axis_limits = (pc3_min, pc3_max)
+        #TODO: change the 20 with a proper variable (do I have one?)
+        time_axis_ticks = np.linspace(0, duration, (duration / 20) + 1)
+        time_axis_ticklabels = q2sec(q_time=time_axis_ticks)  #np.linspace(0, time_axis_limits[1], duration)
+        plot_axes.set_xlim(pc1_axis_limits)
+        plot_axes.set_ylim(pc2_axis_limits)
+        plot_axes.set_zlim(pc3_axis_limits)
+        plot_axes.set_xticks(pc1_axis_limits)
+        plot_axes.set_yticks(pc2_axis_limits)
+        plot_axes.set_zticks(pc3_axis_limits)
+        plot_axes.set_zticklabels(
+            time_axis_ticklabels, fontsize=tick_label_font_size
+        )
+        plot_axes.elev = 22.5
+        plot_axes.azim = 52.4
+
+        colors = cm.viridis(np.linspace(0, 1, duration - 1))
+        for t, c in zip(range(duration - 1), colors):
+            plot_axes.plot(
+                blah[0][t:t+2],
+                blah[1][t:t+2],
+                blah[2][t:t+2],
+                color=c,
+                linewidth=3
+            )
+        plt.show()
+
+
+    total_data_trials = correct_trials_no
+    if plot_2d:
+        # Plots the t_L_r as 2d timeseries per trial. Also to ease the cluster
+        # identification in the case of multiple learning conditions plots in
+        # addition a 2d scatterplot of the data.
+
+        # Scatterplot:
+        if klabels is not None:
+            # If not part of a subfigure, create one:
+            if not plot_axes:
+                fig = plt.figure()
+                plt.ion()
+                plot_axes = fig.add_subplot(111)
+
+            plot_axes.set_title(f'Model {animal_model_id}, learning condition {learning_condition_id}')
+            plot_axes.set_xlabel('PC1')
+            plot_axes.set_ylabel('PC2')
+            # Format 3d plot:
+            #plot_axes.axhline(linewidth=4)  # inc. width of x-axis and color it green
+            #plot_axes.axvline(linewidth=4)
+            for axis in ['top', 'bottom', 'left', 'right']:
+                plot_axes.spines[axis].set_linewidth(2)
+
+            labels = klabels.tolist()
+            nclusters = np.unique(klabels).size
+            colors = cm.Set3(np.linspace(0, 1, nclusters))
+            _, key_labels = np.unique(labels, return_index=True)
+            handles = []
+            for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
+                #print(f'Curently plotting trial: {trial}')
+                for t in range(duration - 1):
+                    handle, = plot_axes.plot(
+                        t_L_per_trial[0, trial, t:t+2],
+                        t_L_per_trial[1, trial, t:t+2],
+                        label=f'Cluster {label}',
+                        color=colors[label - 1],
+                        alpha=t / duration
+                    )
+                if i in key_labels:
+                    handles.append(handle)
+
+            #TODO: in multiple NWB files case, with external labels (afto paei
+            # ston caller k oxi edw ston callee, alla anyways) discarded
+            # trials have labels and loops get out of index.
+
+        else:
+            plot_axes.set_title(f'Model {animal_model_id}, learning condition {learning_condition_id}')
+            colors = cm.Greens(np.linspace(0, 1, duration - 1))
+            for trial in range(total_data_trials):
+                for t, c in zip(range(duration - 1), colors):
+                    plot_axes.plot(
+                        t_L_per_trial[0, trial, t:t+2],
+                        t_L_per_trial[1, trial, t:t+2],
+                        color=c,
+                        alpha=t / duration
+                    )
+                mean_point = np.mean(np.squeeze(t_L_per_trial[:2, trial, :]), axis=1)
+                plot_axes.scatter(
+                    mean_point[0], mean_point[1], s=70, c='r', marker='+',
+                    zorder=200
+                )
+
+    if plot_3d:
+        # If not part of a subfigure, create one:
+        if not plot_axes:
+            fig = plt.figure()
+            plt.ion()
+            plot_axes = fig.add_subplot(111, projection='3d')
+        #TODO: set title outside (you have the axis handle)
+        #plot_axes.set_title(f'Synaptic Reconfiguration {learning_condition_id}')
+        # Stylize the 3d plot:
+        plot_axes.w_xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+        plot_axes.w_yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+        plot_axes.w_zaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+        plot_axes.set_xlabel(
+            'PC1', fontsize=axis_label_font_size, labelpad=labelpad_x
+        )
+        plot_axes.set_ylabel(
+            'PC2', fontsize=axis_label_font_size, labelpad=labelpad_x
+        )
+        plot_axes.set_zlabel(
+            'Time', fontsize=axis_label_font_size, labelpad=labelpad_x
+        )
+        pc1_max = int(np.max(t_L_per_trial[0, :, :].reshape(-1, 1)))
+        pc1_min = int(np.min(t_L_per_trial[0, :, :].reshape(-1, 1)))
+        pc2_max = int(np.max(t_L_per_trial[1, :, :].reshape(-1, 1)))
+        pc2_min = int(np.min(t_L_per_trial[1, :, :].reshape(-1, 1)))
+        pc1_axis_limits = (pc1_min, pc1_max)
+        pc2_axis_limits = (pc2_min, pc2_max)
+        time_axis_limits = (0, duration)
+        #TODO: change the 20 with a proper variable (do I have one?)
+        time_axis_ticks = np.linspace(0, duration, (duration / 20) + 1)
+        time_axis_ticklabels = q2sec(q_time=time_axis_ticks)  #np.linspace(0, time_axis_limits[1], duration)
+        plot_axes.set_xlim(pc1_axis_limits)
+        plot_axes.set_ylim(pc2_axis_limits)
+        plot_axes.set_zlim(time_axis_limits)
+        plot_axes.set_xticks(pc1_axis_limits)
+        plot_axes.set_yticks(pc2_axis_limits)
+        plot_axes.set_zticks(time_axis_ticks)
+        plot_axes.set_zticklabels(
+            time_axis_ticklabels, fontsize=tick_label_font_size
+        )
+        plot_axes.elev = 22.5
+        plot_axes.azim = 52.4
+
+
+        if klabels is not None:
+            # EDIT: decide about that:
+            progressive_colors = True
+            #TODO: you need some more variables for the colors.
+            if progressive_colors:
+                # If you have cluster information for the data:
+                # Create custom colormaps for the stimulus and trial period, per label.
+                # Utilize normalized trial times, to create the colormaps.
+                #TODO: make colormap gradient more steep after stimulus.
+                #TODO: Make it read the proper value!
+                stim_stop = 21  # Stim stop in q=50ms
+                stim_stop_norm = stim_stop / duration
+
+                c = mcolors.ColorConverter().to_rgb
+                stim_start_color = 'limegreen'
+                stim_stop_color = 'darkgreen'
+                color_values = []
+                if kwargs.get('plot_stim_color', False):
+                    color_values.append(make_colormap(
+                        [
+                            c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                            c('red'), c('red'), stim_stop_norm + 0.01,
+                            c('red'), c('darkred'), 0.99,
+                            c('darkred')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                            c('violet'), c('violet'), stim_stop_norm + 0.01,
+                            c('violet'), c('darkviolet'), 0.99,
+                            c('darkviolet')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                            c('gold'), c('gold'), stim_stop_norm + 0.01,
+                            c('gold'), c('goldenrod'), 0.99,
+                            c('goldenrod')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                            c('blue'), c('blue'), stim_stop_norm + 0.01,
+                            c('blue'), c('darkblue'), 0.99,
+                            c('darkblue')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                            c('deepskyblue'), c('deepskyblue'), stim_stop_norm + 0.01,
+                            c('deepskyblue'), c('dodgerblue'), 0.99,
+                            c('dodgerblue')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                            c('lightgray'), c('lightgray'), stim_stop_norm + 0.01,
+                            c('lightgray'), c('darkgray'), 0.99,
+                            c('darkgray')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                            c('magenta'), c('magenta'), stim_stop_norm + 0.01,
+                            c('magenta'), c('darkmagenta'), 0.99,
+                            c('darkmagenta')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                            c('darkturquoise'), c('darkturquoise'), stim_stop_norm + 0.01,
+                            c('darkturquoise'), c('teal'), 0.99,
+                            c('teal')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                            c('lime'), c('lime'), stim_stop_norm + 0.01,
+                            c('lime'), c('limegreen'), 0.99,
+                            c('limegreen')
+                        ]
+                    )
+                    )
+                else:
+                    color_values.append(make_colormap(
+                        [
+                            c('red'), c('red'), 0.0,
+                            c('red'), c('darkred'), 0.99,
+                            c('darkred')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('violet'), c('violet'), 0.0,
+                            c('violet'), c('darkviolet'), 0.99,
+                            c('darkviolet')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('gold'), c('gold'), 0.0,
+                            c('gold'), c('goldenrod'), 0.99,
+                            c('goldenrod')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('blue'), c('blue'), 0.0,
+                            c('blue'), c('darkblue'), 0.99,
+                            c('darkblue')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('deepskyblue'), c('deepskyblue'), 0.0,
+                            c('deepskyblue'), c('dodgerblue'), 0.99,
+                            c('dodgerblue')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('lightgray'), c('lightgray'), 0.0,
+                            c('lightgray'), c('darkgray'), 0.99,
+                            c('darkgray')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('magenta'), c('magenta'), 0.0,
+                            c('magenta'), c('darkmagenta'), 0.99,
+                            c('darkmagenta')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('darkturquoise'), c('darkturquoise'), 0.0,
+                            c('darkturquoise'), c('teal'), 0.99,
+                            c('teal')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('lime'), c('lime'), 0.0,
+                            c('lime'), c('limegreen'), 0.99,
+                            c('limegreen')
+                        ]
+                    )
+                    )
+
+            labels = klabels.tolist()
+            nclusters = np.unique(klabels).size
+            colors = cm.Set2(np.linspace(0, 1, nclusters))
+            _, key_labels = np.unique(labels, return_index=True)
+            handles = []
+            for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
+                if progressive_colors:
+                    colors = color_values[label - 1 + kwargs.get('color_skip', 0)](np.linspace(0, 1, duration))
+                    for t, c in zip(range(duration - 1), colors):
+                        if t <= 0:
+                            continue
+                        handle = plot_axes.plot(
+                            t_L_per_trial[0][trial][t:t+2],
+                            t_L_per_trial[1][trial][t:t+2],
+                            range(t,t+2),
+                            color=c,
+                            linewidth=3,
+                            label=f'Cluster {label}'
+                        )
+                else:
+                    x = t_L_per_trial[0][trial][:]
+                    y = t_L_per_trial[1][trial][:]
+                    handle = plot_axes.plot(x, y,
+                                            range(duration),
+                                            color=colors[label - 1],
+                                            linewidth=3,
+                                            label=f'Cluster {label}'
+                                            )
+                if i in key_labels:
+                    handles.append(handle[0])
+            # Youmust group handles based on unique labels.
+            plot_axes.legend(
+                handles=handles,
+                labels=named_serial_no('State', len(key_labels)),
+                loc='upper right'
+            )
+        else:
+            colors = cm.viridis(np.linspace(0, 1, duration - 1))
+            for trial in range(total_data_trials):
+                for t, c in zip(range(duration - 1), colors):
+                    plot_axes.plot(
+                        t_L_per_trial[0][trial][t:t+2],
+                        t_L_per_trial[1][trial][t:t+2],
+                        [t, t+1], color=c,
+                        linewidth=3
+                    )
+        if not plot_axes:
+            plt.show()
+
+    return t_L_per_trial, L, S, T
+
+
+@nwb_unique_rng
 def pcaL2(
         NWBfile_array=[], plot_2d=False, plot_3d=False, custom_range=None,
         klabels=None, pca_components=20, smooth=False, plot_axes=None,
@@ -1347,6 +2133,7 @@ def pcaL2(
             raise ValueError('No correct trials were found in the NWBfile!')
 
         # Use custom_range to compute PCA only on a portion of the original data:
+        #TODO: bug: what if custom_range is None? trial_slice are not defined!
         if custom_range is not None:
             if not isinstance(custom_range, tuple):
                 raise ValueError('Custom range must be a tuple!')
@@ -1379,9 +2166,17 @@ def pcaL2(
     pca = decomposition.PCA(n_components=L)
     t_L = pca.fit_transform(pool_array.T).T
     latent = pca.explained_variance_
-    tmp_latent = latent / latent.max()
-    blah = np.diff(tmp_latent / np.sum(tmp_latent))
-    L = np.nonzero(np.greater(blah, -0.02))[0][0] + 1
+
+    #total_variance = np.sum(latent)
+    #explained_variance = latent / total_variance
+    #cum_explained_variance = np.cumsum(explained_variance)
+    #L = np.nonzero(np.less(cum_explained_variance, 0.8))[0].size
+
+    #norm_eigenvals = latent / latent.max()
+    #eigenval_diff = np.abs(np.diff(norm_eigenvals))
+    #L = np.nonzero(np.greater(eigenval_diff, 0.02))[0].size
+    L = np.nonzero(np.greater(latent, 1.0))[0].size
+
     print(f'L found to be: {L}')
     # Reshape PCA results into separate trials for plotting.
     #t_L_per_trial = t_L.reshape(L, correct_trials_no, duration, order='C')
@@ -1522,21 +2317,236 @@ def pcaL2(
         plot_axes.elev = 22.5
         plot_axes.azim = 52.4
 
+
+        '''
+        labels = klabels.tolist()
+        nclusters = np.unique(klabels).size
+        #colors_old = cm.Set2(np.linspace(0, 1, nclusters))
+        _, key_labels = np.unique(labels, return_index=True)
+        handles = []
+        for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
+            # Transform colormap to color values:
+            color_values = colors[label - 1](np.linspace(0, 1, duration))
+            for t, c in zip(range(duration - 1), color_values):
+                handle = plot_axes.plot(
+                    t_L_per_trial[0][trial][t:t+2],
+                    t_L_per_trial[1][trial][t:t+2],
+                    t_L_per_trial[2][trial][t:t+2],
+                    color=c,
+                    linewidth=3,
+                    label=f'Cluster {label}'
+                )
+            if i in key_labels:
+                handles.append(handle)
+        # Youmust group handles based on unique labels.
+        plot_axes.legend(
+            handles=handles,
+            labels=named_serial_no('State', len(key_labels)),
+            loc='upper right'
+        )
+        '''
+
         if klabels is not None:
+            # EDIT: decide about that:
+            progressive_colors = True
+            #TODO: you need some more variables for the colors.
+            if progressive_colors:
+                # If you have cluster information for the data:
+                # Create custom colormaps for the stimulus and trial period, per label.
+                # Utilize normalized trial times, to create the colormaps.
+                #TODO: make colormap gradient more steep after stimulus.
+                #TODO: Make it read the proper value!
+                stim_stop = 21  # Stim stop in q=50ms
+                stim_stop_norm = stim_stop / duration
+
+                c = mcolors.ColorConverter().to_rgb
+                stim_start_color = 'limegreen'
+                stim_stop_color = 'darkgreen'
+                color_values = []
+                if kwargs.get('plot_stim_color', False):
+                    color_values.append(make_colormap(
+                            [
+                                c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                                c('red'), c('red'), stim_stop_norm + 0.01,
+                                c('red'), c('darkred'), 0.99,
+                                c('darkred')
+                            ]
+                        )
+                    )
+                    color_values.append(make_colormap(
+                            [
+                                c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                                c('violet'), c('violet'), stim_stop_norm + 0.01,
+                                c('violet'), c('darkviolet'), 0.99,
+                                c('darkviolet')
+                            ]
+                        )
+                    )
+                    color_values.append(make_colormap(
+                            [
+                                c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                                c('gold'), c('gold'), stim_stop_norm + 0.01,
+                                c('gold'), c('goldenrod'), 0.99,
+                                c('goldenrod')
+                            ]
+                        )
+                    )
+                    color_values.append(make_colormap(
+                            [
+                                c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                                c('blue'), c('blue'), stim_stop_norm + 0.01,
+                                c('blue'), c('darkblue'), 0.99,
+                                c('darkblue')
+                            ]
+                        )
+                    )
+                    color_values.append(make_colormap(
+                            [
+                                c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                                c('deepskyblue'), c('deepskyblue'), stim_stop_norm + 0.01,
+                                c('deepskyblue'), c('dodgerblue'), 0.99,
+                                c('dodgerblue')
+                            ]
+                        )
+                    )
+                    color_values.append(make_colormap(
+                            [
+                                c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                                c('lightgray'), c('lightgray'), stim_stop_norm + 0.01,
+                                c('lightgray'), c('darkgray'), 0.99,
+                                c('darkgray')
+                            ]
+                        )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                            c('magenta'), c('magenta'), stim_stop_norm + 0.01,
+                            c('magenta'), c('darkmagenta'), 0.99,
+                            c('darkmagenta')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                            c('darkturquoise'), c('darkturquoise'), stim_stop_norm + 0.01,
+                            c('darkturquoise'), c('teal'), 0.99,
+                            c('teal')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                            [
+                                c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                                c('lime'), c('lime'), stim_stop_norm + 0.01,
+                                c('lime'), c('limegreen'), 0.99,
+                                c('limegreen')
+                            ]
+                        )
+                    )
+                else:
+                    color_values.append(make_colormap(
+                        [
+                            c('red'), c('red'), 0.0,
+                            c('red'), c('darkred'), 0.99,
+                            c('darkred')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('violet'), c('violet'), 0.0,
+                            c('violet'), c('darkviolet'), 0.99,
+                            c('darkviolet')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('gold'), c('gold'), 0.0,
+                            c('gold'), c('goldenrod'), 0.99,
+                            c('goldenrod')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('blue'), c('blue'), 0.0,
+                            c('blue'), c('darkblue'), 0.99,
+                            c('darkblue')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('deepskyblue'), c('deepskyblue'), 0.0,
+                            c('deepskyblue'), c('dodgerblue'), 0.99,
+                            c('dodgerblue')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('lightgray'), c('lightgray'), 0.0,
+                            c('lightgray'), c('darkgray'), 0.99,
+                            c('darkgray')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('magenta'), c('magenta'), 0.0,
+                            c('magenta'), c('darkmagenta'), 0.99,
+                            c('darkmagenta')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('darkturquoise'), c('darkturquoise'), 0.0,
+                            c('darkturquoise'), c('teal'), 0.99,
+                            c('teal')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('lime'), c('lime'), 0.0,
+                            c('lime'), c('limegreen'), 0.99,
+                            c('limegreen')
+                        ]
+                    )
+                    )
+
             labels = klabels.tolist()
             nclusters = np.unique(klabels).size
             colors = cm.Set2(np.linspace(0, 1, nclusters))
             _, key_labels = np.unique(labels, return_index=True)
             handles = []
             for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
-                x = t_L_per_trial[0][trial][:]
-                y = t_L_per_trial[1][trial][:]
-                handle = plot_axes.plot(x, y,
-                                  range(duration),
-                                  color=colors[label - 1],
-                                  linewidth=3,
-                                  label=f'Cluster {label}'
-                                  )
+                if progressive_colors:
+                    colors = color_values[label - 1 + kwargs.get('color_skip', 0)](np.linspace(0, 1, duration))
+                    for t, c in zip(range(duration - 1), colors):
+                        if t <= 0:
+                            continue
+                        handle = plot_axes.plot(
+                            t_L_per_trial[0][trial][t:t+2],
+                            t_L_per_trial[1][trial][t:t+2],
+                            range(t,t+2),
+                            color=c,
+                            linewidth=3,
+                            label=f'Cluster {label}'
+                        )
+                else:
+                    x = t_L_per_trial[0][trial][:]
+                    y = t_L_per_trial[1][trial][:]
+                    handle = plot_axes.plot(x, y,
+                                      range(duration),
+                                      color=colors[label - 1],
+                                      linewidth=3,
+                                      label=f'Cluster {label}'
+                                      )
                 if i in key_labels:
                     handles.append(handle[0])
             # Youmust group handles based on unique labels.
@@ -1708,35 +2718,56 @@ class NMF_HALS(object):
 
 
 @nwb_unique_rng
-def nnmf(A, k, M=None, **kwargs):
+def nnmf(A, k, M_train=None, **kwargs):
     '''
     Applies Non Negative Matrix Factorization in matrix A, with k components.
-    If optional M binary matrix is given, alternating minimization is performed
-    with zero values of M as missing values of A.
+    If optional M_train binary matrix is given, alternating minimization is performed
+    with zero values of M_train as missing values of A.
 
     This function also gets (through kwargs) the NWB file and a RNG iteration
     integer to be reproducible.
 
     :param A: numpy.ndarray
     :param k: int
-    :param M: numpy.ndarray, optional
+    :param M_train: numpy.ndarray, optional
     :return:
     '''
+    # maximum multiplicative rules iterations
+    max_iters = 100
 
     # Initialize W and H:
     W = np.random.rand(A.shape[0], k) * 70
     H = np.random.rand(k, A.shape[1])
 
-    if M is not None:
-        A = M * A
+    if M_train is not None:
+        A = M_train * A
     else:
-        M = np.ones(A.shape)
+        M_train = np.ones(A.shape)
 
-    for iter in range(1000):
-        W = np.maximum(W * ((A @ H.T) / ((M * (W @ H)) @ H.T)), 1e-16)
-        H = np.maximum(H * ((W.T @ A) / (W.T @ (M * (W @ H)))), 1e-16)
+    #W_dist = np.zeros((max_iters))
+    #H_dist = np.zeros((max_iters))
 
-    return W, H
+    for iter in range(max_iters):
+        '''
+        W_previous = W
+        H_previous = H
+        '''
+        W = np.maximum(W * ((A @ H.T) / ((M_train * (W @ H)) @ H.T)), 1e-16)
+        H = np.maximum(H * ((W.T @ A) / (W.T @ (M_train * (W @ H)))), 1e-16)
+        '''
+        W_dist[iter] = \
+            np.linalg.norm((W_previous - W), ord='fro') / \
+            np.sqrt(A.shape[0] * A.shape[1])
+        H_dist[iter] = \
+            np.linalg.norm((H_previous - H), ord='fro') / \
+            np.sqrt(A.shape[0] * A.shape[1])
+        '''
+
+        # Break for efficiency if converged:
+        #if W_dist[iter] < 1e-12 and H_dist[iter] < 1e-12:
+            #break
+
+    return W, H#, W_dist, H_dist
 
 def NNMF(
         NWBfile_array=[], plot_2d=False, plot_3d=False, custom_range=None,
@@ -1795,7 +2826,11 @@ def NNMF(
         print('Must be k < min(n,m)!')
         n_components = np.min(pool_array.shape)
 
-    W, H, info = NMF_HALS().run(pool_array.T, n_components, M=M)
+    W, H = nnmf(
+        pool_array.T, n_components,
+        input_NWBfile=NWBfile_array[0]
+    )
+    #W, H, info = NMF_HALS().run(pool_array.T, n_components, M=M)
     H = H.T
     #TODO: return the fit error and test error!
     error_bar = None
@@ -2521,7 +3556,13 @@ def kmeans_clustering(data=None, k=2, max_iterations=100, plot=False, **kwargs):
 
     return klabels, J_k, md_array, md_params_d
 
-def evaluate_clustering(klabels=None, md_array=None, md_params=None, **kwargs):
+def evaluate_clustering(
+        klabels=None,
+        md_array=None,
+        md_params=None,
+        no_optimal_L=None,
+        **kwargs
+):
     # Calculate likelihood of each trial, given the cluster centroid:
     nclusters, ntrials = md_array.shape
 
@@ -2533,16 +3574,20 @@ def evaluate_clustering(klabels=None, md_array=None, md_params=None, **kwargs):
         cluster = klabels[trial] - 1
         mdist = md_array[cluster, trial]
         S = md_params[cluster].S
+        #TODO: to nclusters einai la8os. To k sto original einai to dimensionality
+        # tou multivariate distribution (katalabainw oti einai to k number of PCA
+        # components). Na bebaiw8w kai oti o S den einai o antistrofos pou xrhsimopoiw
+        # sto MD.
         # Remove clusters without any points:
         try:
             if S.shape == ():
                 ln_L[0, trial] = \
                     np.exp(-1/2 * mdist) / \
-                    np.sqrt((2*np.pi)**nclusters * float(S))
+                    np.sqrt((2*np.pi)**no_optimal_L * float(S))
             else:
                 ln_L[0, trial] = \
                     np.exp(-1/2 * mdist) / \
-                    np.sqrt((2*np.pi)**nclusters * np.linalg.det(S))
+                    np.sqrt((2*np.pi)**no_optimal_L * np.linalg.det(S))
         except Exception as e:
             print('Something went wrong while evaluating BIC!')
             print(str(e))
@@ -2641,6 +3686,9 @@ def determine_number_of_clusters(
         plot=False
     )
 
+    # Keep only prominent principal components from the data set:
+    data_pca = data_pca[:no_optimal_L, :, :]
+
     dims, ntrials, duration = data_pca.shape
 
     try:
@@ -2700,7 +3748,8 @@ def determine_number_of_clusters(
                 break
             else:
                 BIC = evaluate_clustering(
-                    klabels=klabels, md_array=md_array, md_params=md_params_d, **kwargs
+                    klabels=klabels, md_array=md_array, md_params=md_params_d,
+                    no_optimal_L=no_optimal_L, **kwargs
                 )
                 BIC_all[i] = BIC
                 kmeans_labels[i, :] = klabels.T
@@ -2743,8 +3792,8 @@ def determine_number_of_clusters(
 
 @nwb_unique_rng
 def determine_number_of_ensembles(
-        NWBfile_array, max_clusters=None, custom_range=None,
-        K=10, rng_max_iters=20, **kwargs
+        NWBfile_array, K_max=None, custom_range=None,
+        K_cv=10, rng_max_iters=20, **kwargs
 ):
     '''
     Same as deternime_number_of_clusters, but utilizes NNMF in search for
@@ -2753,10 +3802,10 @@ def determine_number_of_ensembles(
     components a cross-validation method is used.
     Parts of the A array are removed, randomly and then their reconstruction
     error is assessed.
-    This function returns the best k estimate.
+    This function returns the best  estimate.
 
     :param NWBfile_array:
-    :param max_clusters:
+    :param K_max:
     :param custom_range:
     :param kwargs:
     :return:
@@ -2779,7 +3828,21 @@ def determine_number_of_ensembles(
         )
 
     # Check if you need to continue:
-    filename = Path(f'cross_valid_errors_structured{animal_model_id}_{learning_condition_id}.hdf')
+    fn_str = (
+        'cross_validation_errors_structured'
+        '_AM{animal_model_id}'
+        '_LC{learning_condition_id}'
+        '_Kmax{K_max}'
+        '_Kcv{K_cv}'
+        '_RI{rng_max_iters}.hdf').format
+    filename = Path(fn_str(
+        animal_model_id=animal_model_id,
+        learning_condition_id=learning_condition_id,
+        K_max=K_max,
+        K_cv=K_cv,
+        rng_max_iters=rng_max_iters
+    ))
+    #filename = Path(f'cross_validation_errors_structured_AM{animal_model_id}_LC{learning_condition_id}_RI{rng_max_iters}.hdf')
     if filename.is_file():
         #return (1, 1, 1)
         pass
@@ -2792,85 +3855,217 @@ def determine_number_of_ensembles(
     # Reshape in array with m=cells, n=time bins.
     duration = tmp.shape[2]
     data = tmp.reshape(pn_no, correct_trials_no * duration)
+    norm_factor = data.shape[0] * data.shape[1]
 
     # This is now handled by the decorator!
     #np.random.seed(animal_model_id * 10 + learning_condition_id)
     # Training error:
-    error_bar = np.zeros((max_clusters, K, rng_max_iters))
-    error_bar_rm = np.zeros((max_clusters, K, rng_max_iters))
+    error_train = np.zeros((K_max, K_cv, rng_max_iters))
+    error_train_rm = np.zeros((K_max, K_cv, rng_max_iters))
     # Test error:
-    error_test = np.zeros((max_clusters, K, rng_max_iters))
-    for n_components in range(1, max_clusters + 1):
-        print(f'No of components {n_components}')
-        # Divide data into K partitions:
-        #TODO: make sure this is always doable!
-        rnd_idx = np.random.permutation(data.size)
-        K_idx = np.zeros(data.size)
-        partition_size = int(np.floor(data.size / K))
-        for k, (start, end) in enumerate(generate_slices(size=partition_size, number=K)):
-            K_idx[rnd_idx[start:end]] = k
-        K_idx = K_idx.reshape(data.shape)
+    error_test = np.zeros((K_max, K_cv, rng_max_iters))
+    error_test_rm = np.zeros((K_max, K_cv, rng_max_iters))
+    for k in range(1, K_max + 1):
+        print(f'No of components {k}')
+        for rng_iteration in range(rng_max_iters):
+            # Divide data into K_cv partitions:
+            #TODO: make sure this is always doable!
+            rnd_idx = np.random.permutation(data.size)
+            K_idx = np.zeros(data.size)
+            partition_size = int(np.floor(data.size / K_cv))
+            for partition_id, (start, end) in enumerate(generate_slices(size=partition_size, number=K_cv)):
+                K_idx[rnd_idx[start:end]] = partition_id
+            K_idx = K_idx.reshape(data.shape)
 
-        # Run NNMF in a K-1 fashion:
-        for k in range(K):
-            print(f'k is {k}')
-            M_ = K_idx == k
-            M = np.logical_not(M_)
-            #TODO: You need to perform NNMF multiple times, to avoid (must you?) the
-            # variations due to the random initialization.
-            for rng_iteration in range(rng_max_iters):
+            # Run NNMF in a K_cv-1 fashion:
+            for k_fold in range(K_cv):
+                print(f'k_fold is {k_fold}')
+                #tic = time.perf_counter()
+                # M_test einai to M_test, einai ta liga, ta left outs.
+                M_test = K_idx == k_fold
+                # Afto einai to M_train
+                M_train = np.logical_not(M_test)
+                #toc = time.perf_counter()
+                #print(f'M matrices took {toc-tic} seconds.')
+                #TODO: You need to perform NNMF multiple times, to avoid (must you?) the
+                # variations due to the random initialization.
+                #tic = time.perf_counter()
                 W, H = nnmf(
-                    data.T, n_components, M=M.T,
+                    data, k, M_train=M_train,
                     input_NWBfile=NWBfile_array[0], rng_iter=rng_iteration
                 )
-                # ready made NNMF algo:
-                estimator = decomposition.NMF(
-                    n_components=n_components, init='nndsvd', tol=5e-3
-                )
-                W_rm = estimator.fit_transform(data.T)
-                H_rm = estimator.components_
-                error_bar_rm[n_components-1, k, rng_iteration] = \
-                    np.linalg.norm(M.T * (W_rm @ H_rm - data.T), ord='fro') / \
-                        np.sqrt(partition_size * (K - 1))
+                #toc = time.perf_counter()
+                #print(f'NNMF took {toc-tic} seconds.')
 
-                error_bar[n_components-1, k, rng_iteration] = \
-                    np.linalg.norm(M.T * (W @ H - data.T), ord='fro') / \
-                        np.sqrt(partition_size * (K - 1))
-                error_test[n_components-1, k, rng_iteration] = \
-                    np.linalg.norm(M_.T * (W @ H - data.T), ord='fro') / \
-                        np.sqrt(partition_size)
+                if False:
+                    # ready made NNMF algo:
+                    estimator = decomposition.NMF(
+                        n_components=k, init='nndsvd', tol=5e-3
+                    )
+                    W_rm = estimator.fit_transform(M_train * data)
+                    H_rm = estimator.components_
+                    #TODO: to error bar rm ypologizetai kala, opote gia poio logo
+                    #xreiazetai pragmatika na xrhsimopoihsw gradient descent?
+                    #TODO: Deftero: blepw oti ta data mou exoun para poly variation
+                    # otan xrhsimopoiw diaforetiko random sto GD. Mhpws afto
+                    # shmainei oti den xrhsimopoiw polla iterations? Den 8a eprepe
+                    # (efoson to partition einai to idio) na mou dinei k_fold arketa
+                    # paromoia apotelesmata?
+                    error_train_rm[k-1, k_fold, rng_iteration] = \
+                        np.linalg.norm(M_train * (W_rm @ H_rm - data), ord='fro') / \
+                        np.sqrt(norm_factor)
+                    error_test_rm[k-1, k_fold, rng_iteration] = \
+                        np.linalg.norm(M_test * (W_rm @ H_rm - data), ord='fro') / \
+                        np.sqrt(norm_factor)
+
+                #tic = time.perf_counter()
+                error_train[k-1, k_fold, rng_iteration] = \
+                    np.linalg.norm(M_train * (W @ H - data), ord='fro') / \
+                    (partition_size * (K_cv - 1))
+                error_test[k-1, k_fold, rng_iteration] = \
+                    np.linalg.norm(M_test * (W @ H - data), ord='fro') / \
+                    partition_size
+                #toc = time.perf_counter()
+                #print(f'Frobenius norm took {toc-tic} seconds.')
 
                 # This runs.
-                #W, H, info = NMF_HALS().run(data.T, n_components)
+                #W, H, info = NMF_HALS().run(data.T, k)
 
         # Save the errors:
 
     # Serialize them before saving, and remember to deserialize them after.
     print(f'Saving CV errors for animal {animal_model_id}, lc {learning_condition_id}')
     df = pd.DataFrame({
-        'max_clusters': [max_clusters],
-        'K': [K],
+        'K_max': [K_max],
+        'K_cv': [K_cv],
         'rng_max_iters': [rng_max_iters],
-        'dim_order': 'max_clusters, K, rng_max_iters'
+        'dim_order': 'K_max, K_cv, rng_max_iters'
     })
     df.to_hdf(str(filename), key='attributes', mode='w')
-    df = pd.DataFrame(error_bar.reshape(-1, 1))
-    df.to_hdf(str(filename), key='error_bar')
-    df = pd.DataFrame(error_bar_rm.reshape(-1, 1))
-    df.to_hdf(str(filename), key='error_bar_rm')
+    df = pd.DataFrame(error_train.reshape(-1, 1))
+    df.to_hdf(str(filename), key='error_train')
+    #df = pd.DataFrame(error_train_rm.reshape(-1, 1))
+    #df.to_hdf(str(filename), key='error_train_rm')
     df = pd.DataFrame(error_test.reshape(-1, 1))
     df.to_hdf(str(filename), key='error_test')
+    #df = pd.DataFrame(error_test_rm.reshape(-1, 1))
+    #df.to_hdf(str(filename), key='error_test_rm')
 
     ## Plot the errors to get the picture:
     #fig = plt.figure()
-    #plt.plot(error_bar.T, color='C0', alpha=0.2)
+    #plt.plot(error_train.T, color='C0', alpha=0.2)
     #plt.plot(error_train.T, color='C1', alpha=0.2)
-    #plt.plot(error_bar.T.mean(axis=1), color='C0')
+    #plt.plot(error_train.T.mean(axis=1), color='C0')
     #plt.plot(error_train.T.mean(axis=1), color='C1')
     #np.argmin(error_train.mean(axis=0))
     #plt.show()
 
     return 0
+
+# Clustering with Affinity propagation:
+#TODO: need to make one for normal files also (no only NWB ones)!
+# make reproducible rng decorator
+def apclusterk(s, requested_k, prc=0):
+    max_bifurcation_tries = 100
+    N = s.shape[0]
+    # Add a little noise:
+    S = s + (np.finfo(float).eps * s + np.finfo(float).tiny * 100) * np.random.rand(N,N)
+
+    # Find limits:
+    dpsim1 = np.sum(S, axis=0).max()
+    if dpsim1 == -np.inf:
+        print(f'Could not find pmin')
+    elif N > 1000:
+        for k in range(N):
+            S[k, k] = -np.inf
+
+        m = np.max(S, axis=1)
+        tmp = m.sum()
+        yy = m.min()
+        ii = np.argmin(m)
+        # SKATA EINAI AFTO:
+        tmp = tmp - yy - np.min(m[ii[0] - 1, ii[0] + 1: N])
+        #tmp = tmp - yy - min(m([1:ii(1) - 1, ii(1) + 1: N]));
+        pmin = dpsim1 - tmp
+    else:
+        dpsim2 = -np.inf
+        for j21 in range(N - 1):
+            for j22 in range(j21+1, N):
+                tmp = np.sum(np.max(S[:, [j21, j22]], axis=1))
+                if tmp > dpsim2:
+                    dpsim2=tmp
+                    k21=j21
+                    k22=j22
+        pmin = dpsim1 - dpsim2
+
+    for k in range(N):
+        S[k, k] = -np.inf
+
+    pmax = S.max().max()
+    highpref = pmax
+    highk = N
+    lowpref = pmin
+    lowk = 1
+
+    for k in range(N):
+        S[k, k] = 0
+
+    print(f'Bounds: lowp={lowpref}  highp={highpref}  lowk={lowk}  highk={highk}\n')
+    print(f'Attempting to improve lower bound:\n')
+
+    # Run AP several times to find better lower bound:
+    ap = AP()
+    ap.affinity = 'precomputed'
+    ap.max_iter = 2000
+    ap.convergence_iter = 200
+    ap.damping = 0.9
+    ap.verbose = True
+
+    i = -4
+    dn = False
+    while not dn:
+        tmppref = highpref - 10 ** i * (highpref - lowpref)
+        print(f'  Trying p={tmppref}\n')
+        ap.preference = tmppref
+        ap_result = ap.fit(S)
+        idx = ap_result.labels_
+        # Maximum cluster no returned by AP:
+        tmpk = idx.max() + 1
+        if tmpk <= requested_k:
+            dn = True
+        elif i == -1:
+            tmpk = lowk
+            tmppref = lowpref
+            dn = True
+        else:
+            i = i + 1
+
+    # Use bisection method to find k:
+    idx = None
+    if abs(tmpk - requested_k) / requested_k * 100 > prc:
+        print('Applying bisection method:\n')
+        lowk = tmpk
+        lowpref = tmppref
+        ntries = 0
+        while (abs(tmpk - requested_k) / requested_k * 100 > prc) and (ntries < max_bifurcation_tries):
+            print(f'  lowp={lowpref}  highp={highpref}   lowk={lowk}  highk={highk}\n')
+            tmppref = 0.5 * highpref + 0.5 * lowpref
+            ap.preference = tmppref
+            ap_result = ap.fit(S)
+            idx = ap_result.labels_
+            tmpk = idx.max() + 1
+
+            if requested_k > tmpk:
+                lowpref=tmppref
+                lowk=tmpk
+            else:
+                highpref=tmppref
+                highk=tmpk
+            ntries = ntries + 1
+
+    pref = tmppref
+    print(f'Found {tmpk} clusters using a preference of {pref}\n')
+    return idx
 
 
 if __name__ == "__main__":
