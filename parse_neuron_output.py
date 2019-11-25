@@ -37,6 +37,41 @@ analysis_parameters['total_qs'] = \
 
 parse_neuron = {}
 
+def structured_nap():
+    # for structured condition:
+    inputdir = Path(r'G:\Glia\increased_nap')
+    for animal_model in range(1, 2):
+        for learning_condition in range(1, 2):
+            new_params = {
+                **analysis_parameters,
+                'excitation_bias': 4.0,
+                'inhibition_bias': 2.5,
+                'nmda_bias': 3.0,
+                'ampa_bias': 1.0,
+                'sim_duration': 2,
+                'trial_len': 2000,
+                'ntrials': 1,
+                'animal_model': animal_model,
+                'learning_condition': learning_condition,
+                'experiment_config': 'structured'
+            }
+            try:
+                #TODO: this flag is wrong: its 'include_membrane_potential'
+                analysis.create_nwb_file(
+                    inputdir=inputdir,
+                    outputdir=inputdir,
+                    fn_prefix='',
+                    fn_postfix='_nap80',
+                    **new_params
+                )
+            except Exception as e:
+                print(str(e))
+                pass
+
+    print('Done and exiting.')
+    sys.exit()
+parse_neuron['structured_nap']= structured_nap
+
 def excitatory_validation():
     # for structured condition:
     inputdir = Path(r'G:\Glia\publication_validation\excitatory_validation')
@@ -225,7 +260,8 @@ def structured_nomg(
     sys.exit()
 parse_neuron['structured_nomg'] = structured_nomg
 
-parse_neuron['structured_nomg']()
+parse_neuron['structured_nap']()
+#parse_neuron['structured_nomg']()
 sys.exit()
 
 # Plot AMPA saturation to test it:
