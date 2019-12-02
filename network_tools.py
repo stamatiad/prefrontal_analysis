@@ -25,6 +25,7 @@ from contextlib import contextmanager
 import copy
 import notebook_module as nb
 from scipy.signal import savgol_filter
+import scipy.stats
 
 def check_requirements():
     # Check that user is running a supported python version and necessary packages:
@@ -967,6 +968,38 @@ class Network:
         # We try to combine them
         # Every connected pair has weight of one:
         self.weights_mat = np.asarray(self.connectivity_mat, dtype=float)
+
+        #need to create weights from common neighbors:
+        scipy.stats.skewnorm.pdf()
+        cn_range = np.arange(0, 8, 0.01)
+        #TODO: get them from the CN matrix
+        maxNeighbors = 20;
+        alpha = 3 * ones(1, maxNeighbors); % linspace(3, 0.1, maxNeighbors) %.*exp( linspace(0, 0.5, maxNeighbors)). ^ -2; % [20, 10, 2, 1];
+        maxSigma = 5;
+        minSigma = 0.1;
+        expClimb = (exp(linspace(0, 0.5, maxNeighbors)). ^ 5) - 1;
+        expClimb = (expClimb / max(expClimb) * maxSigma) + minSigma;
+        m = ones(1, maxNeighbors). * expClimb. * 2; % exp( linspace(0, 0.6, maxNeighbors)) - 1;
+        m = m - m(1);
+        sigma = 0.5 * ones(1, maxNeighbors). * expClimb %.*(1. / ( 1 + exp(-linspace(-2, 5, maxNeighbors)))) %.*exp( linspace(0, 0.5, maxNeighbors)). ^ -10; % [0.15, 0.2, 4, 6];
+        normFactors = ones(1, maxNeighbors); % [0.0045, 0.006, 0.02, 0.02];
+        % LogNormal PDF parameters:
+        parmhat(1, 1: maxNeighbors) = linspace(0.1, 10, maxNeighbors);
+        parmhat(2, 1: maxNeighbors) = 2.6;
+        CNsnormal = [];
+        % Probabilities changed to replicate mean EPSP amplitude per connections in
+        % cluster(Perin et al, Fig .6 A):
+        maxCDF = zeros(3, length(rang));
+        myvar = [1, round(maxNeighbors / 2), maxNeighbors];
+        for k=1:length(myvar)
+        CNsnormal(k,:) = snormal(rang, m(myvar(k)), alpha(myvar(k)),
+                                 sigma(myvar(k))) * normFactors(myvar(k));
+        maxCDF(k,:) = cumsum(CNsnormal(k,:)) / max(cumsum(CNsnormal(k,:)));
+        end
+        figure;
+        plot(CNsnormal(:,:)');hold on;
+        set(gca, 'xtick', 1: 60:length(rang));
+        set(gca, 'xticklabel', rang(1: 60:end));
 
         '''
         # Inhibitory weights are connection type dependent:
