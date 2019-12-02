@@ -80,11 +80,25 @@ def exception_logger(function):
 experiment_config_filename = \
     'animal_model_{animal_model}_learning_condition_{learning_condition}_{type}_{experiment_config}.nwb'.format
 
-simulation_template = (
+simulation_template_load = (
     '{prefix}'
     'SN{animal_model}'
     'LC{learning_condition}'
     'TR{trial}'
+    '_EB{excitation_bias:.3f}'
+    '_IB{inhibition_bias:.3f}'
+    '_GBF2.000'
+    '_NMDAb{nmda_bias:.3f}'
+    '_AMPAb{ampa_bias:.3f}'
+    '_CP{cp}'
+    '_{experiment_config}_simdur{sim_duration}'
+    '{postfix}').format
+
+simulation_template_save = (
+    '{prefix}'
+    'SN{animal_model}'
+    'LC{learning_condition}'
+    'TR{trial_first}-{trial_last}'
     '_EB{excitation_bias:.3f}'
     '_IB{inhibition_bias:.3f}'
     '_GBF2.000'
@@ -161,7 +175,7 @@ def load_nwb_file(**kwargs):
     if not Path.is_file(filename):
         raise FileNotFoundError(f'The file {filename} was not found :(')
 
-    print(f'Loading NWB file: \n{str(filename)}')
+    print(f'Loading NWB file:\n\t{str(filename)}')
     nwbfile = NWBHDF5IO(str(filename), 'r').read()
     return nwbfile
 
@@ -545,20 +559,22 @@ def load_nwb_from_neuron(
         'sps': 10,
     }
 
+    # Compute internal characteristics.
     all_input_params = {**analysis_parameters, **new_params}
     all_input_params['trial_len'] = \
         all_input_params['sim_duration'] * 1000
     all_input_params['total_qs'] = \
         int(np.floor(all_input_params['trial_len'] / all_input_params['q_size']))
+    #TODO: I'm so confused about how I THE USER insert trials and how PYTHON
+    # interprets my input to read from neuron. Need to fix these indices.
+    # I need different variables for these, to save correctly named NWB files.
+    # Also like this I keep everything on input params only. create_nwb_file,
+    # just needs to parse this.
+    all_input_params['trial_first'] = 0
+    all_input_params['trial_last'] = all_input_params['ntrials'] - 1
 
-    # TODO: make sure you dont confuse files with multiple trials:
-    all_output_params = all_input_params
-    # If I have more than one trials:
-    if all_output_params['ntrials'] > all_output_params['trial']:
-        all_output_params['trial'] = all_output_params['ntrials'] - 1
-
-    outfn = simulation_template(
-        **all_output_params
+    outfn = simulation_template_save(
+        **all_input_params
     ) + '.nwb'
     filename = data_folder.joinpath(
         outfn
@@ -584,7 +600,7 @@ def load_nwb_from_neuron(
     if not Path.is_file(filename):
         raise FileNotFoundError(f'The file {filename} was not found :(')
 
-    print(f'Loading NWB file2: \n{str(filename)}')
+    print(f'Loading NWB file2:\n\t{str(filename)}')
     nwbfile = NWBHDF5IO(str(filename), 'r').read()
 
     return nwbfile
@@ -595,17 +611,17 @@ def load_raw_neuron(inputdir, rundir, reload_raw=False):
         inputfile = inputdir.joinpath(rundir).joinpath('vsoma.hdf5')
         # If input hdf file exists, just take the traces.
         if reload_raw or not inputfile.exists():
-            print(fr'Converting data to HDF in dir\n \t{rundir}')
+            #print(f'Converting data to HDF in dir:\n\t{rundir}')
             try:
                 load_raw.main(inputdir.joinpath(rundir))
             except Exception as e:
-                print(f'Exception while reading voltage files: {str(e)}\n maybe simulation is not complete!')
+                #print(f'Exception while reading voltage files:\n\t{str(e)}\n\t maybe simulation is not complete!')
                 raise FileNotFoundError
         # Convert dataframe to ndarray:
         voltage_traces = pd.read_hdf(inputfile, key='vsoma').values
         return voltage_traces
     except FileNotFoundError as e:
-        print(f'NEURON file {rundir} not found! Returning None.')
+        #print(f'NEURON file {rundir} not found! Returning None.')
         return None
 
 def create_nwb_file(inputdir=None, outputdir=None, \
@@ -617,11 +633,12 @@ def create_nwb_file(inputdir=None, outputdir=None, \
         getargs('experiment_config', 'animal_model', 'learning_condition', 'ntrials', 'trial_len', 'ncells', 'stim_start_offset', \
                    'stim_stop_offset', 'samples_per_ms', 'spike_upper_threshold', 'spike_lower_threshold', \
                 'excitation_bias', 'inhibition_bias', 'nmda_bias', 'ampa_bias', 'sim_duration', 'q_size', 'prefix', 'postfix', 'cp',kwargs)
-    reload_raw = kwargs.get('reload_raw', False)
+    #reload_raw = kwargs.get('reload_raw', False)
+    reload_raw = False
 
     # the base unit of time is the ms:
     samples2ms_factor = 1 / samples_per_ms
-    nsamples = trial_len * samples_per_ms
+    nsamples = int(trial_len * samples_per_ms)
 
     # Expand the NEURON/experiment parameters in the acquisition dict:
     #TODO: change these:
@@ -632,7 +649,6 @@ def create_nwb_file(inputdir=None, outputdir=None, \
         'pn_no': pn_no,
         'pv_no': pv_no
     }
-    print('Creating NWBfile.')
     nwbfile = NWBFile(
         session_description='NEURON simulation results.',
         identifier=experiment_config,
@@ -645,7 +661,9 @@ def create_nwb_file(inputdir=None, outputdir=None, \
     nwbfile.add_trial_column('persistent_activity', 'If this trial has persistent activity')
     #nwbfile.add_epoch_column('stimulus')
 
+    print('===================================================================')
     print('Loading files from NEURON output.')
+    print('===================================================================')
     time_series_l = []
     spike_train_l = []
     spike_trains_d = defaultdict(partial(np.ndarray, 0))
@@ -656,8 +674,9 @@ def create_nwb_file(inputdir=None, outputdir=None, \
     for trial, (trial_start_t, trial_end_t) in enumerate(generate_slices(size=nsamples, number=ntrials)):
         # Search inputdir for files specified in the parameters
         # get input dir and search for hdf file. if non existent create it.
+        print(f'Trial {trial}. ', end='')
         rundir = inputdir.joinpath(
-            simulation_template(
+            simulation_template_load(
                 prefix=fn_prefix,
                 excitation_bias=excitation_bias,
                 inhibition_bias=inhibition_bias,
@@ -700,7 +719,7 @@ def create_nwb_file(inputdir=None, outputdir=None, \
             has_persistent = False
             for cellid, spike_train in spike_trains_d.items():
                 if any(spike_train > pa_start) and any(spike_train < pa_stop):
-                    print(f'On trial:{trial}, cell:{cellid} has spikes, so PA.')
+                    #print(f'On trial:{trial}, cell:{cellid} has spikes, so PA.')
                     has_persistent = True
                     break
             # Add trial:
@@ -721,14 +740,14 @@ def create_nwb_file(inputdir=None, outputdir=None, \
                 membrane_potential = np.concatenate((membrane_potential, vsoma), axis=1)
             else:
                 membrane_potential = vsoma
-            print(f'Trial {trial}, processed successfully.')
+            print(f'Processed successfully.')
         else:
-            print(f'Trial {trial} NEURON file is missing!\n\t{str(rundir)}')
+            print(f'Not found.')
             # Inform next trials to skip the ms of the missing file
             trial_offset_samples += nsamples
 
     if len(trials_loaded) == 0:
-        print('ERROR no trials found whatsoever for this folder!\nReturning None!')
+        print('ERROR no trials found whatsoever for this folder!\n\tReturning None!')
         raise FileNotFoundError
 
     if include_membrane_potential:
@@ -751,7 +770,7 @@ def create_nwb_file(inputdir=None, outputdir=None, \
             description=str(acquisition_description)
         )
         nwbfile.add_acquisition(vsoma_timeseries)
-        print('Membrane potential acquired.')
+        print('\tMembrane potential acquired.')
 
     for cellid in range(ncells):
         # Get each trial start/end in seconds rather than ms:
@@ -780,17 +799,18 @@ def create_nwb_file(inputdir=None, outputdir=None, \
                 cell_id=cellid,
                 cell_type=get_cell_type(cellid, pn_no)
             )
-    print('Spikes acquired.')
+    print('\tSpikes acquired.')
 
     cells_with_spikes = spike_trains_d.keys()
     spike_trains = spike_trains_d.values()
 
     # Bin spiking activity for all trials/cells in total_qs bins of q_size size:
     # How many qs in all trials?
+    #TODO: do not reassign! rename!
     # Also, since I might got LESS trials, I should reassign the ntrials
     # variable:
-    ntrials = len(nwbfile.trials)
-    total_qs = int(np.floor(trial_len / q_size)) * ntrials
+    trials_with_data = len(nwbfile.trials)
+    total_qs = int(np.floor(trial_len / q_size)) * trials_with_data
     trial_qs = int(np.floor(trial_len / q_size))
     binned_activity = np.zeros((ncells, total_qs), dtype=int)
     # This is essentially what we are doing, but since python is so slow, we refactor it with some optimized code.
@@ -824,7 +844,7 @@ def create_nwb_file(inputdir=None, outputdir=None, \
         description=str(acquisition_description)
     )
     nwbfile.add_acquisition(network_binned_activity)
-    print('Binned activity acquired')
+    print('\tBinned activity acquired')
 
     # write to file:
     if include_membrane_potential:
@@ -833,7 +853,7 @@ def create_nwb_file(inputdir=None, outputdir=None, \
         type = 'bn'
 
     if kwargs.get('same_io_folder', False):
-        outfn = simulation_template(
+        outfn = simulation_template_save(
             prefix=fn_prefix,
             excitation_bias=excitation_bias,
             inhibition_bias=inhibition_bias,
@@ -842,7 +862,8 @@ def create_nwb_file(inputdir=None, outputdir=None, \
             sim_duration=sim_duration,
             animal_model=animal_model,
             learning_condition=learning_condition,
-            trial=trial,
+            trial_first=0,
+            trial_last=ntrials - 1,
             experiment_config=experiment_config,
             cp=cp,
             postfix=fn_postfix
@@ -859,7 +880,9 @@ def create_nwb_file(inputdir=None, outputdir=None, \
                 type=type
             )
         )
-    print(f'Writing to NWBfile: {output_file}')
+    print(f'Writing to NWBfile:\n{outputdir}\n{output_file.name}')
+    print('===================================================================')
+    print('\n\n')
     with NWBHDF5IO(str(output_file), 'w') as io:
         io.write(nwbfile)
 
@@ -1084,6 +1107,7 @@ def get_acquisition_parameters(input_NWBfile=None, requested_parameters=[],
         trial_len = input_NWBfile.trials['stop_time'][0] - input_NWBfile.trials['start_time'][0]  # in ms
         q_size = input_NWBfile.acquisition['binned_activity'].conversion
         trial_q_no = int(np.floor(trial_len / q_size))
+        #TODO: rename to Valid trials!
         correct_trials_idx = list(
             nwb_iter(input_NWBfile.trials['persistent_activity'])
         )
@@ -1285,7 +1309,31 @@ def velocity(data=None):
     #end
     return velocity
 
+
+#TODO: prepei na 3eka8arisw mia fora oti ta correct trials na ta lew VALILD trials.
+def get_nwb_list_valid_ntrials(NWBarray):
+    '''
+    Return the number of valid trials (having PA) in the NWBarray
+    This is DIFFERENT than the number of trials that the NWB has as
+    acquisition!
+    :param NWBarray:
+    :return:
+    '''
+    total_valid_ntrials = 0
+    for NWBfile in NWBarray:
+        correct_trials_no = \
+            get_acquisition_parameters(
+                input_NWBfile=NWBfile,
+                requested_parameters=[
+                    'correct_trials_no'
+                ]
+            )
+        total_valid_ntrials += correct_trials_no
+
+    return total_valid_ntrials
+
 def get_binned_activity(NWBfile, custom_range=None):
+    #TODO: this is not what id does. Decide and keep only few of these funcs.
     # Return only trials with persistent activity (see text).
     animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
     trial_len, q_size, trial_q_no, correct_trials_idx, correct_trials_no = \
@@ -1577,14 +1625,12 @@ def q2sec(q_size=50, q_time=0):
 
 @nwb_unique_rng
 def stim_variance_captured(
-        input_NWBfile=None, S=None, T=None,plot_2d=False, plot_3d=False, custom_range=None,
-        klabels=None, pca_components=20, smooth=False, plot_axes=None,
-        axis_label_font_size=12, tick_label_font_size=12, labelpad_x=10,
-        labelpad_y=10, **kwargs
+        input_NWBfile=None, S=None, T=None, T_all=None, plot_2d=False, plot_3d=False,
+        stim_and_delay_range=None, delay_range=None, **kwargs
 ):
     '''
-    This function reads binned activity from a list of files and performs PCA
-    with L=2 on it.
+    Custom and all range must end at the same time and custom must also contain
+    the stimulus
     :param NWBfile_array:
     :param plot:
     :param custom_range:
@@ -1594,47 +1640,97 @@ def stim_variance_captured(
     :return:
     '''
 
-    data = get_correct_trials(input_NWBfile, custom_range=custom_range)
-    #TODO: make sure you don't get the stimulus period also
+    # you need to check that ranges are as requested:
+    if stim_and_delay_range[1] != delay_range[1]:
+        raise ValueError('Ranges must end at the same time point!')
+
+    # Data are by default the delay data, as on these we compute the mnemonic
+    # and dynamic subspaces.
+    data = get_correct_trials(input_NWBfile, custom_range=delay_range)
+    # Eliminate time:
     data_over_stimuli = data.mean(axis=2)
+    # Eliminate stimuli:
     data_over_time = data.mean(axis=1)
     # number of correct trials (stimuli):
+    # Neurons
     N = data.shape[0]
+    # Stimuli
     M = data.shape[1]
-    r_m = data_over_stimuli.mean(axis=1)
+    # Remove the average activity of each neuron.
+    r_bar = data_over_stimuli.mean(axis=1)
     max_delta_t = 80
-    V_t = np.full((max_delta_t, data.shape[2]), np.nan)
-    # An kai nomizw oti einai xazo afto :
-    for delta_t in range(1,max_delta_t):
+
+    # Analog of Murray et al, 2017 figure 3A-B:
+    fig2, ax2 = plt.subplots()
+
+    # Stim variance captured for mnemonic subspace as a function of time:
+    # This figure uses the stimulus and delay data, but the spaces defined only
+    # on the delay data:
+    data_all = get_correct_trials(
+        input_NWBfile,
+        custom_range=stim_and_delay_range
+    )
+    r_bar_all = data_all.mean(axis=2).mean(axis=1)
+
+    V_t = np.full((data_all.shape[2], 1), np.nan)
+    for t in range(data_all.shape[2]):
+        X = data_all[:, :, t].T - r_bar_all
+        C = (X.T @ X) / (M - 1)
+        V_t[t, 0] = np.trace(S @ C @ S.T) / N
+
+    # Stim variance captured for dynamic subspace as a function of time:
+    # We use one iteration less, since T is evaluated between two adjacent time
+    # points and has indices up to total_time - 1:
+    V_Dtt = np.full((data_all.shape[2] - 1, 1), np.nan)
+    for t in range(data_all.shape[2] - 1):
+        X = data_all[:,:,t].T - r_bar_all
+        C = (X.T @ X) / (M - 1)
+        # C and T are for the same t:
+        #TODO: again is the T for a time bin? maybe I need to correct something.
+        V_Dtt[t, 0] = np.trace(T_all[t] @ C @ T_all[t].T) / N
+
+    ax2.plot(np.nanmean(V_t, axis=1), color='blue')
+    ax2.plot(np.nanmean(V_Dtt, axis=1), color='red')
+    ax2.set_xlabel('Time (50ms bins)')
+    ax2.set_ylabel('Stimulus variance captured')
+
+    # Analog of Murray et al, 2017 figure 3C-D:
+    fig3, ax3 = plt.subplots()
+
+    # Stim variance captured for mnemonic subspace as a function of time
+    # separation:
+    V_t_delta_t = np.full((max_delta_t, data.shape[2]), np.nan)
+    for delta_t in range(1, max_delta_t):
         for t in range(data.shape[2]-delta_t-1):
-            X = data[:,:,t+delta_t].T - r_m
+            X = data[:, :, t+delta_t].T - r_bar
             C = (X.T @ X) / (M - 1)
-            V_t[delta_t, t] = np.trace(S @ C @ S.T) / N
+            V_t_delta_t[delta_t, t] = np.trace(S @ C @ S.T) / N
 
-    fig,ax = plt.subplots()
-    ax.plot(np.nanmean(V_t,axis=1), color='blue')
-
-    # Stim variance captured for dynamic subspace:
-    V_Dt = np.full((max_delta_t, data.shape[2]), np.nan)
-    for delta_t in range(1,max_delta_t):
-        #delta_t = 3
+    # Stim variance captured for dynamic subspace as a function of time
+    # separation:
+    V_D_t_delta_t = np.full((max_delta_t, data.shape[2]), np.nan)
+    for delta_t in range(1, max_delta_t):
         for t in range(data.shape[2]-delta_t-1):
-            X = data[:,:,t+delta_t].T - r_m
+            X = data[:, :, t+delta_t].T - r_bar
             C = (X.T @ X) / (M - 1)
-            V_Dt[delta_t, t] = np.trace(T[t] @ C @ T[t].T) / N
+            #TODO: To T den einai gia binned activity? H gia ka8e t time point?
+            V_D_t_delta_t[delta_t, t] = np.trace(T[t] @ C @ T[t].T) / N
 
-    #fig,ax = plt.subplots()
-    ax.plot(np.nanmean(V_Dt,axis=1), color='red')
-    print('tutto pronto!')
+    ax3.plot(np.nanmean(V_t_delta_t, axis=1), color='blue')
+    ax3.plot(np.nanmean(V_D_t_delta_t, axis=1), color='red')
+    ax3.set_xlabel('Time Separation (50ms bins)')
+    ax3.set_ylabel('Stimulus variance captured')
 
 
 @nwb_unique_rng
 def pcaL2_with_time_variance(
-        input_NWBfile=None, plot_2d=False, plot_3d=False, custom_range=None,
+        input_NWBfile=None, plot_2d=False, plot_3d=False, stim_and_delay_range=None,
+        delay_range=None,
         klabels=None, pca_components=20, smooth=False, plot_axes=None,
         axis_label_font_size=12, tick_label_font_size=12, labelpad_x=10,
         labelpad_y=10, **kwargs
 ):
+    #TODO: HAS BUG: if klabels are few, it plots only them, concealing data!
     '''
     This function reads binned activity from a list of files and performs PCA
     with L=2 on it.
@@ -1646,10 +1742,11 @@ def pcaL2_with_time_variance(
     :param kwargs:
     :return:
     '''
-    data = get_correct_trials(input_NWBfile, custom_range=custom_range)
-    #TODO: make sure you don't get the stimulus period also
+    # The subspaces estimation is done with the delay data only!
+    data = get_correct_trials(input_NWBfile, custom_range=delay_range)
     data_over_stimuli = data.mean(axis=2)
     data_over_time = data.mean(axis=1)
+    r_bar = data_over_stimuli.mean(axis=1)
 
     # Get mnemonic subspace, S:
     # Do the two (stim/time) PCAs and then orthogonalize the time axis:
@@ -1657,10 +1754,10 @@ def pcaL2_with_time_variance(
     # Use max pca components, then decide how many to keep based on threshold.
     L = 2
     pca = decomposition.PCA(n_components=L)
-    t_L_stimuli = pca.fit_transform(data_over_stimuli.T).T
+    t_L_stimuli = pca.fit_transform(data_over_stimuli.T - r_bar).T
     components_stimuli = pca.components_
     latent_stimuli = pca.explained_variance_
-    t_L_time = pca.fit_transform(data_over_time.T).T
+    t_L_time = pca.fit_transform(data_over_time.T - r_bar).T
     components_time = pca.components_
     latent_time = pca.explained_variance_
 
@@ -1676,10 +1773,11 @@ def pcaL2_with_time_variance(
     L = 2
     pca = decomposition.PCA(n_components=L)
     T = []
-    for t in range(1, data.shape[2] -1):
-        _ = pca.fit_transform(data[:,:,t].T).T
+    # My t time is in 50ms units (and the data in 50ms bins).
+    for t in range(data.shape[2] -1):
+        _ = pca.fit_transform(data[:,:,t].T - r_bar).T
         components_stimuli = pca.components_
-        _ = pca.fit_transform(data_over_time[:,t:t+2].T).T
+        _ = pca.fit_transform(data_over_time[:,t:t+2].T - r_bar).T
         components_time = pca.components_
 
         #todo: cross product?
@@ -1689,6 +1787,27 @@ def pcaL2_with_time_variance(
             - (components_stimuli[1].T @ components_time[0]) * components_stimuli[1]
         T.append(np.concatenate((components_stimuli,time_component.reshape(-1,1).T), axis=0))
 
+    # Get also a dynamic subspace for ALL the data, not only the delay period:
+    data_all = get_correct_trials(
+        input_NWBfile,
+        custom_range=stim_and_delay_range
+    )
+    data_over_time_all = data_all.mean(axis=1)
+    r_bar_all = data_all.mean(axis=2).mean(axis=1)
+    T_all = []
+    # My t time is in 50ms units (and the data in 50ms bins).
+    for t in range(data_all.shape[2] - 1):
+        _ = pca.fit_transform(data_all[:, :, t].T - r_bar_all).T
+        components_stimuli = pca.components_
+        _ = pca.fit_transform(data_over_time_all[:, t:t+2].T - r_bar_all).T
+        components_time = pca.components_
+
+        #todo: cross product?
+        time_component = \
+            components_time[0] \
+            - (components_stimuli[0].T @ components_time[0]) * components_stimuli[0] \
+            - (components_stimuli[1].T @ components_time[0]) * components_stimuli[1]
+        T_all.append(np.concatenate((components_stimuli, time_component.reshape(-1, 1).T), axis=0))
 
     correct_trials_no = data.shape[1]
     duration = data.shape[2]
@@ -1840,7 +1959,7 @@ def pcaL2_with_time_variance(
             'PC2', fontsize=axis_label_font_size, labelpad=labelpad_x
         )
         plot_axes.set_zlabel(
-            'Time', fontsize=axis_label_font_size, labelpad=labelpad_x
+            'Time PC1', fontsize=axis_label_font_size, labelpad=labelpad_x
         )
         pc1_max = int(np.max(t_L_per_trial[0, :, :].reshape(-1, 1)))
         pc1_min = int(np.min(t_L_per_trial[0, :, :].reshape(-1, 1)))
@@ -2087,7 +2206,7 @@ def pcaL2_with_time_variance(
         if not plot_axes:
             plt.show()
 
-    return t_L_per_trial, L, S, T
+    return t_L_per_trial, L, S, T, T_all
 
 
 @nwb_unique_rng
@@ -2108,6 +2227,8 @@ def pcaL2(
     :param kwargs:
     :return:
     '''
+    legend_labels = kwargs.get('legend_labels', None)
+
     #TODO: make more readable the whole function:
     nfiles = len(NWBfile_array)
     if nfiles < 1:
@@ -2130,7 +2251,9 @@ def pcaL2(
         )
 
         if correct_trials_no < 1:
-            raise ValueError('No correct trials were found in the NWBfile!')
+            #TODO: Make it more elegant: check if you don't have at ALL data.
+            #raise ValueError('No correct trials were found in the NWBfile!')
+            pass
 
         # Use custom_range to compute PCA only on a portion of the original data:
         #TODO: bug: what if custom_range is None? trial_slice are not defined!
@@ -2190,6 +2313,7 @@ def pcaL2(
             for l in range(L):
                 t_L_per_trial[l, trial, :] = savgol_filter(t_L_per_trial[l, trial, :], 11, 3)
 
+    #TODO: prepei na ftia3w to plotting mia k kalh...se ligo 8a 8ewreitai bug
     if plot_2d:
         # Plots the t_L_r as 2d timeseries per trial. Also to ease the cluster
         # identification in the case of multiple learning conditions plots in
@@ -2233,30 +2357,6 @@ def pcaL2(
             #TODO: in multiple NWB files case, with external labels (afto paei
             # ston caller k oxi edw ston callee, alla anyways) discarded
             # trials have labels and loops get out of index.
-            '''
-            for clusterid in range(nclusters):
-                #TODO: This comprehension is problematic, why?
-                # Plot each cluster mean (average of last second activity):
-                #cluster_trials = [
-                #    idx
-                #    for idx, label in enumerate(labels)
-                #    if label == clust + 1
-                #]
-                cluster_trials = []
-                for idx, label in enumerate(labels):
-                    if label == clusterid + 1:
-                        cluster_trials.append(idx)
-                mean_point = np.mean(
-                    t_L_per_trial[:2, cluster_trials, :]. \
-                        reshape(2, len(cluster_trials) * duration),
-                    axis=1
-                )
-                plot_axes.scatter(
-                    mean_point[0], mean_point[1], s=70, c='k', marker='+',
-                    zorder=20000
-                )
-                '''
-
         else:
             plot_axes.set_title(f'Model {animal_model_id}, learning condition {learning_condition_id}')
             colors = cm.Greens(np.linspace(0, 1, duration - 1))
@@ -2316,35 +2416,6 @@ def pcaL2(
         )
         plot_axes.elev = 22.5
         plot_axes.azim = 52.4
-
-
-        '''
-        labels = klabels.tolist()
-        nclusters = np.unique(klabels).size
-        #colors_old = cm.Set2(np.linspace(0, 1, nclusters))
-        _, key_labels = np.unique(labels, return_index=True)
-        handles = []
-        for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
-            # Transform colormap to color values:
-            color_values = colors[label - 1](np.linspace(0, 1, duration))
-            for t, c in zip(range(duration - 1), color_values):
-                handle = plot_axes.plot(
-                    t_L_per_trial[0][trial][t:t+2],
-                    t_L_per_trial[1][trial][t:t+2],
-                    t_L_per_trial[2][trial][t:t+2],
-                    color=c,
-                    linewidth=3,
-                    label=f'Cluster {label}'
-                )
-            if i in key_labels:
-                handles.append(handle)
-        # Youmust group handles based on unique labels.
-        plot_axes.legend(
-            handles=handles,
-            labels=named_serial_no('State', len(key_labels)),
-            loc='upper right'
-        )
-        '''
 
         if klabels is not None:
             # EDIT: decide about that:
@@ -2524,6 +2595,16 @@ def pcaL2(
             colors = cm.Set2(np.linspace(0, 1, nclusters))
             _, key_labels = np.unique(labels, return_index=True)
             handles = []
+
+            # Check that your custom label strings are of the right number.
+            if legend_labels is not None:
+                if len(legend_labels) != nclusters:
+                    raise ValueError('Number of trials and number of labels must match!')
+
+            #Block zip() from accidentally skipping trials.
+            if (total_data_trials != len(labels)):
+                raise ValueError('Number of trials and number of labels must match!')
+
             for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
                 if progressive_colors:
                     colors = color_values[label - 1 + kwargs.get('color_skip', 0)](np.linspace(0, 1, duration))
@@ -2550,9 +2631,14 @@ def pcaL2(
                 if i in key_labels:
                     handles.append(handle[0])
             # Youmust group handles based on unique labels.
+            if (legend_labels is not None):
+                legend_str_tags = legend_labels
+            else:
+                legend_str_tags = named_serial_no('State', len(key_labels))
+
             plot_axes.legend(
                 handles=handles,
-                labels=named_serial_no('State', len(key_labels)),
+                labels=legend_str_tags,
                 loc='upper right'
             )
         else:
@@ -4066,6 +4152,65 @@ def apclusterk(s, requested_k, prc=0):
     pref = tmppref
     print(f'Found {tmpk} clusters using a preference of {pref}\n')
     return idx
+
+def compare_dend_params(NWBarray_of_arrays, dataset_names):
+    '''
+    Compares NWBarrays with qualitatively different runs.
+    Just a helper function.
+    :param NWBarray_of_arrays: This contains the different datasets.
+    :return:
+    '''
+    trial_len = get_acquisition_parameters(
+        input_NWBfile=NWBarray_of_arrays[0][0],
+        requested_parameters=['trial_len']
+    )
+    delay_range = (20, int(trial_len / 50))
+    all_range = (0, int(trial_len / 50))
+
+    k_labels_arrays = [
+        [i+1] * get_nwb_list_valid_ntrials(NWBarray_of_arrays[i])
+        for i in range(len(NWBarray_of_arrays))
+    ]
+    K_labels = np.array(list(chain(*k_labels_arrays)))
+    NWBfile_array = list(chain(*NWBarray_of_arrays))
+
+    '''
+    #The old way (this is what the function does for more than 2 NWBs):
+    K_labels_2 = np.array(list(chain(
+        *[ [1] * get_nwb_list_valid_ntrials(NWBarray_1), \
+           [2] * get_nwb_list_valid_ntrials(NWBarray_2)] \
+        )))
+    NWBfile_array_2 = list(chain(*[
+        NWBarray_1,
+        NWBarray_2
+    ]))
+    '''
+    K_star_array = []
+    for i in range(len(NWBarray_of_arrays)):
+        K_star, * _ = determine_number_of_clusters(
+            NWBfile_array=NWBarray_of_arrays[i],
+            max_clusters=20,
+            custom_range=delay_range
+        )
+        K_star_array.append(K_star)
+
+    label_tags = [
+        f'{name}: K* = {k_star}'
+        for k_star, name in zip(K_star_array, dataset_names)
+    ]
+
+    fig = plt.figure()
+    plt.ion()
+    plot_axes_3d = fig.add_subplot(111, projection='3d')
+    pcaL2(
+        NWBfile_array=NWBfile_array,
+        custom_range=delay_range,
+        klabels=K_labels,
+        smooth=True, plot_3d=True,
+        plot_stim_color=True,
+        plot_axes=plot_axes_3d,
+        legend_labels=label_tags
+    )
 
 
 if __name__ == "__main__":

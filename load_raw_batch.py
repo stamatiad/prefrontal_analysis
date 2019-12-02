@@ -81,7 +81,7 @@ def read_dendritic_voltage(data_dir, ncells = 0, nsamples = 0, nseg = 5):
     #TODO: need to rewrite this!
     files_v_dend = list(data_dir.glob('v_dend*'))
     if len(files_v_dend) < 1:
-        print('No dendritic voltage trace files!')
+        print('\tNo dendritic voltage trace files!')
         return
 
     # Use ncells as a validation variable: if the value given is the same as
@@ -161,14 +161,15 @@ def read_synapse_info(data_dir, type=None, alias=None):
 def main(data_dir):
     #TODO: Must rewrite this fine!
     #ncores = 2 #mp.cpu_count()
-    print(f'data_dir: {data_dir}')
+    if __name__ == "__main__":
+        print(f'Neuron output data_dir:\n\t{data_dir}')
     #  Read somatic voltage:
-    print('Reading vsoma.')
+    print('\tReading vsoma.', end='')
     nsamples = read_somatic_voltage(data_dir, ncells = 333)
 
     # Load dendritic voltage traces, if any:
-    print('Reading vdend.')
-    read_dendritic_voltage(data_dir, ncells=250, nsamples=nsamples, nseg=5)
+    #print('\tReading vdend.')
+    #read_dendritic_voltage(data_dir, ncells=250, nsamples=nsamples, nseg=5)
 
     ## Read synaptic locations in PN2PN connections:
     #print('Reading pid pyramidal.')
