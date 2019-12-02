@@ -26,6 +26,15 @@ import copy
 import notebook_module as nb
 from scipy.signal import savgol_filter
 import scipy.stats
+from pathlib import Path
+import pickle
+import json
+import seaborn as sb
+
+plt.rcParams.update({'font.family': 'Helvetica'})
+plt.rcParams["figure.figsize"] = (15, 15)
+plt.rcParams['pdf.fonttype'] = 42
+plt.rcParams['ps.fonttype'] = 42
 
 def check_requirements():
     # Check that user is running a supported python version and necessary packages:
@@ -264,6 +273,9 @@ class Network:
     @property
     def upairs_d(self):
         # Return a copy of the dict, to avoid errors due to accidental mutation.
+        # Thus one can use the util functions that connect upairs, choosing
+        # whether or not the alterations will be retained by the network just
+        # by using the context mananger.
         return copy.deepcopy(self._upairs_d)
 
     @upairs_d.setter
@@ -312,6 +324,75 @@ class Network:
             tmp_network_upairs[upair.ucoord] = upair
         # Save the updated upairs to the network object:
         self.upairs_d = tmp_network_upairs
+
+    @property
+    def connection_functions_d(self):
+        # Define connectivity probability functions (distance dependent):
+        # Neuronal pairs are unordered {A,B}, considering their type.
+        # For each  pair we have three distinct, distance-dependend connection probabilities:
+        # 1) A <-> B (reciprocal)
+        # 2) A -> B
+        # 3) B -> A
+        # Other/custom connectivity functions can be used as well in the same framework, in order to connect different
+        # network configurations i.e. random or just get the connection  probability of all pairs (vectorized = fast).
+
+        # Average connectivity in Otsuka et al., 2009 is 0.25 (inside ~80um)
+        # Average connectivity in Packer, Yuste, 2011 is 0.67 (inside ~200um)
+        # We combine them, using an average, distance attenuating connectivity of 0.46
+        pv_factor = 0.46/(0.154+0.019+0.077)
+        # Use numpy array friendly lambdas. It is harder on the eyes, but can save hours (!) of computations:
+        self._connection_functions_d = {}
+        # PN with PN connectivity:
+        self._connection_functions_d['PN_PN'] = {}
+        self._connection_functions_d['PN_PN']['total'] \
+            = lambda x: np.multiply(np.exp(np.multiply(-0.0052, x)), 0.22)
+        self._connection_functions_d['PN_PN']['reciprocal'] \
+            = lambda x: np.multiply(np.exp(np.multiply(-0.0085, x)), 0.12)
+        self._connection_functions_d['PN_PN']['A2B'] \
+            = lambda x: np.divide(np.subtract(self._connection_functions_d['PN_PN']['total'](x), self._connection_functions_d['PN_PN']['reciprocal'](x)), 2)
+        self._connection_functions_d['PN_PN']['B2A'] \
+            = lambda x: self._connection_functions_d['PN_PN']['A2B'](x)
+        self._connection_functions_d['PN_PN']['unidirectional'] \
+            = lambda x: np.add(self._connection_functions_d['PN_PN']['A2B'](x), self._connection_functions_d['PN_PN']['B2A'](x))
+        # Random/uniform connection functions are refined later on, in order to exactly balance its overall connection
+        self._connection_functions_d['PN_PN']['uniform_reciprocal'] \
+            = lambda x: np.multiply(np.ones(x.shape), 0)
+        self._connection_functions_d['PN_PN']['uniform_A2B'] \
+            = lambda x: np.multiply(np.ones(x.shape), 0)
+        self._connection_functions_d['PN_PN']['uniform_B2A'] \
+            = lambda x: np.multiply(np.ones(x.shape), 0)
+        # probability with the structured configuration.
+        # PN with PV connectivity:
+        self._connection_functions_d['PN_PV'] = {}
+        self._connection_functions_d['PN_PV']['total'] \
+            = lambda x: np.exp(np.divide(x, -180))
+        self._connection_functions_d['PN_PV']['reciprocal'] \
+            = lambda x: np.multiply(self._connection_functions_d['PN_PV']['total'](x), 0.154 * pv_factor)
+        self._connection_functions_d['PN_PV']['A2B'] \
+            = lambda x: np.multiply(self._connection_functions_d['PN_PV']['total'](x), 0.019 * pv_factor)
+        self._connection_functions_d['PN_PV']['B2A'] \
+            = lambda x: np.multiply(self._connection_functions_d['PN_PV']['total'](x), 0.077 * pv_factor)
+        # PV with PV connectivity:
+        self._connection_functions_d['PV_PV'] = {}
+        self._connection_functions_d['PV_PV']['reciprocal'] \
+            = lambda x: np.multiply(np.ones(x.shape), 0.045)
+        self._connection_functions_d['PV_PV']['A2B'] \
+            = lambda x: np.multiply(np.ones(x.shape), 0.0675)
+        self._connection_functions_d['PV_PV']['B2A'] \
+            = lambda x: np.multiply(np.ones(x.shape), 0.0675)
+        return self._connection_functions_d
+
+    @connection_functions_d.setter
+    def connection_functions_d(self, new_tup):
+        #TODO: implement that constraint:
+        # In my code I only update the below keys, so only those are allowed to
+        # be updated.
+        pair_type = new_tup[0]
+        conn_type = new_tup[1]
+        conn_func = new_tup[2]
+        # Update connection functions dictionary:
+        self._connection_functions_d[pair_type][conn_type] = conn_func
+
 
     def __init__(self, serial_no, pc_no, pv_no):
         ''' Initialize network class.
@@ -432,6 +513,7 @@ class Network:
             plot_axis.set_zticks(pca_axis_limits)
             plt.savefig('Network_sn{}_3d_positions.png'.format(self.serial_no))
             plt.savefig('Network_sn{}_3d_positions.svg'.format(self.serial_no))
+            plt.savefig('Network_sn{}_3d_positions.pdf'.format(self.serial_no))
             plt.show()
 
         return
@@ -452,59 +534,6 @@ class Network:
         rnd = lambda: np.random.rand(1)[0]
 
         self.configuration_alias = alias
-        # Define connectivity probability functions (distance dependent):
-        # Neuronal pairs are unordered {A,B}, considering their type.
-        # For each  pair we have three distinct, distance-dependend connection probabilities:
-        # 1) A <-> B (reciprocal)
-        # 2) A -> B
-        # 3) B -> A
-        # Other/custom connectivity functions can be used as well in the same framework, in order to connect different
-        # network configurations i.e. random or just get the connection  probability of all pairs (vectorized = fast).
-
-        # Average connectivity in Otsuka et al., 2009 is 0.25 (inside ~80um)
-        # Average connectivity in Packer, Yuste, 2011 is 0.67 (inside ~200um)
-        # We combine them, using an average, distance attenuating connectivity of 0.46
-        pv_factor = 0.46/(0.154+0.019+0.077)
-        # Use numpy array friendly lambdas. It is harder on the eyes, but can save hours (!) of computations:
-        connection_functions_d = {}
-        # PN with PN connectivity:
-        connection_functions_d['PN_PN'] = {}
-        connection_functions_d['PN_PN']['total'] \
-            = lambda x: np.multiply(np.exp(np.multiply(-0.0052, x)), 0.22)
-        connection_functions_d['PN_PN']['reciprocal'] \
-            = lambda x: np.multiply(np.exp(np.multiply(-0.0085, x)), 0.12)
-        connection_functions_d['PN_PN']['A2B'] \
-            = lambda x: np.divide(np.subtract(connection_functions_d['PN_PN']['total'](x), connection_functions_d['PN_PN']['reciprocal'](x)), 2)
-        connection_functions_d['PN_PN']['B2A'] \
-            = lambda x: connection_functions_d['PN_PN']['A2B'](x)
-        connection_functions_d['PN_PN']['unidirectional'] \
-            = lambda x: np.add(connection_functions_d['PN_PN']['A2B'](x), connection_functions_d['PN_PN']['B2A'](x))
-        # Random/uniform connection functions are refined later on, in order to exactly balance its overall connection
-        connection_functions_d['PN_PN']['uniform_reciprocal'] \
-            = lambda x: np.multiply(np.ones(x.shape), 0)
-        connection_functions_d['PN_PN']['uniform_A2B'] \
-            = lambda x: np.multiply(np.ones(x.shape), 0)
-        connection_functions_d['PN_PN']['uniform_B2A'] \
-            = lambda x: np.multiply(np.ones(x.shape), 0)
-        # probability with the structured configuration.
-        # PN with PV connectivity:
-        connection_functions_d['PN_PV'] = {}
-        connection_functions_d['PN_PV']['total'] \
-            = lambda x: np.exp(np.divide(x, -180))
-        connection_functions_d['PN_PV']['reciprocal'] \
-            = lambda x: np.multiply(connection_functions_d['PN_PV']['total'](x), 0.154 * pv_factor)
-        connection_functions_d['PN_PV']['A2B'] \
-            = lambda x: np.multiply(connection_functions_d['PN_PV']['total'](x), 0.019 * pv_factor)
-        connection_functions_d['PN_PV']['B2A'] \
-            = lambda x: np.multiply(connection_functions_d['PN_PV']['total'](x), 0.077 * pv_factor)
-        # PV with PV connectivity:
-        connection_functions_d['PV_PV'] = {}
-        connection_functions_d['PV_PV']['reciprocal'] \
-            = lambda x: np.multiply(np.ones(x.shape), 0.045)
-        connection_functions_d['PV_PV']['A2B'] \
-            = lambda x: np.multiply(np.ones(x.shape), 0.0675)
-        connection_functions_d['PV_PV']['B2A'] \
-            = lambda x: np.multiply(np.ones(x.shape), 0.0675)
 
 
         @time_it
@@ -530,13 +559,29 @@ class Network:
                 upairs_dist = np.asarray([p.distance for p in matching_upairs])
                 prob_arr = np.full((len(connection_protocol)+1,len(matching_upairs)), 0.0)
                 for i, conn_type in enumerate(connection_protocol.values(), 1):
-                    prob_arr[i, :] = connection_functions_d[pair_type][conn_type](upairs_dist)
+                    prob_arr[i, :] = self.connection_functions_d[pair_type][conn_type](upairs_dist)
                 prob_arr = np.cumsum(prob_arr, axis=0)
                 # Don't forget to include the (closed) last bin!
                 prob_arr_flat = np.append(np.add(prob_arr, np.tile(np.arange(len(matching_upairs)),
                                                          (len(connection_protocol)+1, 1))).flatten('F'), len(matching_upairs))
                 print(f'Length of matching pairs {len(matching_upairs)}')
                 rnd_arr_flat = np.add(np.random.rand(1, len(matching_upairs)), np.arange(len(matching_upairs)))
+                #DEBUG
+                if False:
+                    filename = Path.cwd().joinpath('debug_files','error',f'network_debug_rnd_arr_flat_time_2_SN{self.serial_no}.hdf5')
+                    df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
+                                       'configuration_alias': self.configuration_alias})
+                    df.to_hdf(filename, key='attributes', mode='w')
+                    df = pd.DataFrame(rnd_arr_flat)
+                    df.to_hdf(filename, key='rnd_arr_flat')
+
+                    filename = Path.cwd().joinpath('debug_files','error',f'network_debug_prob_arr_time_2_SN{self.serial_no}.hdf5')
+                    df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
+                                       'configuration_alias': self.configuration_alias})
+                    df.to_hdf(filename, key='attributes', mode='w')
+                    df = pd.DataFrame(prob_arr)
+                    df.to_hdf(filename, key='prob_arr')
+                #END DEBUG
                 blah = np.histogram(rnd_arr_flat, bins=prob_arr_flat)[0]
                 blah2 = np.nonzero(blah)[0]
                 blah3 = np.arange(0, prob_arr_flat.size, len(connection_protocol)+1)
@@ -555,70 +600,6 @@ class Network:
                 prev_i += len(matching_upairs)
 
             return upairs
-
-
-        def randomize_connection_type(upairs, available_types=None):
-            '''
-            Randomize the connection type of the Upair/Upairs given.
-            :param available_types: optional
-            :return:
-            '''
-            #TODO: make this function get all connection types from outside?
-            if not available_types:
-                available_types = ['none', 'A2B', 'B2A', 'reciprocal']
-
-            type_len = len(available_types)
-
-            # Keep your RNG the one of numpy, for reproducability:
-            rnd_idx = np.random.randint(type_len, size=len(upairs))
-            at = np.array(available_types)
-            upair_types = at[(rnd_idx),]
-
-            # Update the connection type of the immutable namedtuples:
-            #updated_upairs = []
-            # Mutate the original upairs, since this is now the workflow:
-            for upair, connection_type in zip(upairs, upair_types):
-                upair.type_conn = connection_type
-                #tmp_d = upair._asdict()
-                #tmp_d['type_conn'] = connection_type
-                #updated_upairs.append(self.UPair(**tmp_d))
-
-            return upairs
-
-        def reduce_reciprocals(upairs, percentage=None):
-            '''
-            Replace reciprocal connections in upairs with unidirectional ones,
-            to match the percentage of the originals. I.e. if the original
-            network have 50% reciprocals and percentage is 50, then
-            the returned connectivity will have 0.5 * 0.5 = 0.25 reciprocal
-            connections.
-            :param upairs:
-            :param percentage:
-            :return:
-            '''
-
-            # Check that only PN2PN upairs are given:
-            if len(set(x.type_cells for x in upairs)) > 1:
-                raise ValueError('Please provide only PN2PN pairs!')
-
-            #TODO: remap reciprocal connections; get reciprocal only, to not
-            # change the overall connection probability, and remap them.
-            reciprocal_upairs = np.array([x for x in upairs if x.type_conn == 'reciprocal'])
-            # nonconnected_upairs = np.array([x for x in upairs if x.type_conn == 'none'])
-            # Random permute the lists:
-            idx_reciprocal = np.random.permutation(reciprocal_upairs.size)
-            # idx_nonconnected = np.random.permutation(nonconnected_upairs.size)
-            # Replace % of the reciprocal pairs with non connected:
-            percentage_no = int(reciprocal_upairs.size * percentage)
-            upairs_to_randomize = reciprocal_upairs[idx_reciprocal[:percentage_no]].tolist()
-            # The updated pairs will be saved since this is called inside
-            # a context mananger, so no need to return anything.
-            randomize_connection_type(
-                list(upairs_to_randomize),
-                available_types=['A2B', 'B2A']
-            )
-
-
 
         @time_it
         def upairs2mat(upairs):
@@ -677,11 +658,11 @@ class Network:
             uniform_prob_reciprocal = uniform_prob_unidirectional**2
             #uniform_prob_reciprocal = average_conn_prob**2
             #uniform_prob_unidirectional = (average_conn_prob - (average_conn_prob**2))/2
-            connection_functions_d['PN_PN']['uniform_reciprocal'] \
+            self.connection_functions_d['PN_PN']['uniform_reciprocal'] \
                 = lambda x: np.multiply(np.ones(x.shape), uniform_prob_reciprocal)
-            connection_functions_d['PN_PN']['uniform_A2B'] \
+            self.connection_functions_d['PN_PN']['uniform_A2B'] \
                 = lambda x: np.multiply(np.ones(x.shape), uniform_prob_unidirectional)
-            connection_functions_d['PN_PN']['uniform_B2A'] \
+            self.connection_functions_d['PN_PN']['uniform_B2A'] \
                 = lambda x: np.multiply(np.ones(x.shape), uniform_prob_unidirectional)
             # Utilize only the uniform type of connection:
             uniform = {0: 'uniform_reciprocal', 1: 'uniform_A2B', 2: 'uniform_B2A'}
@@ -696,12 +677,6 @@ class Network:
             return upairs2mat(connected_upairs)
 
 
-        def perform_reduce_reciprocals(percentage=50):
-            with self.get_upairs(cell_type='PN_PN') as pn_upairs:
-                reduce_reciprocals(
-                    pn_upairs, percentage=percentage
-                )
-
 
         def perform_structured_connectivity():
             #TODO: einai ta reciprocals sxedon ta misa?
@@ -709,6 +684,23 @@ class Network:
             # connection probabilities:
             # Filter out non PN cell pairs:
             pn_upairs = [pair for pair in self.upairs_d.values() if pair.type_cells == ('PN_PN')]
+
+            if False:
+                #TODO: DEBUG: json and save:
+                pn_upairs_d_l = []
+                for upair in pn_upairs:
+                    upair_d = {'a':upair.a, 'b':upair.b, 'distance':upair.distance,
+                               'type_cells':upair.type_cells,
+                               'type_conn':upair.type_conn, 'prob_f':None}
+                    pn_upairs_d_l.append(upair_d)
+
+
+                #pn_upars_1:
+                fn_p = Path.cwd().joinpath('debug_files', 'error', f'pn_upairs_1_SN{self.serial_no}.json')
+                #pickle.dump(pn_upairs, open(fn_p, "wb"))
+                with open(fn_p, 'w') as fp:
+                    json.dump(pn_upairs_d_l, fp, indent=4)
+
             # use a dict to instruct what connections you need:
             # This is the distance dependent connection types from Perin et al., 2011:
             based_on_distance = {0: 'reciprocal', 1: 'A2B', 2: 'B2A'}
@@ -724,9 +716,34 @@ class Network:
                 connection_protocol=overall_probability,
                 export_probabilities=True
             )
+            if False:
+                #TODO: DEBUG: json and save:
+                pd_upairs_d_l = []
+                for upair in Pd_upairs:
+                    upair_d = {'a':upair.a, 'b':upair.b, 'distance':upair.distance,
+                               'type_cells':upair.type_cells,
+                               'type_conn':upair.type_conn, 'prob_f':None}
+                    pd_upairs_d_l.append(upair_d)
+
+
+                #pn_upars_1:
+                fn_p = Path.cwd().joinpath('debug_files', 'error', f'pd_upairs_1_SN{self.serial_no}.json')
+                #pickle.dump(pn_upairs, open(fn_p, "wb"))
+                with open(fn_p, 'w') as fp:
+                    json.dump(pd_upairs_d_l, fp, indent=4)
+
             # Get type '0' connection probability for each pair (this is the total/overall probability):
             prob_f_list = [upair.prob_f[1] for upair in Pd_upairs]
             Pd = np.asmatrix(distance.squareform(prob_f_list))
+            #DEBUG
+            if False:
+                filename = Path.cwd().joinpath('debug_files','error',f'network_debug_PdMat_SN{self.serial_no}.hdf5')
+                df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
+                                   'configuration_alias': self.configuration_alias})
+                df.to_hdf(filename, key='attributes', mode='w')
+                df = pd.DataFrame(Pd)
+                df.to_hdf(filename, key='Pd')
+
             sumPd = Pd.sum()
             # run iterative rearrangement:
             f_prob = np.zeros((self.pc_no, self.pc_no, rearrange_iterations))
@@ -767,16 +784,39 @@ class Network:
                         connection_protocol=based_on_distance
                     )
                     reformed_conn_mat = upairs2mat(new_upairs)
+                    #TODO: DEBUG: save the connection matrix for each iteration
+                    #to debug it againts the working commit: 6063a41
+                    #filename = Path.cwd().joinpath('debug_files','d23a58a',f'iter_{t}_network_debug_SN{self.serial_no}.hdf5')
+                    #df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
+                    #                   'configuration_alias': self.configuration_alias})
+                    #df.to_hdf(filename, key='attributes', mode='w')
+                    #df = pd.DataFrame(reformed_conn_mat)
+                    #df.to_hdf(filename, key='reformed_conn_mat')
+
 
                 #TODO: the context manager will update the upairs: are the
                 # distances correct? Fix them?
 
+            # Save the clustering coefficient, for plotting it later.
+            configuration_alias = 'structured'
+            filename = Path(rf'C:\Users\steve\Documents\analysis\Python\new_files'). \
+                joinpath(f'{configuration_alias}_network_SN{self.serial_no}_clust_coeff.hdf5')
+            df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
+                               'configuration_alias': self.configuration_alias})
+            df.to_hdf(filename, key='attributes', mode='w')
+            df = pd.DataFrame(cc)
+            df.to_hdf(filename, key='clust_coeff')
+
             # Plot
             if plot:
+                savgol_window = int(cc.shape[1] / 10 + 1)
+                savgol_polyorder = 3
+                if savgol_window < savgol_polyorder:
+                    print('!!!Use more rearrange_iterations or reduce savgol_window!')
                 fig, ax = plt.subplots()
                 ax.plot(cc[0, 1:], color='gray', alpha=0.2)
                 ax.plot(
-                    savgol_filter(cc[0, 1:], int(cc.shape[1] / 20 + 1), 3),
+                    savgol_filter(cc[0, 1:], savgol_window, 3),
                     color='k', linewidth=2
                 )
                 ax.set_title('Clustering Coefficient')
@@ -789,6 +829,9 @@ class Network:
                 )
                 plt.savefig(
                     f'Network_sn{self.serial_no}_clustering_coefficient.svg'
+                )
+                plt.savefig(
+                    f'Network_sn{self.serial_no}_clustering_coefficient.pdf'
                 )
                 plt.show()
 
@@ -811,9 +854,10 @@ class Network:
                     all_upairs, connection_protocol=based_on_distance
                 )
             )
-        connectivity_mat = upairs2mat(self.upairs_d.values())
+        #TODO: Why I do this again? Do the conn mats differ?
+        connectivity_mat2 = upairs2mat(self.upairs_d.values())
 
-        #print(f'Random finally {np.random.rand(1)[0]}')
+        print(f'Random finally {np.random.rand(1)[0]}')
         #with open('connblah1.txt', 'w') as f:
         #    for element in connectivity_mat[-1, :]:
         #        f.write(f'{element}\n')
@@ -821,80 +865,29 @@ class Network:
         # Plot to see the validated results of the connectivity routines:
         if plot:
             plt.ion()
-            '''
-            # Plot PN-PN reciprocal:
-            plot_connectivity_across_distance(
-                conn_mat=connectivity_mat[:self.pc_no, :self.pc_no],
-                distance_mat=self.dist_mat[:self.pc_no, :self.pc_no],
-                conn_pair='PN_PN',
-                conn_type='reciprocal',
-                conn_functions_dict=connection_functions_d
-            )
-            # Plot PN-PN unidirectional:
-            plot_connectivity_across_distance(
-                conn_mat=connectivity_mat[:self.pc_no, :self.pc_no],
-                distance_mat=self.dist_mat[:self.pc_no, :self.pc_no],
-                conn_pair='PN_PN',
-                conn_type='unidirectional',
-                conn_functions_dict=connection_functions_d
-            )
-            # Plot PN-PV unidirectional:
-            plot_connectivity_across_distance(
-                conn_mat=[
-                    connectivity_mat[:self.pc_no, self.pc_no:],
-                    connectivity_mat[self.pc_no:, :self.pc_no]
-                ],
-                distance_mat=self.dist_mat[:self.pc_no, self.pc_no:],
-                conn_pair='PN_PV',
-                conn_type='A2B',
-                conn_functions_dict=connection_functions_d
-            )
-            # Plot PV-PN unidirectional:
-            plot_connectivity_across_distance(
-                conn_mat=[
-                    connectivity_mat[:self.pc_no, self.pc_no:],
-                    connectivity_mat[self.pc_no:, :self.pc_no]
-                ],
-                distance_mat=self.dist_mat[:self.pc_no, self.pc_no:],
-                conn_pair='PN_PV',
-                conn_type='B2A',
-                conn_functions_dict=connection_functions_d
-            )
-            # Plot PN-PV reciprocals:
-            plot_connectivity_across_distance(
-                conn_mat=[
-                    connectivity_mat[:self.pc_no, self.pc_no:],
-                    connectivity_mat[self.pc_no:, :self.pc_no]
-                ],
-                distance_mat=self.dist_mat[:self.pc_no, self.pc_no:],
-                conn_pair='PN_PV',
-                conn_type='reciprocal',
-                conn_functions_dict=connection_functions_d
-            )
-           '''
-            plot_reciprocal_across_distance(connectivity_mat[:self.pc_no, :self.pc_no],
+            compute_reciprocal_across_distance(connectivity_mat[:self.pc_no, :self.pc_no],
                                             self.dist_mat[:self.pc_no, :self.pc_no],
-                                            connection_functions_d['PN_PN']['reciprocal'],
-                                            )
-            plot_unidirectional_across_distance(connectivity_mat[:self.pc_no, :self.pc_no],
+                                               self.connection_functions_d['PN_PN']['reciprocal'],
+                                               )
+            compute_unidirectional_across_distance(connectivity_mat[:self.pc_no, :self.pc_no],
                                                 self.dist_mat[:self.pc_no, :self.pc_no],
-                                                connection_functions_d['PN_PN']['unidirectional'],
-                                                )
-            plot_pn2pv_unidirectional_across_distance(mat_pn_pv=connectivity_mat[:self.pc_no, self.pc_no:],
-                                                      mat_pv_pn=connectivity_mat[self.pc_no:, :self.pc_no],
-                                                      dist_mat=self.dist_mat[:self.pc_no, self.pc_no:],
-                                                      ground_truth=connection_functions_d['PN_PV']['A2B'],
-                                                      )
-            plot_pv2pn_unidirectional_across_distance(mat_pn_pv=connectivity_mat[:self.pc_no, self.pc_no:],
-                                                      mat_pv_pn=connectivity_mat[self.pc_no:, :self.pc_no],
-                                                      dist_mat=self.dist_mat[:self.pc_no, self.pc_no:],
-                                                      ground_truth=connection_functions_d['PN_PV']['B2A'],
-                                                      )
-            plot_pn_pv_reciprocal_across_distance(connectivity_mat[:self.pc_no, self.pc_no:],
+                                                   self.connection_functions_d['PN_PN']['unidirectional'],
+                                                   )
+            compute_pn2pv_unidirectional_across_distance(mat_pn_pv=connectivity_mat[:self.pc_no, self.pc_no:],
+                                                         mat_pv_pn=connectivity_mat[self.pc_no:, :self.pc_no],
+                                                         dist_mat=self.dist_mat[:self.pc_no, self.pc_no:],
+                                                         ground_truth=self.connection_functions_d['PN_PV']['A2B'],
+                                                         )
+            compute_pv2pn_unidirectional_across_distance(mat_pn_pv=connectivity_mat[:self.pc_no, self.pc_no:],
+                                                         mat_pv_pn=connectivity_mat[self.pc_no:, :self.pc_no],
+                                                         dist_mat=self.dist_mat[:self.pc_no, self.pc_no:],
+                                                         ground_truth=self.connection_functions_d['PN_PV']['B2A'],
+                                                         )
+            compute_pn_pv_reciprocal_across_distance(connectivity_mat[:self.pc_no, self.pc_no:],
                                                   connectivity_mat[self.pc_no:, :self.pc_no],
                                                   self.dist_mat[:self.pc_no, self.pc_no:],
-                                                  connection_functions_d['PN_PV']['reciprocal']
-                                                  )
+                                                     self.connection_functions_d['PN_PV']['reciprocal']
+                                                     )
 
 
         # Now if configuration is random, update the PN to PN connectivity matrix part and return:
@@ -904,17 +897,6 @@ class Network:
         # if configuration is structured,
         if self.configuration_alias is 'structured':
             excitatory_conn_mat = perform_structured_connectivity()
-
-
-        if self.configuration_alias is 'structured_half_reciprocals':
-            perform_structured_connectivity()
-            perform_reduce_reciprocals(percentage=50)
-            pn_upairs = [
-                pair 
-                for pair in self.upairs_d.values() 
-                if pair.type_cells == ('PN_PN')
-                ]
-            excitatory_conn_mat = upairs2mat(pn_upairs)
 
         # Save resulting connectivity matrix to the network:
         connectivity_mat[:self.pc_no, :self.pc_no] = excitatory_conn_mat
@@ -1118,10 +1100,16 @@ class Network:
         df.to_hdf(filename, key='connectivity_mat')
         df = pd.DataFrame(self.weights_mat)
         df.to_hdf(filename, key='weights_mat')
+        df = pd.DataFrame(self.dist_mat)
+        df.to_hdf(filename, key='dist_mat')
         df = pd.DataFrame(self.upairs_d, index=[0])
         df.to_hdf(filename, key='upairs_d')
         df = pd.DataFrame(self.stats, index=[0])
         df.to_hdf(filename, key='stats')
+        df = pd.DataFrame(self.pc_somata)
+        df.to_hdf(filename, key='pc_somata')
+        df = pd.DataFrame(self.pv_somata)
+        df.to_hdf(filename, key='pv_somata')
         #blah = pd.read_hdf(filename, key='attributes')
 
 def isdirected(adj):
@@ -1350,8 +1338,11 @@ def plot_connectivity_across_distance(
     plt.savefig(f'{conn_pair}_{conn_type}_across_distance.png')
     plt.show()
 
-def plot_connectivity(histo, histo_bins, histo_dist, ground_truth, bin_width):
-    fig, ax = plt.subplots()
+def plot_connectivity(
+        histo, histo_bins, histo_dist, ground_truth, bin_width, ax=None
+):
+    if not ax:
+        fig, ax = plt.subplots()
     # Normalize histogram of intra-neuronal distances to GT maximum, for
     # better visualization.
     cax = ax.plot(
@@ -1369,7 +1360,35 @@ def plot_connectivity(histo, histo_bins, histo_dist, ground_truth, bin_width):
     nb.adjust_spines(ax, ['left', 'bottom'])
     return ax
 
-def plot_reciprocal_across_distance(mat, distance_mat, ground_truth=None, plot=False):
+def plot_average_connectivity(
+        histo, histo_bins, histo_dist, ground_truth, bin_width, ax=None
+):
+    if not ax:
+        fig, ax = plt.subplots()
+    #sb.regplot(x=list(chain(*K_s)), y=list(chain(*PC_no)), ax=ax, marker='.', color='C0')
+    #TODO: prepei to histo na to kanw divide me to distance k meta na ta balw se DataFrame.
+    flat_freq = histo.reshape((histo.size, 1))
+    flat_dist = histo_dist.reshape((histo.size, 1))
+    bins = np.concatenate((histo_bins[:-1], histo_bins[:-1], histo_bins[:-1], histo_bins[:-1]))
+    flat_freq_per_dist = np.divide(flat_freq, flat_dist)
+    flat_freq_per_dist[flat_freq_per_dist == 0] = np.nan
+    df = pd.DataFrame({'Datapoints':flat_freq_per_dist[:, 0], 'bins': bins})
+    sb.lineplot(x='bins', y='Datapoints', data=pd.DataFrame(df), ax=ax, dashes=False)
+
+    if ground_truth:
+        cax = ax.plot(histo_bins, ground_truth[0](histo_bins), linewidth=2)
+        cax = ax.bar(
+            histo_bins[:-1], (np.sum(histo, axis=0) / histo.sum()),
+            width=bin_width, color='gray', alpha=0.4
+        )
+    ax.set_title('Structured Configuration')
+    nb.axis_normal_plot(axis=ax)
+    nb.adjust_spines(ax, ['left', 'bottom'])
+    return ax
+
+def compute_reciprocal_across_distance(
+        mat, distance_mat, ground_truth=None, plot=True, plot_axis=None
+):
     '''
     Plots a histogram with the relative frequency of reciprocal connections as a function of distance.
     If a ground truth function is provided, plot it for comparisson.
@@ -1391,21 +1410,27 @@ def plot_reciprocal_across_distance(mat, distance_mat, ground_truth=None, plot=F
     dist_vector = distance_mat[np.asmatrix(np.triu(np.ones((n, n)), 1), dtype=bool)]
 
     bin_width = 10
-    histo_bins = np.arange(0, 200, bin_width)
+    histo_bins = np.arange(0, 160, bin_width)
     histo_dist, bin_edges = np.histogram(dist_vector, bins=histo_bins)
     histo, bin_edges = np.histogram(dist_vector[np.asarray(conn_vector)[0]], bins=histo_bins)
 
-    ax = plot_connectivity(
-        histo, histo_bins, histo_dist, ground_truth, bin_width
-    )
-    ax.set_xlabel('Distance (um)')
-    ax.set_ylabel('PN-PN Reciprocal Probability')
+    if plot:
+        ax = plot_connectivity(
+            histo, histo_bins, histo_dist, ground_truth, bin_width, ax=plot_axis
+        )
+        ax.set_xlabel('Distance (um)')
+        ax.set_ylabel('PN-PN Reciprocal Probability')
 
-    plt.savefig('PN-PN_reciprocal_across_distance.png')
-    plt.savefig('PN-PN_reciprocal_across_distance.svg')
-    plt.show()
+        plt.savefig('PN-PN_reciprocal_across_distance.png')
+        plt.savefig('PN-PN_reciprocal_across_distance.svg')
+        plt.savefig('PN-PN_reciprocal_across_distance.pdf')
+        plt.show()
 
-def plot_unidirectional_across_distance(mat, distance_mat, ground_truth=None, plot=False):
+    return (histo, histo_bins, histo_dist, ground_truth, bin_width)
+
+def compute_unidirectional_across_distance(
+        mat, distance_mat, ground_truth=None, plot=True, plot_axis=None
+):
     '''
     Plots a histogram with the relative frequency of unidirectional connections as a function of distance.
     If a ground truth function is provided, plot it for comparisson.
@@ -1427,21 +1452,27 @@ def plot_unidirectional_across_distance(mat, distance_mat, ground_truth=None, pl
     dist_vector = distance_mat[np.asmatrix(np.triu(np.ones((n, n)), 1), dtype=bool)]
 
     bin_width = 10
-    histo_bins = np.arange(0, 200, bin_width)
+    histo_bins = np.arange(0, 160, bin_width)
     histo_dist, bin_edges = np.histogram(dist_vector, bins=histo_bins)
     histo, bin_edges = np.histogram(dist_vector[np.asarray(conn_vector)[0]], bins=histo_bins)
 
-    ax = plot_connectivity(
-        histo, histo_bins, histo_dist, ground_truth, bin_width
-    )
-    ax.set_xlabel('Distance (um)')
-    ax.set_ylabel('PN-PN Unidirectional Probability')
+    if plot:
+        ax = plot_connectivity(
+            histo, histo_bins, histo_dist, ground_truth, bin_width, ax=plot_axis
+        )
+        ax.set_xlabel('Distance (um)')
+        ax.set_ylabel('PN-PN Unidirectional Probability')
 
-    plt.savefig('PN-PN_unidirectional_across_distance.png')
-    plt.savefig('PN-PN_unidirectional_across_distance.svg')
-    plt.show()
+        plt.savefig('PN-PN_unidirectional_across_distance.png')
+        plt.savefig('PN-PN_unidirectional_across_distance.svg')
+        plt.savefig('PN-PN_unidirectional_across_distance.pdf')
+        plt.show()
 
-def plot_pn_pv_reciprocal_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, ground_truth=None):
+    return (histo, histo_bins, histo_dist, ground_truth, bin_width)
+
+def compute_pn_pv_reciprocal_across_distance(
+        mat_pn_pv, mat_pv_pn, dist_mat, ground_truth=None, plot=True, plot_axis=None
+):
     '''
     Plots a histogram with the relative frequency of pn to pv reciprocal connections as a function of distance.
     If a ground truth function is provided, plot it for comparisson.
@@ -1461,20 +1492,27 @@ def plot_pn_pv_reciprocal_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, ground
     mat_unid = np.logical_and(logical_mat_pn_pv,  logical_mat_pv_pn.T)
 
     bin_width = 10
-    histo_bins = np.arange(0, 200, bin_width)
+    histo_bins = np.arange(0, 160, bin_width)
     histo_dist, bin_edges = np.histogram(dist_mat, bins=histo_bins)
     histo, bin_edges = np.histogram(dist_mat[mat_unid], bins=histo_bins)
-    # Plot
-    ax = plot_connectivity(
-        histo, histo_bins, histo_dist, ground_truth, bin_width
-    )
-    ax.set_xlabel('Distance (um)')
-    ax.set_ylabel('PN2PV Reciprocal Probability')
-    plt.savefig('PN-PV_reciprocal_across_distance.png')
-    plt.savefig('PN-PV_reciprocal_across_distance.svg')
-    plt.show()
 
-def plot_pn2pv_unidirectional_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, ground_truth=None, plot=False):
+    if plot:
+        ax = plot_connectivity(
+            histo, histo_bins, histo_dist, ground_truth, bin_width, ax=plot_axis
+        )
+        ax.set_xlabel('Distance (um)')
+        ax.set_ylabel('PN2PV Reciprocal Probability')
+        plt.savefig('PN-PV_reciprocal_across_distance.png')
+        plt.savefig('PN-PV_reciprocal_across_distance.svg')
+        plt.savefig('PN-PV_reciprocal_across_distance.pdf')
+        plt.show()
+
+    return (histo, histo_bins, histo_dist, ground_truth, bin_width)
+
+def compute_pn2pv_unidirectional_across_distance(
+        mat_pn_pv, mat_pv_pn, dist_mat, ground_truth=None, plot=True,
+        plot_axis=None
+):
     '''
     Plots a histogram with the relative frequency of pn to pv unidirectional connections as a function of distance.
     If a ground truth function is provided, plot it for comparisson.
@@ -1494,21 +1532,28 @@ def plot_pn2pv_unidirectional_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, gr
     mat_unid = np.logical_and(np.logical_xor(logical_mat_pn_pv,  logical_mat_pv_pn.T), logical_mat_pn_pv)
 
     bin_width = 10
-    histo_bins = np.arange(0, 200, bin_width)
+    histo_bins = np.arange(0, 160, bin_width)
     histo_dist, bin_edges = np.histogram(dist_mat, bins=histo_bins)
     histo, bin_edges = np.histogram(dist_mat[mat_unid], bins=histo_bins)
 
-    ax = plot_connectivity(
-        histo, histo_bins, histo_dist, ground_truth, bin_width
-    )
-    ax.set_xlabel('Distance (um)')
-    ax.set_ylabel('PN2PV Unidirectional Probability')
+    if plot:
+        ax = plot_connectivity(
+            histo, histo_bins, histo_dist, ground_truth, bin_width, ax=plot_axis
+        )
+        ax.set_xlabel('Distance (um)')
+        ax.set_ylabel('PN2PV Unidirectional Probability')
 
-    plt.savefig('plot_pn2pv_unidirectional_across_distance.png')
-    plt.savefig('plot_pn2pv_unidirectional_across_distance.svg')
-    plt.show()
+        plt.savefig('plot_pn2pv_unidirectional_across_distance.png')
+        plt.savefig('plot_pn2pv_unidirectional_across_distance.svg')
+        plt.savefig('plot_pn2pv_unidirectional_across_distance.pdf')
+        plt.show()
 
-def plot_pv2pn_unidirectional_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, ground_truth=None, plot=False):
+    return (histo, histo_bins, histo_dist, ground_truth, bin_width)
+
+def compute_pv2pn_unidirectional_across_distance(
+        mat_pn_pv, mat_pv_pn, dist_mat, ground_truth=None, plot=True,
+        plot_axis=None
+):
     '''
     Plots a histogram with the relative frequency of pn to pv unidirectional connections as a function of distance.
     If a ground truth function is provided, plot it for comparisson.
@@ -1528,16 +1573,20 @@ def plot_pv2pn_unidirectional_across_distance(mat_pn_pv, mat_pv_pn, dist_mat, gr
     mat_unid = np.logical_and(np.logical_xor(logical_mat_pn_pv,  logical_mat_pv_pn.T), logical_mat_pv_pn.T)
 
     bin_width = 10
-    histo_bins = np.arange(0, 200, bin_width)
+    histo_bins = np.arange(0, 160, bin_width)
     histo_dist, bin_edges = np.histogram(dist_mat, bins=histo_bins)
     histo, bin_edges = np.histogram(dist_mat[mat_unid], bins=histo_bins)
 
-    ax = plot_connectivity(
-        histo, histo_bins, histo_dist, ground_truth, bin_width
-    )
-    ax.set_xlabel('Distance (um)')
-    ax.set_ylabel('PV2PN Unidirectional Probability')
+    if plot:
+        ax = plot_connectivity(
+            histo, histo_bins, histo_dist, ground_truth, bin_width, ax=plot_axis
+        )
+        ax.set_xlabel('Distance (um)')
+        ax.set_ylabel('PV2PN Unidirectional Probability')
 
-    plt.savefig('plot_pv2pn_unidirectional_across_distance.png')
-    plt.savefig('plot_pv2pn_unidirectional_across_distance.svg')
-    plt.show()
+        plt.savefig('plot_pv2pn_unidirectional_across_distance.png')
+        plt.savefig('plot_pv2pn_unidirectional_across_distance.svg')
+        plt.savefig('plot_pv2pn_unidirectional_across_distance.pdf')
+        plt.show()
+
+    return (histo, histo_bins, histo_dist, ground_truth, bin_width)
