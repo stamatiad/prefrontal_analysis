@@ -66,4 +66,6 @@ analysis.compare_dend_params([
 ])
 
 
+plt.savefig('Stimulated_attractors.pdf')
+plt.savefig('Stimulated_attractors.png')
 print("tutto pronto!")

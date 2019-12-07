@@ -12,6 +12,7 @@ from itertools import chain
 import matplotlib.gridspec as gridspec
 from mpl_toolkits.mplot3d import Axes3D
 import scipy.stats
+from sklearn.linear_model import LinearRegression
 import seaborn as sb
 import math
 import pandas as pd
@@ -41,7 +42,6 @@ cp_trials_len = 0
 for cp in cp_array:
     cp_trials_len += cp
 
-'''
 for p, cp in enumerate(cp_array):
     NWBfile = analysis.load_nwb_from_neuron(
         glia_dir,
@@ -95,7 +95,6 @@ for p, cp in enumerate(cp_array):
         NWBfiles_1smalldend.append(NWBfile)
         #K_labels_array.append(2)
 
-'''
 for p, cp in enumerate(cp_array):
     NWBfile = analysis.load_nwb_from_neuron(
         glia_dir,
@@ -114,7 +113,6 @@ for p, cp in enumerate(cp_array):
         NWBfiles_1mediumdend.append(NWBfile)
         #K_labels_array.append(3)
 
-'''
 for p, cp in enumerate(cp_array):
     NWBfile = analysis.load_nwb_from_neuron(
         glia_dir,
@@ -149,8 +147,30 @@ for p, cp in enumerate(cp_array):
     if NWBfile:
         NWBfiles_2longdend.append(NWBfile)
         #K_labels_array.append(4)
-'''
 
+trial_len = analysis.get_acquisition_parameters(
+    input_NWBfile=NWBfile,
+    requested_parameters=['trial_len']
+)
+delay_range = (20, int(trial_len / 50))
+all_range = (0, int(trial_len / 50))
+activity, *_ = analysis.get_binned_activity(
+    NWBfiles_1mediumdend[5],delay_range)
+mymat = activity.mean(axis=2)
+x = np.array(range(1, mymat.shape[1] + 1)).reshape(-1,1)
+y = mymat[6, :].reshape(-1, 1)
+model = LinearRegression()
+model.fit(x, y)
+beta = model.coef_
+x_pred = model.predict(x)
+# Plot outputs
+plt.scatter(x, y,  color='black')
+plt.plot(x, x_pred, color='blue', linewidth=3)
+plt.xticks(())
+plt.yticks(())
+plt.show()
+print("BLAH")
+'''
 trial_len = analysis.get_acquisition_parameters(
     input_NWBfile=NWBfile,
     requested_parameters=['trial_len']
@@ -171,6 +191,9 @@ t_L, L, S, T, T_all = analysis.pcaL2_with_time_variance(
     delay_range=delay_range
 )
 plt.show()
+fig.savefig('Murray_2.pdf')
+fig.savefig('Murray_2.png')
+
 analysis.stim_variance_captured(
     input_NWBfile=NWBfiles_1mediumdend[5],
     S=S,
@@ -179,6 +202,9 @@ analysis.stim_variance_captured(
     stim_and_delay_range=all_range,
     delay_range=delay_range
 )
+plt.gcf().savefig('Murray_3c.pdf')
+plt.gcf().savefig('Murray_3c.png')
+'''
 
 # Show the attractor landscape for different type of dendrites.
 analysis.compare_dend_params([
@@ -190,6 +216,8 @@ analysis.compare_dend_params([
     'NWBfiles_1mediumdend',
     'NWBfiles_1longdend'
 ])
+plt.gcf().savefig('Dend_compare_1dend_all.pdf')
+plt.gcf().savefig('Dend_compare_1dend_all.png')
 
 analysis.compare_dend_params([
     NWBfiles_2smalldend,
