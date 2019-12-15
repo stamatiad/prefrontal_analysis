@@ -20,6 +20,17 @@ from scipy import stats
 from itertools import chain
 import sys
 
+plt.rcParams.update({'font.family': 'Helvetica'})
+plt.rcParams["figure.figsize"] = (5, 5)
+plt.rcParams['pdf.fonttype'] = 42
+plt.rcParams['ps.fonttype'] = 42
+axis_label_font_size = 12
+tick_label_font_size = 12
+labelpad_x = 10
+labelpad_y = 10
+plt.rcParams['xtick.labelsize']=tick_label_font_size
+plt.rcParams['ytick.labelsize']=tick_label_font_size
+
 simulations_dir = Path.cwd().joinpath('simulations')
 glia_dir = Path("\\\\139.91.162.90\\cluster\\stefanos\\Documents\\Glia\\")
 glia_dir_pd = Path("\\\\139.91.162.90\\cluster\\stefanos\\Documents\\Glia\\point_dendrite\\")
@@ -148,12 +159,50 @@ for p, cp in enumerate(cp_array):
         NWBfiles_2longdend.append(NWBfile)
         #K_labels_array.append(4)
 
+'''
+# <codecell>
+# Create anatomical cluster (affinity propagation) VS No of trajectories
 trial_len = analysis.get_acquisition_parameters(
     input_NWBfile=NWBfile,
     requested_parameters=['trial_len']
 )
 delay_range = (20, int(trial_len / 50))
 all_range = (0, int(trial_len / 50))
+
+K_star_array = []
+k_labels_array = []
+for i, NWBfile in enumerate(NWBfiles_1mediumdend):
+    K_star, k_labels, *_ = analysis.determine_number_of_clusters(
+        NWBfile_array=[NWBfile],
+        max_clusters=20,
+        custom_range=delay_range
+    )
+    K_star_array.append(K_star)
+    k_labels_array.append(k_labels)
+
+fig = plt.figure()
+plt.ion()
+plot_axes_3d = fig.add_subplot(111, projection='3d')
+analysis.pcaL2(
+    NWBfile_array=[NWBfiles_1mediumdend[5]],
+    custom_range=delay_range,
+    klabels=k_labels_array[-1],
+    smooth=True, plot_3d=True,
+    plot_stim_color=False,
+    plot_axes=plot_axes_3d
+)
+fig, ax = plt.subplots()
+ax.plot(range(2, len(K_star_array)+2), K_star_array)
+ax.set_xlabel('Anatomical clusters')
+ax.set_ylabel('Number of trajectories')
+fig.savefig('Clusters_VS_trajectories.pdf')
+fig.savefig('Clusters_VS_trajectories.png')
+print("Tutto pronto!")
+'''
+
+
+
+'''
 activity, *_ = analysis.get_binned_activity(
     NWBfiles_1mediumdend[5],delay_range)
 mymat = activity.mean(axis=2)
@@ -171,6 +220,10 @@ plt.yticks(())
 plt.show()
 print("BLAH")
 '''
+
+'''
+# <codecell>
+# Create Murray figures:
 trial_len = analysis.get_acquisition_parameters(
     input_NWBfile=NWBfile,
     requested_parameters=['trial_len']
@@ -206,6 +259,7 @@ plt.gcf().savefig('Murray_3c.pdf')
 plt.gcf().savefig('Murray_3c.png')
 '''
 
+
 # Show the attractor landscape for different type of dendrites.
 analysis.compare_dend_params([
     NWBfiles_1smalldend,
@@ -216,9 +270,11 @@ analysis.compare_dend_params([
     'NWBfiles_1mediumdend',
     'NWBfiles_1longdend'
 ])
-plt.gcf().savefig('Dend_compare_1dend_all.pdf')
-plt.gcf().savefig('Dend_compare_1dend_all.png')
+plt.gcf().savefig('Dend_compare_1dend_all_2d_new.pdf')
+plt.gcf().savefig('Dend_compare_1dend_all_2d_new.png')
 
+#Kanonika prepei na pairnw se olous PA, alla pairnw? einai ypopta ligotera ta clusters,
+# otan exw perissoterous dendrites..
 analysis.compare_dend_params([
     NWBfiles_2smalldend,
     NWBfiles_2mediumdend,
@@ -228,6 +284,19 @@ analysis.compare_dend_params([
     'NWBfiles_2mediumdend',
     'NWBfiles_2longdend'
 ])
+plt.gcf().savefig('Dend_compare_2dend_all_2d_new.pdf')
+plt.gcf().savefig('Dend_compare_2dend_all_2d_new.png')
+
+fig,ax = plt.subplots()
+ax.plot([0,1,2,3,4],[2,12,20,10,5])
+ax.set_ylabel('Number of states')
+ax.set_xlabel('Total dendritic length')
+plt.gcf().savefig('Total_dend_length.pdf')
+ax.xaxis.set_ticks = [0,1,2,3,4]
+ax.set_tickslabels = [10,20,50,100,200]
+plt.show()
+plt.gcf().savefig('Total_dend_length.pdf')
+plt.gcf().savefig('Total_dend_length.png')
 
 
 K_labels = np.array(list(chain(

@@ -80,33 +80,75 @@ def exception_logger(function):
 experiment_config_filename = \
     'animal_model_{animal_model}_learning_condition_{learning_condition}_{type}_{experiment_config}.nwb'.format
 
-simulation_template_load = (
-    '{prefix}'
-    'SN{animal_model}'
-    'LC{learning_condition}'
-    'TR{trial}'
-    '_EB{excitation_bias:.3f}'
-    '_IB{inhibition_bias:.3f}'
-    '_GBF2.000'
-    '_NMDAb{nmda_bias:.3f}'
-    '_AMPAb{ampa_bias:.3f}'
-    '_CP{cp}'
-    '_{experiment_config}_simdur{sim_duration}'
-    '{postfix}').format
+# For simplicity, yet flexibility, change the format functions to normal ones:
+def simulation_template_load_old(**kwargs):
+    mystr = (f"{kwargs['prefix']}"
+    f"SN{kwargs['animal_model']}"
+    f"LC{kwargs['learning_condition']}"
+    f"TR{kwargs['trial']}"
+    f"_EB{kwargs['excitation_bias']:.3f}"
+    f"_IB{kwargs['inhibition_bias']:.3f}"
+    f"_GBF2.000"
+    f"_NMDAb{kwargs['nmda_bias']:.3f}"
+    f"_AMPAb{kwargs['ampa_bias']:.3f}"
+    f"_{kwargs['experiment_config']}_simdur{kwargs['sim_duration']}"
+    f"{kwargs['postfix']}")
+    return mystr
 
-simulation_template_save = (
-    '{prefix}'
-    'SN{animal_model}'
-    'LC{learning_condition}'
-    'TR{trial_first}-{trial_last}'
-    '_EB{excitation_bias:.3f}'
-    '_IB{inhibition_bias:.3f}'
-    '_GBF2.000'
-    '_NMDAb{nmda_bias:.3f}'
-    '_AMPAb{ampa_bias:.3f}'
-    '_CP{cp}'
-    '_{experiment_config}_simdur{sim_duration}'
-    '{postfix}').format
+def simulation_template_save_old(**kwargs):
+    mystr = (f"{kwargs['prefix']}"
+            f"SN{kwargs['animal_model']}"
+            f"LC{kwargs['learning_condition']}"
+            f"TR{kwargs['trial_first']}-{kwargs['trial_last']}"
+            f"_EB{kwargs['excitation_bias']:.3f}"
+            f"_IB{kwargs['inhibition_bias']:.3f}"
+            f"_GBF2.000"
+            f"_NMDAb{kwargs['nmda_bias']:.3f}"
+            f"_AMPAb{kwargs['ampa_bias']:.3f}"
+            f"_{kwargs['experiment_config']}_simdur{kwargs['sim_duration']}"
+            f"{kwargs['postfix']}")
+    return mystr
+
+def simulation_template_load(**kwargs):
+    mystr = (f"{kwargs['prefix']}"
+    f"SN{kwargs['animal_model']}"
+    f"LC{kwargs['learning_condition']}"
+    f"TR{kwargs['trial']}"
+    f"_EB{kwargs['excitation_bias']:.3f}"
+    f"_IB{kwargs['inhibition_bias']:.3f}"
+    f"_GBF2.000"
+    f"_NMDAb{kwargs['nmda_bias']:.3f}"
+    f"_AMPAb{kwargs['ampa_bias']:.3f}"
+    f"_CP{kwargs['cp']}"
+    f"_{kwargs['experiment_config']}_simdur{kwargs['sim_duration']}"
+    f"{kwargs['postfix']}")
+    return mystr
+
+def simulation_template_save(**kwargs):
+    mystr = (f"{kwargs['prefix']}"
+    f"SN{kwargs['animal_model']}"
+    f"LC{kwargs['learning_condition']}"
+    f"TR{kwargs['trial_first']}-{kwargs['trial_last']}"
+    f"_EB{kwargs['excitation_bias']:.3f}"
+    f"_IB{kwargs['inhibition_bias']:.3f}"
+    f"_GBF2.000"
+    f"_NMDAb{kwargs['nmda_bias']:.3f}"
+    f"_AMPAb{kwargs['ampa_bias']:.3f}"
+    f"_CP{kwargs['cp']}"
+    f"_{kwargs['experiment_config']}_simdur{kwargs['sim_duration']}"
+    f"{kwargs['postfix']}")
+    return mystr
+
+# These are the different templates I use when simulating in NEURON.
+# To avoid confusion, since these change based on sim parameters (checking them,
+# reviewers comments, experimentation) I must pass the one I use in each
+# load function.
+simulation_templates = {
+    "load_old": simulation_template_load_old,
+    "save_old": simulation_template_save_old,
+    "load": simulation_template_load,
+    "save": simulation_template_save
+}
 
 #TODO: name them correctly:
 excitatory_validation_template = (
@@ -534,6 +576,7 @@ def load_nwb_from_neuron(
     reload_raw=False,
     include_membrane_potential=False,
     **kwargs):
+    # Why I pass params as a variable rather than as an kwargs dict??
     #TODO:  the reload_raw parameter should bleed into the import_raw neuron 
     # data, inside the create_nwb_file? Or add a second flag to do that?
     # Do I need that is the question?
@@ -558,6 +601,7 @@ def load_nwb_from_neuron(
         'trial': 0,
         'sps': 10,
     }
+    template_postfix = kwargs.get('template_postfix', '')
 
     # Compute internal characteristics.
     all_input_params = {**analysis_parameters, **new_params}
@@ -573,7 +617,7 @@ def load_nwb_from_neuron(
     all_input_params['trial_first'] = 0
     all_input_params['trial_last'] = all_input_params['ntrials'] - 1
 
-    outfn = simulation_template_save(
+    outfn = simulation_templates[f'save{template_postfix}'](
         **all_input_params
     ) + '.nwb'
     filename = data_folder.joinpath(
@@ -589,6 +633,7 @@ def load_nwb_from_neuron(
                 same_io_folder=True,
                 include_membrane_potential=include_membrane_potential,
                 reload_raw=reload_raw,
+                template_postfix=template_postfix,
                 **all_input_params
             )
         except Exception as e:
@@ -633,8 +678,15 @@ def create_nwb_file(inputdir=None, outputdir=None, \
         getargs('experiment_config', 'animal_model', 'learning_condition', 'ntrials', 'trial_len', 'ncells', 'stim_start_offset', \
                    'stim_stop_offset', 'samples_per_ms', 'spike_upper_threshold', 'spike_lower_threshold', \
                 'excitation_bias', 'inhibition_bias', 'nmda_bias', 'ampa_bias', 'sim_duration', 'q_size', 'prefix', 'postfix', 'cp',kwargs)
-    #reload_raw = kwargs.get('reload_raw', False)
-    reload_raw = False
+    no_need_to_reload_neuron = False
+    if no_need_to_reload_neuron:
+        reload_raw = False
+        print("I AM NOT RELOADING THE HDF5 FROM NEURON!")
+    else:
+        reload_raw = kwargs.get('reload_raw', False)
+        print("I AM WILL RELOAD THE HDF5 FROM NEURON! TIME CONSUMING!")
+
+    template_postfix = kwargs.get('template_postfix', '')
 
     # the base unit of time is the ms:
     samples2ms_factor = 1 / samples_per_ms
@@ -676,7 +728,7 @@ def create_nwb_file(inputdir=None, outputdir=None, \
         # get input dir and search for hdf file. if non existent create it.
         print(f'Trial {trial}. ', end='')
         rundir = inputdir.joinpath(
-            simulation_template_load(
+            simulation_templates[f'load{template_postfix}'](
                 prefix=fn_prefix,
                 excitation_bias=excitation_bias,
                 inhibition_bias=inhibition_bias,
@@ -853,7 +905,7 @@ def create_nwb_file(inputdir=None, outputdir=None, \
         type = 'bn'
 
     if kwargs.get('same_io_folder', False):
-        outfn = simulation_template_save(
+        outfn = simulation_templates[f'save{template_postfix}'](
             prefix=fn_prefix,
             excitation_bias=excitation_bias,
             inhibition_bias=inhibition_bias,
@@ -2319,6 +2371,82 @@ def pcaL2(
         # identification in the case of multiple learning conditions plots in
         # addition a 2d scatterplot of the data.
 
+        # Set custom colors:
+        c = mcolors.ColorConverter().to_rgb
+        color_values = []
+        color_values.append(make_colormap(
+            [
+                c('red'), c('red'), 0.0,
+                c('red'), c('darkred'), 0.99,
+                c('darkred')
+            ]
+        )
+        )
+        color_values.append(make_colormap(
+            [
+                c('blue'), c('blue'), 0.0,
+                c('blue'), c('darkblue'), 0.99,
+                c('darkblue')
+            ]
+        )
+        )
+        color_values.append(make_colormap(
+            [
+                c('gold'), c('gold'), 0.0,
+                c('gold'), c('goldenrod'), 0.99,
+                c('goldenrod')
+            ]
+        )
+        )
+        color_values.append(make_colormap(
+            [
+                c('violet'), c('violet'), 0.0,
+                c('violet'), c('darkviolet'), 0.99,
+                c('darkviolet')
+            ]
+        )
+        )
+        color_values.append(make_colormap(
+            [
+                c('deepskyblue'), c('deepskyblue'), 0.0,
+                c('deepskyblue'), c('dodgerblue'), 0.99,
+                c('dodgerblue')
+            ]
+        )
+        )
+        color_values.append(make_colormap(
+            [
+                c('lightgray'), c('lightgray'), 0.0,
+                c('lightgray'), c('darkgray'), 0.99,
+                c('darkgray')
+            ]
+        )
+        )
+        color_values.append(make_colormap(
+            [
+                c('magenta'), c('magenta'), 0.0,
+                c('magenta'), c('darkmagenta'), 0.99,
+                c('darkmagenta')
+            ]
+        )
+        )
+        color_values.append(make_colormap(
+            [
+                c('darkturquoise'), c('darkturquoise'), 0.0,
+                c('darkturquoise'), c('teal'), 0.99,
+                c('teal')
+            ]
+        )
+        )
+        color_values.append(make_colormap(
+            [
+                c('lime'), c('lime'), 0.0,
+                c('lime'), c('limegreen'), 0.99,
+                c('limegreen')
+            ]
+        )
+        )
+
         # Scatterplot:
         if klabels is not None:
             # If not part of a subfigure, create one:
@@ -2338,10 +2466,18 @@ def pcaL2(
 
             labels = klabels.tolist()
             nclusters = np.unique(klabels).size
-            colors = cm.Set3(np.linspace(0, 1, nclusters))
+
+            # Check that your custom label strings are of the right number.
+            if legend_labels is not None:
+                if len(legend_labels) != nclusters:
+                    raise ValueError(
+                        'Number of trials and number of labels must match!')
+
+            #colors = cm.Set3(np.linspace(0, 1, nclusters))
             _, key_labels = np.unique(labels, return_index=True)
             handles = []
             for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
+                colors = color_values[label - 1](np.linspace(0, 1, duration))
                 #print(f'Curently plotting trial: {trial}')
                 for t in range(duration - 1):
                     handle, = plot_axes.plot(
@@ -2353,6 +2489,18 @@ def pcaL2(
                     )
                 if i in key_labels:
                     handles.append(handle)
+
+                # Youmust group handles based on unique labels.
+                if (legend_labels is not None):
+                    legend_str_tags = legend_labels
+                else:
+                    legend_str_tags = named_serial_no('State', len(key_labels))
+
+                plot_axes.legend(
+                    handles=handles,
+                    labels=legend_str_tags,
+                    loc='upper right'
+                )
 
             #TODO: in multiple NWB files case, with external labels (afto paei
             # ston caller k oxi edw ston callee, alla anyways) discarded
@@ -2434,30 +2582,34 @@ def pcaL2(
                 stim_start_color = 'limegreen'
                 stim_stop_color = 'darkgreen'
                 color_values = []
+                #TODO: kati prepei na kanw me afta ta xrwmata..
                 if kwargs.get('plot_stim_color', False):
                     color_values.append(make_colormap(
                             [
+                                #red
                                 c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-                                c('red'), c('red'), stim_stop_norm + 0.01,
-                                c('red'), c('darkred'), 0.99,
+                                c('ivory'), c('ivory'), stim_stop_norm + 0.01,
+                                c('ivory'), c('darkred'), 0.99,
                                 c('darkred')
                             ]
                         )
                     )
                     color_values.append(make_colormap(
                             [
+                                #violet
                                 c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-                                c('violet'), c('violet'), stim_stop_norm + 0.01,
-                                c('violet'), c('darkviolet'), 0.99,
+                                c('ivory'), c('ivory'), stim_stop_norm + 0.01,
+                                c('ivory'), c('darkviolet'), 0.99,
                                 c('darkviolet')
                             ]
                         )
                     )
                     color_values.append(make_colormap(
                             [
+                                #gold
                                 c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-                                c('gold'), c('gold'), stim_stop_norm + 0.01,
-                                c('gold'), c('goldenrod'), 0.99,
+                                c('ivory'), c('ivory'), stim_stop_norm + 0.01,
+                                c('ivory'), c('goldenrod'), 0.99,
                                 c('goldenrod')
                             ]
                         )
@@ -4153,7 +4305,7 @@ def apclusterk(s, requested_k, prc=0):
     print(f'Found {tmpk} clusters using a preference of {pref}\n')
     return idx
 
-def compare_dend_params(NWBarray_of_arrays, dataset_names):
+def compare_dend_params(NWBarray_of_arrays, dataset_names, **kwargs):
     '''
     Compares NWBarrays with qualitatively different runs.
     Just a helper function.
@@ -4199,16 +4351,25 @@ def compare_dend_params(NWBarray_of_arrays, dataset_names):
         for k_star, name in zip(K_star_array, dataset_names)
     ]
 
+    plot_3d = kwargs.get('plot_3d', False)
+    plot_2d = not plot_3d
+
     fig = plt.figure()
     plt.ion()
-    plot_axes_3d = fig.add_subplot(111, projection='3d')
+    if plot_2d:
+        plot_axes = fig.add_subplot(111)
+    else:
+        plot_axes = fig.add_subplot(111, projection='3d')
+
     pcaL2(
         NWBfile_array=NWBfile_array,
         custom_range=delay_range,
         klabels=K_labels,
-        smooth=True, plot_3d=True,
+        smooth=True,
+        plot_2d=plot_2d,
+        plot_3d=plot_3d,
         plot_stim_color=True,
-        plot_axes=plot_axes_3d,
+        plot_axes=plot_axes,
         legend_labels=label_tags
     )
 
