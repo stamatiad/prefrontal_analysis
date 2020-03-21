@@ -15,7 +15,7 @@ from scipy.signal import savgol_filter
 from itertools import chain
 
 from datetime import datetime
-#TODO: this is some namespace mangling, rename NWBFile in your code please.
+#TODO: This is some namespace mangling, rename NWBFile in your code please.
 from pynwb import NWBFile
 from pynwb import NWBHDF5IO
 from pynwb.form.backends.hdf5.h5_utils import H5DataIO
@@ -1181,6 +1181,8 @@ def velocity(data=None):
     #end
     return velocity
 
+# It seems that I renamed get_correct_trials() to the following. Is this 
+# deliberate? I can not remember.
 def get_binned_activity(NWBfile, custom_range=None):
     # Return only trials with persistent activity (see text).
     animal_model_id, learning_condition_id, ncells, pn_no, ntrials, \
@@ -1193,6 +1195,9 @@ def get_binned_activity(NWBfile, custom_range=None):
                 'correct_trials_idx', 'correct_trials_no'
             ]
         )
+
+    if correct_trials_no < 1:
+        raise ValueError('No correct trials were found in the NWBfile!')
 
     # Use custom_range to compute PCA only on a portion of the original data:
     if custom_range is not None:

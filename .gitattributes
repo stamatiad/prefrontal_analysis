@@ -1,3 +1,0 @@
-simulations/*.nwb filter=lfs diff=lfs merge=lfs -text
-crossvalidation_errors/*.hdf filter=lfs diff=lfs merge=lfs -text
-*.png filter=lfs diff=lfs merge=lfs -text
