@@ -17,32 +17,34 @@ cube_side_length = 180  # um
 trial_no = 100
 serial_no = 1
 
-if False:
-    # Create a network configuration with given serial number (used to seed the RNG for reproducability)
-    net_structured = nt.Network(serial_no=serial_no, pc_no=pn_no, pv_no=pv_no)
+if __name__ == '__main__':
+    print(f'function {__name__} is running.')
+    if True:
+        # Create a network configuration with given serial number (used to seed the RNG for reproducability)
+        net_structured = nt.Network(serial_no=serial_no, pc_no=pn_no, pv_no=pv_no)
 
-    # A cube of side 180 um, has about 60000 cells.
-    net_structured.populate_network(cube_side_len=cube_side_length, plot=True)
+        # A cube of side 180 um, has about 60000 cells.
+        net_structured.populate_network(cube_side_len=cube_side_length, plot=True)
 
-    # Create both structured and random configurations:
-    net_structured.create_connections(
-        alias='structured_half_reciprocals', rearrange_iterations=40, plot=True
-    )
+        # Create both structured and random configurations:
+        net_structured.create_connections(
+            alias='structured', rearrange_iterations=1000, plot=True
+        )
 
-    net_structured.create_weights()
-    net_structured.create_network_stats()
+        net_structured.create_weights()
+        net_structured.create_network_stats()
 
-    # Initialize 100 trials:
-    net_structured.initialize_trials(trial_no=trial_no)
+        # Initialize 100 trials:
+        net_structured.initialize_trials(trial_no=trial_no)
 
-    # Export parameters to NEURON hoc files:
-    net_structured.export_network_parameters(export_path=Path.cwd().joinpath('new_files'))
+        # Export parameters to NEURON hoc files:
+        net_structured.export_network_parameters(export_path=Path.cwd().joinpath('correct_net_files'))
 
-    # Save Network parameters and data to a HDF5 file:
-    net_structured.save_data(export_path=Path.cwd().joinpath('new_files'))
+        # Save Network parameters and data to a HDF5 file:
+        net_structured.save_data(export_path=Path.cwd().joinpath('correct_net_files'))
 
-    print('Tutto pronto!')
-    sys.exit(0)
+        print('Tutto pronto!')
+        sys.exit(0)
 
 #TODO: make sure that nothing changes with the edits in network_tools and commit them.
 for serial_no in range(1, 5):
@@ -64,10 +66,10 @@ for serial_no in range(1, 5):
     net_structured.initialize_trials(trial_no=trial_no)
 
     # Export parameters to NEURON hoc files:
-    net_structured.export_network_parameters(export_path=Path.cwd().joinpath('new_files'))
+    net_structured.export_network_parameters(export_path=Path.cwd().joinpath('correct_net_files'))
 
     # Save Network parameters and data to a HDF5 file:
-    net_structured.save_data(export_path=Path.cwd().joinpath('new_files'))
+    net_structured.save_data(export_path=Path.cwd().joinpath('correct_net_files'))
 
     ## Create a random network as a copy of the structured:
     #net_random = copy.deepcopy(net_structured)
