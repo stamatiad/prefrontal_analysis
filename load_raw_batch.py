@@ -8,11 +8,6 @@ import re
 import sys
 from collections import defaultdict
 
-#TODO: Must rewrite this fine!
-ncores = 2 #mp.cpu_count()
-#data_dir = Path(r'C:\Users\steve\Desktop\data')
-data_dir = Path(sys.argv[1])
-print(f'data_dir: {data_dir}')
 
 def read_train(fn):
     '''
@@ -36,7 +31,7 @@ def read_train(fn):
         values = list(filter(None.__ne__, values))
     return values
 
-def read_somatic_voltage(ncells = 0):
+def read_somatic_voltage(data_dir, ncells = 0):
     '''
     Reads train from multiple txt files, onto a single HDF5 one.
     :return:
@@ -52,7 +47,7 @@ def read_somatic_voltage(ncells = 0):
     # Make sure that vsoma files exist:
     for id, file in enumerate(files_v_soma):
         if not file.is_file():
-            raise FileNotFoundError(f'File v_soma_{id:03} was not found!')
+            raise FileNotFoundError(f'File {file} was not found!')
 
     #if len(files_v_soma) < 1:
     #    raise FileExistsError(f'No vsoma files found on {data_dir} !')
@@ -77,7 +72,7 @@ def read_somatic_voltage(ncells = 0):
 
     return nsamples
 
-def read_dendritic_voltage(ncells = 0, nsamples = 0, nseg = 5):
+def read_dendritic_voltage(data_dir, ncells = 0, nsamples = 0, nseg = 5):
     '''
     Reads train from multiple txt files, onto a single HDF5 one.
     :return:
@@ -86,7 +81,7 @@ def read_dendritic_voltage(ncells = 0, nsamples = 0, nseg = 5):
     #TODO: need to rewrite this!
     files_v_dend = list(data_dir.glob('v_dend*'))
     if len(files_v_dend) < 1:
-        print('No dendritic voltage trace files!')
+        print('\tNo dendritic voltage trace files!')
         return
 
     # Use ncells as a validation variable: if the value given is the same as
@@ -115,7 +110,7 @@ def read_dendritic_voltage(ncells = 0, nsamples = 0, nseg = 5):
         # Append to the same file:
         df.to_hdf(filename, key=f'vdend{seg}', mode='a')
 
-def read_synapse_info(type=None, alias=None):
+def read_synapse_info(data_dir, type=None, alias=None):
     '''
     Read information of synaptic locations, per given connection alias.
     :param alias:
@@ -163,14 +158,18 @@ def read_synapse_info(type=None, alias=None):
     df.to_hdf(data_dir.joinpath(fr'{type}_{alias}.hdf5'), key=f'{type}_{alias}', mode='w')
 
 
-def main():
+def main(data_dir):
+    #TODO: Must rewrite this fine!
+    #ncores = 2 #mp.cpu_count()
+    if __name__ == "__main__":
+        print(f'Neuron output data_dir:\n\t{data_dir}')
     #  Read somatic voltage:
-    print('Reading vsoma.')
-    nsamples = read_somatic_voltage(ncells = 333)
+    print('\tReading vsoma.', end='')
+    nsamples = read_somatic_voltage(data_dir, ncells = 333)
 
     # Load dendritic voltage traces, if any:
-    print('Reading vdend.')
-    read_dendritic_voltage(ncells=250, nsamples=nsamples, nseg=5)
+    #print('\tReading vdend.')
+    #read_dendritic_voltage(data_dir, ncells=250, nsamples=nsamples, nseg=5)
 
     ## Read synaptic locations in PN2PN connections:
     #print('Reading pid pyramidal.')
@@ -207,4 +206,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main(Path(sys.argv[1]))
