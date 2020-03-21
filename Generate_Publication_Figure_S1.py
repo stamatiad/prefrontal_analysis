@@ -10,6 +10,7 @@ import analysis_tools as analysis
 import network_tools as nt
 import numpy as np
 import pandas as pd
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from collections import defaultdict
 from functools import partial
@@ -45,15 +46,24 @@ subplot_height = 1
 figures1 = plt.figure(figsize=plt.figaspect(subplot_height / subplot_width))
 #TODO: I tend to believe that the w/hspace is RELATIVE to the size of this grid.
 # This asks for a absolute number, in order to have a visually pleasing grid.
-gs1 = gridspec.GridSpec(2, 3, left=0.05, right=0.95, top=0.95, bottom=0.10, wspace=0.35, hspace=0.35)
+gs1 = gridspec.GridSpec(2, 4, left=0.05, right=0.95, top=0.95, bottom=0.10, wspace=0.35, hspace=0.35)
 #gs1.update(left=0.05, right=0.30, wspace=0.05)
 A_axis = plt.subplot(gs1[0, 0], projection='3d')
 B_axis = plt.subplot(gs1[0, 1])
 C_axis = plt.subplot(gs1[0, 2])
-D_axis = plt.subplot(gs1[1, 0])
-E_axis = plt.subplot(gs1[1, 1])
-F_axis = plt.subplot(gs1[1, 2])
+D_axis = plt.subplot(gs1[0, 3])
+E_axis = plt.subplot(gs1[1, 0])
+F_axis = plt.subplot(gs1[1, 1])
+G_axis = plt.subplot(gs1[1, 2])
+H_axis = plt.subplot(gs1[1, 3])
 nb.mark_figure_letter(A_axis, 'A')
+nb.mark_figure_letter(B_axis, 'B')
+nb.mark_figure_letter(C_axis, 'C')
+nb.mark_figure_letter(D_axis, 'D')
+nb.mark_figure_letter(E_axis, 'E')
+nb.mark_figure_letter(F_axis, 'F')
+nb.mark_figure_letter(G_axis, 'G')
+nb.mark_figure_letter(H_axis, 'H')
 
 # Import network attributes
 filename = attributes_dir.joinpath(f'structured_network_SN1.hdf5')
@@ -96,6 +106,31 @@ A_axis.set_xticks(pca_axis_limits)
 A_axis.set_yticks(pca_axis_limits)
 A_axis.set_zticks(pca_axis_limits)
 
+
+# Fig S1B
+# Plot experimental PC to PC connection probabilities:
+plt_range = np.arange(0, 200, 5)
+mpl.style.use('seaborn')
+B_axis.plot(plt_range, net_tmp.connection_functions_d['PN_PN']['total'](plt_range), 'C0', label='Overall')
+B_axis.plot(plt_range, net_tmp.connection_functions_d['PN_PN']['unidirectional'](plt_range), 'C1', label='Unidirectional')
+B_axis.plot(plt_range, net_tmp.connection_functions_d['PN_PN']['reciprocal'](plt_range), 'C2', label='Reciprocal')
+B_axis.set_xlabel('Intersomatic distance (um)')
+B_axis.set_ylabel('Connection Probability')
+B_axis.legend()
+mpl.style.use('default')
+
+# Fig S1C
+configuration_alias = 'structured'
+for sn in range(1, 5):
+    filename = Path(rf'C:\Users\steve\Documents\analysis\Python\new_files'). \
+        joinpath(f'{configuration_alias}_network_SN{sn}_clust_coeff.hdf5')
+    cc = pd.read_hdf(filename, key='clust_coeff').values
+    C_axis.plot(np.arange(999), cc[0,1:], linewidth=0.1, color='black')
+
+C_axis.set_xlabel('Iterations')
+C_axis.set_ylabel('Average Clustering Coefficient')
+
+
 #TODO: replace these network spesific functions with paper-wise ones:
 # Figure S1B
 # Paper-wise connectivity across distance:
@@ -126,11 +161,11 @@ for sn in range(1, 5):
 
 nt.plot_average_connectivity(
     histo_acc, histo_bins, histo_dist_acc, ground_truth_acc, bin_width,
-ax=B_axis)
-#B_axis.set_xticks(np.arange(0, 160, 20))
-#B_axis.set_xticklabels(np.arange(0, 160, 20))
-B_axis.set_xlabel('Distance (um)')
-B_axis.set_ylabel('PN-PN Unidirectional Probability')
+ax=D_axis)
+#D_axis.set_xticks(np.arange(0, 160, 20))
+#D_axis.set_xticklabels(np.arange(0, 160, 20))
+D_axis.set_xlabel('Distance (um)')
+D_axis.set_ylabel('PN-PN Unidirectional Probability')
 
 # Fig S1C
 histo_acc = np.full([4, 15], 0)
@@ -159,11 +194,11 @@ for sn in range(1, 5):
 
 nt.plot_average_connectivity(
     histo_acc, histo_bins, histo_dist_acc, ground_truth_acc, bin_width,
-    ax=C_axis)
-#C_axis.set_xticks(np.arange(0, 200, 20))
-#C_axis.set_xticklabels(np.arange(0, 200, 20))
-C_axis.set_xlabel('Distance (um)')
-C_axis.set_ylabel('PN-PN Reciprocal Probability')
+    ax=E_axis)
+#E_axis.set_xticks(np.arange(0, 200, 20))
+#E_axis.set_xticklabels(np.arange(0, 200, 20))
+E_axis.set_xlabel('Distance (um)')
+E_axis.set_ylabel('PN-PN Reciprocal Probability')
 
 # Fig S1D:
 histo_acc = np.full([4, 15], 0)
@@ -193,9 +228,9 @@ for sn in range(1, 5):
 
 nt.plot_average_connectivity(
     histo_acc, histo_bins, histo_dist_acc, ground_truth_acc, bin_width,
-    ax=D_axis)
-D_axis.set_xlabel('Distance (um)')
-D_axis.set_ylabel('PN2PV Unidirectional Probability')
+    ax=F_axis)
+F_axis.set_xlabel('Distance (um)')
+F_axis.set_ylabel('PN2PV Unidirectional Probability')
 
 # Fig S1E
 histo_acc = np.full([4, 15], 0)
@@ -225,9 +260,9 @@ for sn in range(1, 5):
 
 nt.plot_average_connectivity(
     histo_acc, histo_bins, histo_dist_acc, ground_truth_acc, bin_width,
-    ax=E_axis)
-E_axis.set_xlabel('Distance (um)')
-E_axis.set_ylabel('PV2PN Unidirectional Probability')
+    ax=G_axis)
+G_axis.set_xlabel('Distance (um)')
+G_axis.set_ylabel('PV2PN Unidirectional Probability')
 
 # Fig S1F
 histo_acc = np.full([4, 15], 0)
@@ -257,9 +292,9 @@ for sn in range(1, 5):
 
 nt.plot_average_connectivity(
     histo_acc, histo_bins, histo_dist_acc, ground_truth_acc, bin_width,
-    ax=F_axis)
-F_axis.set_xlabel('Distance (um)')
-F_axis.set_ylabel('PN2PV Reciprocal Probability')
+    ax=H_axis)
+H_axis.set_xlabel('Distance (um)')
+H_axis.set_ylabel('PN2PV Reciprocal Probability')
 plt.show()
 
 

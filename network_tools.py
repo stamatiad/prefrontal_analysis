@@ -796,6 +796,16 @@ class Network:
                 #TODO: the context manager will update the upairs: are the
                 # distances correct? Fix them?
 
+            # Save the clustering coefficient, for plotting it later.
+            configuration_alias = 'structured'
+            filename = Path(rf'C:\Users\steve\Documents\analysis\Python\new_files'). \
+                joinpath(f'{configuration_alias}_network_SN{self.serial_no}_clust_coeff.hdf5')
+            df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
+                               'configuration_alias': self.configuration_alias})
+            df.to_hdf(filename, key='attributes', mode='w')
+            df = pd.DataFrame(cc)
+            df.to_hdf(filename, key='clust_coeff')
+
             # Plot
             if plot:
                 savgol_window = int(cc.shape[1] / 10 + 1)

@@ -310,76 +310,29 @@ nb.adjust_spines(A_axis_b, ['left', 'bottom'])
 
 # Figure S2b
 # Plot firing frequencies of non-NMDA, random configurations.
-stim_ISI_all = []
-stim_ISI_CV_all = []
-delay_ISI_all = []
-delay_ISI_CV_all = []
-no_of_conditions = 5
-for animal_model in range(1, no_of_animals + 1):
-    for learning_condition in range(1, no_of_conditions + 1):
-        NWBfile = analysis.load_nwb_file(
-            animal_model=animal_model,
-            learning_condition=learning_condition,
-            experiment_config='structured_nonmda',
-            type='bn',
-            data_path=simulations_dir
-        )
-        # Calculate ISI and its CV:
-        stim_ISIs, stim_ISIs_CV = analysis.calculate_stimulus_isi(NWBfile)
-        delay_ISIs, delay_ISIs_CV = analysis.calculate_delay_isi(NWBfile)
+results_d, NWBfile = nb.compute_isi_cv(
+    no_of_animals=4,
+    no_of_conditions=5,
+    data_path=simulations_dir,
+    experiment_config='structured_nonmda',
+    report_prefix='Fig S2B',
+    plot_axis_a=B_axis_a,
+    plot_axis_b=B_axis_b,
+    axis_label_font_size=axis_label_font_size,
+    labelpad_x=labelpad_x,
+    labelpad_y=labelpad_y
+)
+nb.mark_figure_letter(B_axis_a, 'b')
+plot_cross_correlation(NWBfile, B_axis_c)
 
-        stim_ISI_all.append(stim_ISIs)
-        stim_ISI_CV_all.append(stim_ISIs_CV)
-        delay_ISI_all.append(delay_ISIs)
-        delay_ISI_CV_all.append(delay_ISIs_CV)
-
-stim_ISI = list(chain(*stim_ISI_all))
-delay_ISI = list(chain(*delay_ISI_all))
-stim_ISI_CV = list(chain(*stim_ISI_CV_all))
-delay_ISI_CV = list(chain(*delay_ISI_CV_all))
-step_isi = 20
-step_cv = 0.2
-bins_isi = np.arange(0, 200, step_isi)
-bins_cv = np.arange(0, 2, step_cv)
-stim_isi_hist, *_ = np.histogram(stim_ISI, bins=bins_isi)
-delay_isi_hist, *_ = np.histogram(delay_ISI, bins=bins_isi)
-stim_isi_cv_hist, *_ = np.histogram(stim_ISI_CV, bins=bins_cv)
-delay_isi_cv_hist, *_ = np.histogram(delay_ISI_CV, bins=bins_cv)
-
-# Do Kruskar Wallis test on distributions:
-kruskal_result_cv = stats.kruskal(stim_ISI_CV, delay_ISI_CV, nan_policy='omit')
-kruskal_result_isi = stats.kruskal(stim_ISI, delay_ISI, nan_policy='omit')
-
-average_stim_isi = np.mean(stim_ISI)
-average_delay_isi = np.mean(delay_ISI)
-average_stim_cv = np.nanmean(stim_ISI_CV)
-average_delay_cv = np.nanmean(delay_ISI_CV)
-
-std_stim_isi = np.std(stim_ISI)
-std_delay_isi = np.std(delay_ISI)
-std_stim_cv = np.nanstd(stim_ISI_CV)
-std_delay_cv = np.nanstd(delay_ISI_CV)
-
-nb.report_value(f'Fig S2B: CV stim mean', average_stim_cv)
-nb.report_value(f'Fig S2B: CV stim std', std_stim_cv)
-nb.report_value(f'Fig S2B: CV delay mean', average_delay_cv)
-nb.report_value(f'Fig S2B: CV delay std', std_delay_cv)
-
-nb.report_value(f'Fig S2B: ISI stim mean', average_stim_isi)
-nb.report_value(f'Fig S2B: ISI stim std', std_stim_isi)
-nb.report_value(f'Fig S2B: ISI delay mean', average_delay_isi)
-nb.report_value(f'Fig S2B: ISI delay std', std_delay_isi)
-
-nb.report_value(f'Fig S2B: CV Kruskal p', kruskal_result_cv.pvalue)
-nb.report_value(f'Fig S2B: ISI Kruskal p', kruskal_result_isi.pvalue)
-
-B_axis_a.plot(stim_isi_hist / stim_isi_hist.sum(), color='C0')
-B_axis_a.axvline(np.mean(stim_ISI) / step_isi, color='C0', linestyle='--')
-B_axis_a.plot(delay_isi_hist / delay_isi_hist.sum(), color='C1')
-B_axis_a.axvline(np.mean(delay_ISI) / step_isi, color='C1', linestyle='--')
-B_axis_a.set_xticks(range(0, bins_isi.size, 2))
-B_axis_a.set_xticklabels(np.round(bins_isi * 2, 1), fontsize=tick_label_font_size)
-B_axis_a.set_xlim([0.0, bins_isi.size])
+'''
+B_axis_a.plot(results_d['stim_isi_hist'] / results_d['stim_isi_hist'].sum(), color='C0')
+B_axis_a.axvline(np.mean(results_d['stim_ISI']) / results_d['step_isi'], color='C0', linestyle='--')
+B_axis_a.plot(results_d['delay_isi_hist'] / results_d['delay_isi_hist'].sum(), color='C1')
+B_axis_a.axvline(np.mean(results_d['delay_ISI']) / results_d['step_isi'], color='C1', linestyle='--')
+B_axis_a.set_xticks(range(0, results_d['bins_isi'].size, 2))
+B_axis_a.set_xticklabels(np.round(results_d['bins_isi'] * 2, 1), fontsize=tick_label_font_size)
+B_axis_a.set_xlim([0.0, results_d['bins_isi'].size])
 B_axis_a.set_xlabel(
     'ISI length (ms)', fontsize=axis_label_font_size,
     labelpad=labelpad_x
@@ -388,16 +341,15 @@ B_axis_a.set_ylabel(
     'Relative Frequency', fontsize=axis_label_font_size,
     labelpad=labelpad_y
 )
-nb.axis_normal_plot(axis=B_axis_a)
-nb.adjust_spines(B_axis_a, ['left', 'bottom'])
-#TODO: Why I have nans inside CV?
-B_axis_b.plot(stim_isi_cv_hist / stim_isi_cv_hist.sum(), color='C0')
-B_axis_b.axvline(np.nanmean(stim_ISI_CV) / step_cv, color='C0', linestyle='--')
-B_axis_b.plot(delay_isi_cv_hist / delay_isi_cv_hist.sum(), color='C1')
-B_axis_b.axvline(np.nanmean(delay_ISI_CV) / step_cv, color='C1', linestyle='--')
-B_axis_b.set_xticks(range(0, bins_cv.size, 2))
-B_axis_b.set_xticklabels(np.round(bins_cv * 2, 1), fontsize=tick_label_font_size)
-B_axis_b.set_xlim([0.0, bins_cv.size])
+
+B_axis_b.plot(results_d['stim_isi_cv_hist'] / results_d['stim_isi_cv_hist'].sum(), color='C0')
+B_axis_b.axvline(np.mean(results_d['stim_ISI_CV']) / results_d['step_cv'], color='C0', linestyle='--')
+B_axis_b.plot(results_d['delay_isi_cv_hist'] / results_d['delay_isi_cv_hist'].sum(), color='C1')
+B_axis_b.axvline(np.mean(results_d['delay_ISI_CV']) / results_d['step_cv'], color='C1', linestyle='--')
+B_axis_b.set_xticks(range(0, results_d['bins_cv'].size, 2))
+B_axis_b.set_xticklabels(np.round(results_d['bins_cv'] * 2, 1), fontsize=tick_label_font_size)
+B_axis_b.set_xlim([0.0, results_d['bins_cv'].size])
+
 B_axis_b.set_xlabel(
     'Coefficient of Variation', fontsize=axis_label_font_size,
     labelpad=labelpad_x
@@ -406,218 +358,41 @@ B_axis_b.set_ylabel(
     'Relative Frequency', fontsize=axis_label_font_size,
     labelpad=labelpad_y
 )
-nb.axis_normal_plot(axis=B_axis_b)
-nb.adjust_spines(B_axis_b, ['left', 'bottom'])
-nb.mark_figure_letter(B_axis_a, 'b')
-plot_cross_correlation(NWBfile, B_axis_c)
+'''
 
 
 
 # Figure S2c
 # Plot firing frequencies of non-Mg, random configurations.
-stim_ISI_all = []
-stim_ISI_CV_all = []
-delay_ISI_all = []
-delay_ISI_CV_all = []
-no_of_animals = 1
-no_of_conditions = 5
-for animal_model in range(1, no_of_animals + 1):
-    for learning_condition in range(1, no_of_conditions + 1):
-        NWBfile = analysis.load_nwb_file(
-            animal_model=animal_model,
-            learning_condition=learning_condition,
-            experiment_config='structured_nomg',
-            type='bn',
-            data_path=simulations_dir
-        )
-        # Calculate ISI and its CV:
-        stim_ISIs, stim_ISIs_CV = analysis.calculate_stimulus_isi(NWBfile)
-        delay_ISIs, delay_ISIs_CV = analysis.calculate_delay_isi(NWBfile)
-
-        stim_ISI_all.append(stim_ISIs)
-        stim_ISI_CV_all.append(stim_ISIs_CV)
-        delay_ISI_all.append(delay_ISIs)
-        delay_ISI_CV_all.append(delay_ISIs_CV)
-
-stim_ISI = list(chain(*stim_ISI_all))
-delay_ISI = list(chain(*delay_ISI_all))
-stim_ISI_CV = list(chain(*stim_ISI_CV_all))
-delay_ISI_CV = list(chain(*delay_ISI_CV_all))
-step_isi = 20
-step_cv = 0.2
-bins_isi = np.arange(0, 200, step_isi)
-bins_cv = np.arange(0, 2, step_cv)
-stim_isi_hist, *_ = np.histogram(stim_ISI, bins=bins_isi)
-delay_isi_hist, *_ = np.histogram(delay_ISI, bins=bins_isi)
-stim_isi_cv_hist, *_ = np.histogram(stim_ISI_CV, bins=bins_cv)
-delay_isi_cv_hist, *_ = np.histogram(delay_ISI_CV, bins=bins_cv)
-
-# Do Kruskar Wallis test on distributions:
-kruskal_result_cv = stats.kruskal(stim_ISI_CV, delay_ISI_CV, nan_policy='omit')
-kruskal_result_isi = stats.kruskal(stim_ISI, delay_ISI, nan_policy='omit')
-
-average_stim_isi = np.mean(stim_ISI)
-average_delay_isi = np.mean(delay_ISI)
-average_stim_cv = np.nanmean(stim_ISI_CV)
-average_delay_cv = np.nanmean(delay_ISI_CV)
-
-std_stim_isi = np.std(stim_ISI)
-std_delay_isi = np.std(delay_ISI)
-std_stim_cv = np.nanstd(stim_ISI_CV)
-std_delay_cv = np.nanstd(delay_ISI_CV)
-
-nb.report_value(f'Fig S2C: CV stim mean', average_stim_cv)
-nb.report_value(f'Fig S2C: CV stim std', std_stim_cv)
-nb.report_value(f'Fig S2C: CV delay mean', average_delay_cv)
-nb.report_value(f'Fig S2C: CV delay std', std_delay_cv)
-
-nb.report_value(f'Fig S2C: ISI stim mean', average_stim_isi)
-nb.report_value(f'Fig S2C: ISI stim std', std_stim_isi)
-nb.report_value(f'Fig S2C: ISI delay mean', average_delay_isi)
-nb.report_value(f'Fig S2C: ISI delay std', std_delay_isi)
-
-nb.report_value(f'Fig S2C: CV Kruskal p', kruskal_result_cv.pvalue)
-nb.report_value(f'Fig S2C: ISI Kruskal p', kruskal_result_isi.pvalue)
-
-C_axis_a.plot(stim_isi_hist / stim_isi_hist.sum(), color='C0')
-C_axis_a.axvline(np.mean(stim_ISI) / step_isi, color='C0', linestyle='--')
-C_axis_a.plot(delay_isi_hist / delay_isi_hist.sum(), color='C1')
-C_axis_a.axvline(np.mean(delay_ISI) / step_isi, color='C1', linestyle='--')
-C_axis_a.set_xticks(range(0, bins_isi.size, 2))
-C_axis_a.set_xticklabels(np.round(bins_isi * 2, 1), fontsize=tick_label_font_size)
-C_axis_a.set_xlim([0.0, bins_isi.size])
-C_axis_a.set_xlabel(
-    'ISI length (ms)', fontsize=axis_label_font_size,
-    labelpad=labelpad_x
+results_d, NWBfile = nb.compute_isi_cv(
+    no_of_animals=1,
+    no_of_conditions=5,
+    data_path=simulations_dir,
+    experiment_config='structured_nomg',
+    report_prefix='Fig S2C',
+    plot_axis_a=C_axis_a,
+    plot_axis_b=C_axis_b,
+    axis_label_font_size=axis_label_font_size,
+    labelpad_x=labelpad_x,
+    labelpad_y=labelpad_y
 )
-C_axis_a.set_ylabel(
-    'Relative Frequency', fontsize=axis_label_font_size,
-    labelpad=labelpad_y
-)
-nb.axis_normal_plot(axis=C_axis_a)
-nb.adjust_spines(C_axis_a, ['left', 'bottom'])
-#TODO: Why I have nans inside CV?
-C_axis_b.plot(stim_isi_cv_hist / stim_isi_cv_hist.sum(), color='C0')
-C_axis_b.axvline(np.nanmean(stim_ISI_CV) / step_cv, color='C0', linestyle='--')
-C_axis_b.plot(delay_isi_cv_hist / delay_isi_cv_hist.sum(), color='C1')
-C_axis_b.axvline(np.nanmean(delay_ISI_CV) / step_cv, color='C1', linestyle='--')
-C_axis_b.set_xticks(range(0, bins_cv.size, 2))
-C_axis_b.set_xticklabels(np.round(bins_cv * 2, 1), fontsize=tick_label_font_size)
-C_axis_b.set_xlim([0.0, bins_cv.size])
-C_axis_b.set_xlabel(
-    'Coefficient of Variation', fontsize=axis_label_font_size,
-    labelpad=labelpad_x
-)
-C_axis_b.set_ylabel(
-    'Relative Frequency', fontsize=axis_label_font_size,
-    labelpad=labelpad_y
-)
-nb.axis_normal_plot(axis=C_axis_b)
-nb.adjust_spines(C_axis_b, ['left', 'bottom'])
 nb.mark_figure_letter(C_axis_a, 'c')
 plot_cross_correlation(NWBfile, C_axis_c)
 
 # Figure S2d
 # Plot firing frequencies of non-Mg, random configurations.
-stim_ISI_all = []
-stim_ISI_CV_all = []
-delay_ISI_all = []
-delay_ISI_CV_all = []
-no_of_animals = 4
-no_of_conditions = 10
-for animal_model in range(1, no_of_animals + 1):
-    for learning_condition in range(1, no_of_conditions + 1):
-        NWBfile = analysis.load_nwb_file(
-            animal_model=animal_model,
-            learning_condition=learning_condition,
-            experiment_config='random',
-            type='bn',
-            data_path=simulations_dir
-        )
-        # Calculate ISI and its CV:
-        stim_ISIs, stim_ISIs_CV = analysis.calculate_stimulus_isi(NWBfile)
-        delay_ISIs, delay_ISIs_CV = analysis.calculate_delay_isi(NWBfile)
-
-        stim_ISI_all.append(stim_ISIs)
-        stim_ISI_CV_all.append(stim_ISIs_CV)
-        delay_ISI_all.append(delay_ISIs)
-        delay_ISI_CV_all.append(delay_ISIs_CV)
-
-stim_ISI = list(chain(*stim_ISI_all))
-delay_ISI = list(chain(*delay_ISI_all))
-stim_ISI_CV = list(chain(*stim_ISI_CV_all))
-delay_ISI_CV = list(chain(*delay_ISI_CV_all))
-step_isi = 20
-step_cv = 0.2
-bins_isi = np.arange(0, 200, step_isi)
-bins_cv = np.arange(0, 2, step_cv)
-stim_isi_hist, *_ = np.histogram(stim_ISI, bins=bins_isi)
-delay_isi_hist, *_ = np.histogram(delay_ISI, bins=bins_isi)
-stim_isi_cv_hist, *_ = np.histogram(stim_ISI_CV, bins=bins_cv)
-delay_isi_cv_hist, *_ = np.histogram(delay_ISI_CV, bins=bins_cv)
-
-# Do Kruskar Wallis test on distributions:
-kruskal_result_cv = stats.kruskal(stim_ISI_CV, delay_ISI_CV, nan_policy='omit')
-kruskal_result_isi = stats.kruskal(stim_ISI, delay_ISI, nan_policy='omit')
-
-average_stim_isi = np.mean(stim_ISI)
-average_delay_isi = np.mean(delay_ISI)
-average_stim_cv = np.nanmean(stim_ISI_CV)
-average_delay_cv = np.nanmean(delay_ISI_CV)
-
-std_stim_isi = np.std(stim_ISI)
-std_delay_isi = np.std(delay_ISI)
-std_stim_cv = np.nanstd(stim_ISI_CV)
-std_delay_cv = np.nanstd(delay_ISI_CV)
-
-nb.report_value(f'Fig S2D: CV stim mean', average_stim_cv)
-nb.report_value(f'Fig S2D: CV stim std', std_stim_cv)
-nb.report_value(f'Fig S2D: CV delay mean', average_delay_cv)
-nb.report_value(f'Fig S2D: CV delay std', std_delay_cv)
-
-nb.report_value(f'Fig S2D: ISI stim mean', average_stim_isi)
-nb.report_value(f'Fig S2D: ISI stim std', std_stim_isi)
-nb.report_value(f'Fig S2D: ISI delay mean', average_delay_isi)
-nb.report_value(f'Fig S2D: ISI delay std', std_delay_isi)
-
-nb.report_value(f'Fig S2D: CV Kruskal p', kruskal_result_cv.pvalue)
-nb.report_value(f'Fig S2D: ISI Kruskal p', kruskal_result_isi.pvalue)
-
-D_axis_a.plot(stim_isi_hist / stim_isi_hist.sum(), color='C0')
-D_axis_a.axvline(np.mean(stim_ISI) / step_isi, color='C0', linestyle='--')
-D_axis_a.plot(delay_isi_hist / delay_isi_hist.sum(), color='C1')
-D_axis_a.axvline(np.mean(delay_ISI) / step_isi, color='C1', linestyle='--')
-D_axis_a.set_xticks(range(0, bins_isi.size, 2))
-D_axis_a.set_xticklabels(np.round(bins_isi * 2, 1), fontsize=tick_label_font_size)
-D_axis_a.set_xlim([0.0, bins_isi.size])
-D_axis_a.set_xlabel(
-    'ISI length (ms)', fontsize=axis_label_font_size,
-    labelpad=labelpad_x
+results_d, NWBfile = nb.compute_isi_cv(
+    no_of_animals=4,
+    no_of_conditions=10,
+    data_path=simulations_dir,
+    experiment_config='random',
+    report_prefix='Fig S2D',
+    plot_axis_a=D_axis_a,
+    plot_axis_b=D_axis_b,
+    axis_label_font_size=axis_label_font_size,
+    labelpad_x=labelpad_x,
+    labelpad_y=labelpad_y
 )
-D_axis_a.set_ylabel(
-    'Relative Frequency', fontsize=axis_label_font_size,
-    labelpad=labelpad_y
-)
-nb.axis_normal_plot(axis=D_axis_a)
-nb.adjust_spines(D_axis_a, ['left', 'bottom'])
-#TODO: Why I have nans inside CV?
-D_axis_b.plot(stim_isi_cv_hist / len(stim_ISI_CV), color='C0')
-D_axis_b.axvline(np.nanmean(stim_ISI_CV) / step_cv, color='C0', linestyle='--')
-D_axis_b.plot(delay_isi_cv_hist / len(delay_ISI_CV), color='C1')
-D_axis_b.axvline(np.nanmean(delay_ISI_CV) / step_cv, color='C1', linestyle='--')
-D_axis_b.set_xticks(range(0, bins_cv.size, 2))
-D_axis_b.set_xticklabels(np.round(bins_cv * 2, 1), fontsize=tick_label_font_size)
-D_axis_b.set_xlim([0.0, bins_cv.size])
-D_axis_b.set_xlabel(
-    'Coefficient of Variation', fontsize=axis_label_font_size,
-    labelpad=labelpad_x
-)
-D_axis_b.set_ylabel(
-    'Relative Frequency', fontsize=axis_label_font_size,
-    labelpad=labelpad_y
-)
-nb.axis_normal_plot(axis=D_axis_b)
-nb.adjust_spines(D_axis_b, ['left', 'bottom'])
 nb.mark_figure_letter(D_axis_a, 'd')
 plot_cross_correlation(NWBfile, D_axis_c)
 
@@ -626,8 +401,8 @@ plt.show()
 
 
 # <codecell>
-figure1.savefig('Figure_S2_new.png')
-figure1.savefig('Figure_S2_new.pdf')
+figure1.savefig('Figure_S2_final_right.png')
+figure1.savefig('Figure_S2_final_right.pdf')
 print('Tutto pronto!')
 
 

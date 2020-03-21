@@ -1,16 +1,16 @@
 # <markdowncell>
 # # # Generate Figure 4
-# Population activity in neuronal pattern space, shows that different neuronal 
-# assemblies are active for each population activity trajectories. A. Smoothed 
-# single neuron activity for 0.5 sec of stimulus (green area) and 0.5 sec of 
-# delay epoch. B. Same population activity as in A, but now reduced with NNMF 
-# to 3 components (assembly space). The dynamic and highly irregular single 
-# neuron activity, appears smooth in the assembly space. Also the change from 
-# the stimulus to delay epoch is evident. C. Activity of 7 trials with delay 
-# epoch response (out of 10), colored as three k-means identified states, 
-# presented each time with respect to an assembly activity. It is evident 
-# that stable population states that cluster in state space (similar colors), 
-# appear to correspond to activity of a specific assembly. D. Same data as C, 
+# Population activity in neuronal pattern space, shows that different neuronal
+# assemblies are active for each population activity trajectories. A. Smoothed
+# single neuron activity for 0.5 sec of stimulus (green area) and 0.5 sec of
+# delay epoch. B. Same population activity as in A, but now reduced with NNMF
+# to 3 components (assembly space). The dynamic and highly irregular single
+# neuron activity, appears smooth in the assembly space. Also the change from
+# the stimulus to delay epoch is evident. C. Activity of 7 trials with delay
+# epoch response (out of 10), colored as three k-means identified states,
+# presented each time with respect to an assembly activity. It is evident
+# that stable population states that cluster in state space (similar colors),
+# appear to correspond to activity of a specific assembly. D. Same data as C,
 # now plotted in assembly space.
 # <markdowncell>
 # Import necessary modules:
@@ -155,6 +155,7 @@ B_axis_b.yaxis.set_label_position("right")
 nb.mark_figure_letter(B_axis_a, 'b')
 
 
+custom_range = (20, int(trial_len / 50))
 
 W_components, *_ = analysis.NNMF(
     NWBfile_array=[NWBfile],
@@ -229,7 +230,7 @@ plot_axes.set_xlabel('Assembly 1')
 plot_axes.set_ylabel('Assembly 2')
 plot_axes.set_zlabel('Assembly 3')
 #TODO: Someway the W_components are smaller (NNMF seems the culprit). Investigate
-pca_axis_limits = (0, 0.1)
+pca_axis_limits = (0, 0.5)
 plot_axes.set_xlim(pca_axis_limits)
 plot_axes.set_ylim(pca_axis_limits)
 plot_axes.set_zlim(pca_axis_limits)
@@ -251,36 +252,31 @@ duration = W_components.shape[2]
 stim_stop = 21  # Stim stop in q=50ms
 stim_stop_norm = stim_stop / duration
 c = mcolors.ColorConverter().to_rgb
-stim_start_color = 'limegreen'
-stim_stop_color = 'darkgreen'
+
 cluster_a_cm = analysis.make_colormap(
     [
-        c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-        c('orange'), c('red'), stim_stop_norm + 0.01,
+        c('red'), c('red'), 0.0,
         c('red'), c('darkred'), 0.99,
         c('darkred')
     ]
 )
 cluster_b_cm = analysis.make_colormap(
     [
-        c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-        c('orange'), c('violet'), stim_stop_norm + 0.01,
+        c('violet'), c('violet'), 0.0,
         c('violet'), c('darkviolet'), 0.99,
         c('darkviolet')
     ]
 )
 cluster_c_cm = analysis.make_colormap(
     [
-        c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-        c('orange'), c('gold'), stim_stop_norm + 0.01,
+        c('gold'), c('gold'), 0.0,
         c('gold'), c('goldenrod'), 0.99,
         c('goldenrod')
     ]
 )
 cluster_d_cm = analysis.make_colormap(
     [
-        c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-        c('orange'), c('blue'), stim_stop_norm + 0.01,
+        c('blue'), c('blue'), 0.0,
         c('blue'), c('darkblue'), 0.99,
         c('darkblue')
     ]
@@ -289,6 +285,7 @@ cluster_d_cm = analysis.make_colormap(
 colors = {1: cluster_a_cm(np.linspace(0, 1, duration - 1)),
           2: cluster_b_cm(np.linspace(0, 1, duration - 1)),
           3: cluster_c_cm(np.linspace(0, 1, duration - 1)),
+          4: cluster_d_cm(np.linspace(0, 1, duration - 1)),
           }
 for i, (trial, label) in enumerate(zip(range(total_trials), labels)):
     capture_artist = True
@@ -306,7 +303,7 @@ for i, (trial, label) in enumerate(zip(range(total_trials), labels)):
                 handles.append(handle[0])
                 capture_artist = False
 # Youmust group handles based on unique labels.
-plot_axes.legend(handles=handles, labels=['State 1', 'State 2', 'State 3'])
+plot_axes.legend(handles=handles, labels=['Trajectory 1', 'Trajectory 2', 'Trajectory 3', 'Trajectory 4'])
 nb.mark_figure_letter(D_axis_a, 'd')
 
 #TODO: na pros8eseis ena graph. h timh sto text pou na leei to cosine dist
@@ -321,20 +318,34 @@ K_star_mat = np.zeros((no_of_animals, no_of_conditions), dtype=int)
 for animal_model in range(1, no_of_animals + 1):
     for learning_condition in range(1, no_of_conditions + 1):
         print(f'NT:{animal_model}, LC:{learning_condition}')
-        inputfile = data_dir.joinpath(
-            f'cross_valid_errors_structured{animal_model}_{learning_condition}.hdf'
-        )
+        K_max = 20
+        K_cv = 20
+        rng_max_iters = 1
+        fn_str = (
+            'cross_validation_errors_structured'
+            '_AM{animal_model_id}'
+            '_LC{learning_condition_id}'
+            '_Kmax{K_max}'
+            '_Kcv{K_cv}'
+            '_RI{rng_max_iters}.hdf').format
+        inputfile = data_dir.joinpath(fn_str(
+            animal_model_id=animal_model,
+            learning_condition_id=learning_condition,
+            K_max=K_max,
+            K_cv=K_cv,
+            rng_max_iters=rng_max_iters
+        ))
         # Read CV results.
         try:
-            attribs = pd.read_hdf(inputfile, key='attributes').to_dict()
-            K = attribs['K'][0]
-            max_clusters = attribs['max_clusters'][0]
-            rng_max_iters = attribs['rng_max_iters'][0]
-            error_bar = pd.read_hdf(inputfile, key='error_bar') \
-                .values.reshape(max_clusters, K, rng_max_iters) \
+            #attribs = pd.read_hdf(inputfile, key='attributes').to_dict()
+            #K_cv = attribs['K_cv'][0]
+            #K_max = attribs['K_max'][0]
+            #rng_max_iters = attribs['rng_max_iters'][0]
+            error_train = pd.read_hdf(inputfile, key='error_train') \
+                .values.reshape(K_max, K_cv, rng_max_iters) \
                     .mean(axis=2)
             error_test = pd.read_hdf(inputfile, key='error_test') \
-                .values.reshape(max_clusters, K, rng_max_iters) \
+                .values.reshape(K_max, K_cv, rng_max_iters) \
                     .mean(axis=2)
             K_str_cv = np.argmin(error_test.mean(axis=1))
             K_star_mat[animal_model - 1, learning_condition - 1] = K_str_cv
@@ -413,8 +424,8 @@ nb.adjust_spines(E_axis_a, ['left', 'bottom'])
 nb.mark_figure_letter(E_axis_a, 'e')
 
 # <codecell>
-figure4.savefig('Figure_4_final.pdf')
-figure4.savefig('Figure_4_final.png')
+figure4.savefig('Figure_4_final_right.pdf')
+figure4.savefig('Figure_4_final_right.png')
 print('Tutto pronto!')
 
 
