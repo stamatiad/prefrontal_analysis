@@ -15,6 +15,7 @@ from scipy.signal import savgol_filter
 from itertools import chain
 
 from datetime import datetime
+#TODO: this is some namespace mangling, rename NWBFile in your code please.
 from pynwb import NWBFile
 from pynwb import NWBHDF5IO
 from pynwb.form.backends.hdf5.h5_utils import H5DataIO
@@ -1492,9 +1493,17 @@ def pcaL2(
     pca = decomposition.PCA(n_components=L)
     t_L = pca.fit_transform(pool_array.T).T
     latent = pca.explained_variance_
-    tmp_latent = latent / latent.max()
-    blah = np.diff(tmp_latent / np.sum(tmp_latent))
-    L = np.nonzero(np.greater(blah, -0.02))[0][0] + 1
+
+    #total_variance = np.sum(latent)
+    #explained_variance = latent / total_variance
+    #cum_explained_variance = np.cumsum(explained_variance)
+    #L = np.nonzero(np.less(cum_explained_variance, 0.8))[0].size
+
+    #norm_eigenvals = latent / latent.max()
+    #eigenval_diff = np.abs(np.diff(norm_eigenvals))
+    #L = np.nonzero(np.greater(eigenval_diff, 0.02))[0].size
+    L = np.nonzero(np.greater(latent, 1.0))[0].size
+
     print(f'L found to be: {L}')
     # Reshape PCA results into separate trials for plotting.
     #t_L_per_trial = t_L.reshape(L, correct_trials_no, duration, order='C')
@@ -1667,6 +1676,7 @@ def pcaL2(
         if klabels is not None:
             # EDIT: decide about that:
             progressive_colors = True
+            #TODO: you need some more variables for the colors.
             if progressive_colors:
                 # If you have cluster information for the data:
                 # Create custom colormaps for the stimulus and trial period, per label.
@@ -1679,41 +1689,163 @@ def pcaL2(
                 c = mcolors.ColorConverter().to_rgb
                 stim_start_color = 'limegreen'
                 stim_stop_color = 'darkgreen'
-                cluster_a_cm = make_colormap(
-                    [
-                        c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-                        c('orange'), c('red'), stim_stop_norm + 0.01,
-                        c('red'), c('darkred'), 0.99,
-                        c('darkred')
-                    ]
-                )
-                cluster_b_cm = make_colormap(
-                    [
-                        c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-                        c('orange'), c('violet'), stim_stop_norm + 0.01,
-                        c('violet'), c('darkviolet'), 0.99,
-                        c('darkviolet')
-                    ]
-                )
-                cluster_c_cm = make_colormap(
-                    [
-                        c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-                        c('orange'), c('gold'), stim_stop_norm + 0.01,
-                        c('gold'), c('goldenrod'), 0.99,
-                        c('goldenrod')
-                    ]
-                )
-                cluster_d_cm = make_colormap(
-                    [
-                        c(stim_start_color), c(stim_stop_color), stim_stop_norm,
-                        c('orange'), c('blue'), stim_stop_norm + 0.01,
-                        c('blue'), c('darkblue'), 0.99,
-                        c('darkblue')
-                    ]
-                )
-                color_values = [
-                    cluster_a_cm, cluster_b_cm, cluster_c_cm, cluster_d_cm
-                ]
+                color_values = []
+                if kwargs.get('plot_stim_color', False):
+                    color_values.append(make_colormap(
+                            [
+                                c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                                c('red'), c('red'), stim_stop_norm + 0.01,
+                                c('red'), c('darkred'), 0.99,
+                                c('darkred')
+                            ]
+                        )
+                    )
+                    color_values.append(make_colormap(
+                            [
+                                c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                                c('violet'), c('violet'), stim_stop_norm + 0.01,
+                                c('violet'), c('darkviolet'), 0.99,
+                                c('darkviolet')
+                            ]
+                        )
+                    )
+                    color_values.append(make_colormap(
+                            [
+                                c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                                c('gold'), c('gold'), stim_stop_norm + 0.01,
+                                c('gold'), c('goldenrod'), 0.99,
+                                c('goldenrod')
+                            ]
+                        )
+                    )
+                    color_values.append(make_colormap(
+                            [
+                                c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                                c('blue'), c('blue'), stim_stop_norm + 0.01,
+                                c('blue'), c('darkblue'), 0.99,
+                                c('darkblue')
+                            ]
+                        )
+                    )
+                    color_values.append(make_colormap(
+                            [
+                                c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                                c('deepskyblue'), c('deepskyblue'), stim_stop_norm + 0.01,
+                                c('deepskyblue'), c('dodgerblue'), 0.99,
+                                c('dodgerblue')
+                            ]
+                        )
+                    )
+                    color_values.append(make_colormap(
+                            [
+                                c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                                c('lightgray'), c('lightgray'), stim_stop_norm + 0.01,
+                                c('lightgray'), c('darkgray'), 0.99,
+                                c('darkgray')
+                            ]
+                        )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                            c('magenta'), c('magenta'), stim_stop_norm + 0.01,
+                            c('magenta'), c('darkmagenta'), 0.99,
+                            c('darkmagenta')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                            c('darkturquoise'), c('darkturquoise'), stim_stop_norm + 0.01,
+                            c('darkturquoise'), c('teal'), 0.99,
+                            c('teal')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                            [
+                                c(stim_start_color), c(stim_stop_color), stim_stop_norm,
+                                c('lime'), c('lime'), stim_stop_norm + 0.01,
+                                c('lime'), c('limegreen'), 0.99,
+                                c('limegreen')
+                            ]
+                        )
+                    )
+                else:
+                    color_values.append(make_colormap(
+                        [
+                            c('red'), c('red'), 0.0,
+                            c('red'), c('darkred'), 0.99,
+                            c('darkred')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('violet'), c('violet'), 0.0,
+                            c('violet'), c('darkviolet'), 0.99,
+                            c('darkviolet')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('gold'), c('gold'), 0.0,
+                            c('gold'), c('goldenrod'), 0.99,
+                            c('goldenrod')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('blue'), c('blue'), 0.0,
+                            c('blue'), c('darkblue'), 0.99,
+                            c('darkblue')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('deepskyblue'), c('deepskyblue'), 0.0,
+                            c('deepskyblue'), c('dodgerblue'), 0.99,
+                            c('dodgerblue')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('lightgray'), c('lightgray'), 0.0,
+                            c('lightgray'), c('darkgray'), 0.99,
+                            c('darkgray')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('magenta'), c('magenta'), 0.0,
+                            c('magenta'), c('darkmagenta'), 0.99,
+                            c('darkmagenta')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('darkturquoise'), c('darkturquoise'), 0.0,
+                            c('darkturquoise'), c('teal'), 0.99,
+                            c('teal')
+                        ]
+                    )
+                    )
+                    color_values.append(make_colormap(
+                        [
+                            c('lime'), c('lime'), 0.0,
+                            c('lime'), c('limegreen'), 0.99,
+                            c('limegreen')
+                        ]
+                    )
+                    )
+
             labels = klabels.tolist()
             nclusters = np.unique(klabels).size
             colors = cm.Set2(np.linspace(0, 1, nclusters))
@@ -1721,8 +1853,10 @@ def pcaL2(
             handles = []
             for i, (trial, label) in enumerate(zip(range(total_data_trials), labels)):
                 if progressive_colors:
-                    colors = color_values[label - 1](np.linspace(0, 1, duration))
+                    colors = color_values[label - 1 + kwargs.get('color_skip', 0)](np.linspace(0, 1, duration))
                     for t, c in zip(range(duration - 1), colors):
+                        if t <= 0:
+                            continue
                         handle = plot_axes.plot(
                             t_L_per_trial[0][trial][t:t+2],
                             t_L_per_trial[1][trial][t:t+2],
@@ -1911,35 +2045,56 @@ class NMF_HALS(object):
 
 
 @nwb_unique_rng
-def nnmf(A, k, M=None, **kwargs):
+def nnmf(A, k, M_train=None, **kwargs):
     '''
     Applies Non Negative Matrix Factorization in matrix A, with k components.
-    If optional M binary matrix is given, alternating minimization is performed
-    with zero values of M as missing values of A.
+    If optional M_train binary matrix is given, alternating minimization is performed
+    with zero values of M_train as missing values of A.
 
     This function also gets (through kwargs) the NWB file and a RNG iteration
     integer to be reproducible.
 
     :param A: numpy.ndarray
     :param k: int
-    :param M: numpy.ndarray, optional
+    :param M_train: numpy.ndarray, optional
     :return:
     '''
+    # maximum multiplicative rules iterations
+    max_iters = 100
 
     # Initialize W and H:
     W = np.random.rand(A.shape[0], k) * 70
     H = np.random.rand(k, A.shape[1])
 
-    if M is not None:
-        A = M * A
+    if M_train is not None:
+        A = M_train * A
     else:
-        M = np.ones(A.shape)
+        M_train = np.ones(A.shape)
 
-    for iter in range(1000):
-        W = np.maximum(W * ((A @ H.T) / ((M * (W @ H)) @ H.T)), 1e-16)
-        H = np.maximum(H * ((W.T @ A) / (W.T @ (M * (W @ H)))), 1e-16)
+    #W_dist = np.zeros((max_iters))
+    #H_dist = np.zeros((max_iters))
 
-    return W, H
+    for iter in range(max_iters):
+        '''
+        W_previous = W
+        H_previous = H
+        '''
+        W = np.maximum(W * ((A @ H.T) / ((M_train * (W @ H)) @ H.T)), 1e-16)
+        H = np.maximum(H * ((W.T @ A) / (W.T @ (M_train * (W @ H)))), 1e-16)
+        '''
+        W_dist[iter] = \
+            np.linalg.norm((W_previous - W), ord='fro') / \
+            np.sqrt(A.shape[0] * A.shape[1])
+        H_dist[iter] = \
+            np.linalg.norm((H_previous - H), ord='fro') / \
+            np.sqrt(A.shape[0] * A.shape[1])
+        '''
+
+        # Break for efficiency if converged:
+        #if W_dist[iter] < 1e-12 and H_dist[iter] < 1e-12:
+            #break
+
+    return W, H#, W_dist, H_dist
 
 def NNMF(
         NWBfile_array=[], plot_2d=False, plot_3d=False, custom_range=None,
@@ -1998,7 +2153,11 @@ def NNMF(
         print('Must be k < min(n,m)!')
         n_components = np.min(pool_array.shape)
 
-    W, H, info = NMF_HALS().run(pool_array.T, n_components, M=M)
+    W, H = nnmf(
+        pool_array.T, n_components,
+        input_NWBfile=NWBfile_array[0]
+    )
+    #W, H, info = NMF_HALS().run(pool_array.T, n_components, M=M)
     H = H.T
     #TODO: return the fit error and test error!
     error_bar = None
@@ -2724,7 +2883,13 @@ def kmeans_clustering(data=None, k=2, max_iterations=100, plot=False, **kwargs):
 
     return klabels, J_k, md_array, md_params_d
 
-def evaluate_clustering(klabels=None, md_array=None, md_params=None, **kwargs):
+def evaluate_clustering(
+        klabels=None,
+        md_array=None,
+        md_params=None,
+        no_optimal_L=None,
+        **kwargs
+):
     # Calculate likelihood of each trial, given the cluster centroid:
     nclusters, ntrials = md_array.shape
 
@@ -2736,16 +2901,20 @@ def evaluate_clustering(klabels=None, md_array=None, md_params=None, **kwargs):
         cluster = klabels[trial] - 1
         mdist = md_array[cluster, trial]
         S = md_params[cluster].S
+        #TODO: to nclusters einai la8os. To k sto original einai to dimensionality
+        # tou multivariate distribution (katalabainw oti einai to k number of PCA
+        # components). Na bebaiw8w kai oti o S den einai o antistrofos pou xrhsimopoiw
+        # sto MD.
         # Remove clusters without any points:
         try:
             if S.shape == ():
                 ln_L[0, trial] = \
                     np.exp(-1/2 * mdist) / \
-                    np.sqrt((2*np.pi)**nclusters * float(S))
+                    np.sqrt((2*np.pi)**no_optimal_L * float(S))
             else:
                 ln_L[0, trial] = \
                     np.exp(-1/2 * mdist) / \
-                    np.sqrt((2*np.pi)**nclusters * np.linalg.det(S))
+                    np.sqrt((2*np.pi)**no_optimal_L * np.linalg.det(S))
         except Exception as e:
             print('Something went wrong while evaluating BIC!')
             print(str(e))
@@ -2844,6 +3013,9 @@ def determine_number_of_clusters(
         plot=False
     )
 
+    # Keep only prominent principal components from the data set:
+    data_pca = data_pca[:no_optimal_L, :, :]
+
     dims, ntrials, duration = data_pca.shape
 
     try:
@@ -2903,7 +3075,8 @@ def determine_number_of_clusters(
                 break
             else:
                 BIC = evaluate_clustering(
-                    klabels=klabels, md_array=md_array, md_params=md_params_d, **kwargs
+                    klabels=klabels, md_array=md_array, md_params=md_params_d,
+                    no_optimal_L=no_optimal_L, **kwargs
                 )
                 BIC_all[i] = BIC
                 kmeans_labels[i, :] = klabels.T
@@ -2946,8 +3119,8 @@ def determine_number_of_clusters(
 
 @nwb_unique_rng
 def determine_number_of_ensembles(
-        NWBfile_array, max_clusters=None, custom_range=None,
-        K=10, rng_max_iters=20, **kwargs
+        NWBfile_array, K_max=None, custom_range=None,
+        K_cv=10, rng_max_iters=20, **kwargs
 ):
     '''
     Same as deternime_number_of_clusters, but utilizes NNMF in search for
@@ -2956,10 +3129,10 @@ def determine_number_of_ensembles(
     components a cross-validation method is used.
     Parts of the A array are removed, randomly and then their reconstruction
     error is assessed.
-    This function returns the best k estimate.
+    This function returns the best  estimate.
 
     :param NWBfile_array:
-    :param max_clusters:
+    :param K_max:
     :param custom_range:
     :param kwargs:
     :return:
@@ -2982,7 +3155,21 @@ def determine_number_of_ensembles(
         )
 
     # Check if you need to continue:
-    filename = Path(f'cross_valid_errors_structured{animal_model_id}_{learning_condition_id}.hdf')
+    fn_str = (
+        'cross_validation_errors_structured'
+        '_AM{animal_model_id}'
+        '_LC{learning_condition_id}'
+        '_Kmax{K_max}'
+        '_Kcv{K_cv}'
+        '_RI{rng_max_iters}.hdf').format
+    filename = Path(fn_str(
+        animal_model_id=animal_model_id,
+        learning_condition_id=learning_condition_id,
+        K_max=K_max,
+        K_cv=K_cv,
+        rng_max_iters=rng_max_iters
+    ))
+    #filename = Path(f'cross_validation_errors_structured_AM{animal_model_id}_LC{learning_condition_id}_RI{rng_max_iters}.hdf')
     if filename.is_file():
         #return (1, 1, 1)
         pass
@@ -2995,80 +3182,107 @@ def determine_number_of_ensembles(
     # Reshape in array with m=cells, n=time bins.
     duration = tmp.shape[2]
     data = tmp.reshape(pn_no, correct_trials_no * duration)
+    norm_factor = data.shape[0] * data.shape[1]
 
     # This is now handled by the decorator!
     #np.random.seed(animal_model_id * 10 + learning_condition_id)
     # Training error:
-    error_bar = np.zeros((max_clusters, K, rng_max_iters))
-    error_bar_rm = np.zeros((max_clusters, K, rng_max_iters))
+    error_train = np.zeros((K_max, K_cv, rng_max_iters))
+    error_train_rm = np.zeros((K_max, K_cv, rng_max_iters))
     # Test error:
-    error_test = np.zeros((max_clusters, K, rng_max_iters))
-    for n_components in range(1, max_clusters + 1):
-        print(f'No of components {n_components}')
-        # Divide data into K partitions:
-        #TODO: make sure this is always doable!
-        rnd_idx = np.random.permutation(data.size)
-        K_idx = np.zeros(data.size)
-        partition_size = int(np.floor(data.size / K))
-        for k, (start, end) in enumerate(generate_slices(size=partition_size, number=K)):
-            K_idx[rnd_idx[start:end]] = k
-        K_idx = K_idx.reshape(data.shape)
+    error_test = np.zeros((K_max, K_cv, rng_max_iters))
+    error_test_rm = np.zeros((K_max, K_cv, rng_max_iters))
+    for k in range(1, K_max + 1):
+        print(f'No of components {k}')
+        for rng_iteration in range(rng_max_iters):
+            # Divide data into K_cv partitions:
+            #TODO: make sure this is always doable!
+            rnd_idx = np.random.permutation(data.size)
+            K_idx = np.zeros(data.size)
+            partition_size = int(np.floor(data.size / K_cv))
+            for partition_id, (start, end) in enumerate(generate_slices(size=partition_size, number=K_cv)):
+                K_idx[rnd_idx[start:end]] = partition_id
+            K_idx = K_idx.reshape(data.shape)
 
-        # Run NNMF in a K-1 fashion:
-        for k in range(K):
-            print(f'k is {k}')
-            M_ = K_idx == k
-            M = np.logical_not(M_)
-            #TODO: You need to perform NNMF multiple times, to avoid (must you?) the
-            # variations due to the random initialization.
-            for rng_iteration in range(rng_max_iters):
+            # Run NNMF in a K_cv-1 fashion:
+            for k_fold in range(K_cv):
+                print(f'k_fold is {k_fold}')
+                #tic = time.perf_counter()
+                # M_test einai to M_test, einai ta liga, ta left outs.
+                M_test = K_idx == k_fold
+                # Afto einai to M_train
+                M_train = np.logical_not(M_test)
+                #toc = time.perf_counter()
+                #print(f'M matrices took {toc-tic} seconds.')
+                #TODO: You need to perform NNMF multiple times, to avoid (must you?) the
+                # variations due to the random initialization.
+                #tic = time.perf_counter()
                 W, H = nnmf(
-                    data.T, n_components, M=M.T,
+                    data, k, M_train=M_train,
                     input_NWBfile=NWBfile_array[0], rng_iter=rng_iteration
                 )
-                # ready made NNMF algo:
-                estimator = decomposition.NMF(
-                    n_components=n_components, init='nndsvd', tol=5e-3
-                )
-                W_rm = estimator.fit_transform(data.T)
-                H_rm = estimator.components_
-                error_bar_rm[n_components-1, k, rng_iteration] = \
-                    np.linalg.norm(M.T * (W_rm @ H_rm - data.T), ord='fro') / \
-                        np.sqrt(partition_size * (K - 1))
+                #toc = time.perf_counter()
+                #print(f'NNMF took {toc-tic} seconds.')
 
-                error_bar[n_components-1, k, rng_iteration] = \
-                    np.linalg.norm(M.T * (W @ H - data.T), ord='fro') / \
-                        np.sqrt(partition_size * (K - 1))
-                error_test[n_components-1, k, rng_iteration] = \
-                    np.linalg.norm(M_.T * (W @ H - data.T), ord='fro') / \
-                        np.sqrt(partition_size)
+                if False:
+                    # ready made NNMF algo:
+                    estimator = decomposition.NMF(
+                        n_components=k, init='nndsvd', tol=5e-3
+                    )
+                    W_rm = estimator.fit_transform(M_train * data)
+                    H_rm = estimator.components_
+                    #TODO: to error bar rm ypologizetai kala, opote gia poio logo
+                    #xreiazetai pragmatika na xrhsimopoihsw gradient descent?
+                    #TODO: Deftero: blepw oti ta data mou exoun para poly variation
+                    # otan xrhsimopoiw diaforetiko random sto GD. Mhpws afto
+                    # shmainei oti den xrhsimopoiw polla iterations? Den 8a eprepe
+                    # (efoson to partition einai to idio) na mou dinei k_fold arketa
+                    # paromoia apotelesmata?
+                    error_train_rm[k-1, k_fold, rng_iteration] = \
+                        np.linalg.norm(M_train * (W_rm @ H_rm - data), ord='fro') / \
+                        np.sqrt(norm_factor)
+                    error_test_rm[k-1, k_fold, rng_iteration] = \
+                        np.linalg.norm(M_test * (W_rm @ H_rm - data), ord='fro') / \
+                        np.sqrt(norm_factor)
+
+                #tic = time.perf_counter()
+                error_train[k-1, k_fold, rng_iteration] = \
+                    np.linalg.norm(M_train * (W @ H - data), ord='fro') / \
+                    (partition_size * (K_cv - 1))
+                error_test[k-1, k_fold, rng_iteration] = \
+                    np.linalg.norm(M_test * (W @ H - data), ord='fro') / \
+                    partition_size
+                #toc = time.perf_counter()
+                #print(f'Frobenius norm took {toc-tic} seconds.')
 
                 # This runs.
-                #W, H, info = NMF_HALS().run(data.T, n_components)
+                #W, H, info = NMF_HALS().run(data.T, k)
 
         # Save the errors:
 
     # Serialize them before saving, and remember to deserialize them after.
     print(f'Saving CV errors for animal {animal_model_id}, lc {learning_condition_id}')
     df = pd.DataFrame({
-        'max_clusters': [max_clusters],
-        'K': [K],
+        'K_max': [K_max],
+        'K_cv': [K_cv],
         'rng_max_iters': [rng_max_iters],
-        'dim_order': 'max_clusters, K, rng_max_iters'
+        'dim_order': 'K_max, K_cv, rng_max_iters'
     })
     df.to_hdf(str(filename), key='attributes', mode='w')
-    df = pd.DataFrame(error_bar.reshape(-1, 1))
-    df.to_hdf(str(filename), key='error_bar')
-    df = pd.DataFrame(error_bar_rm.reshape(-1, 1))
-    df.to_hdf(str(filename), key='error_bar_rm')
+    df = pd.DataFrame(error_train.reshape(-1, 1))
+    df.to_hdf(str(filename), key='error_train')
+    #df = pd.DataFrame(error_train_rm.reshape(-1, 1))
+    #df.to_hdf(str(filename), key='error_train_rm')
     df = pd.DataFrame(error_test.reshape(-1, 1))
     df.to_hdf(str(filename), key='error_test')
+    #df = pd.DataFrame(error_test_rm.reshape(-1, 1))
+    #df.to_hdf(str(filename), key='error_test_rm')
 
     ## Plot the errors to get the picture:
     #fig = plt.figure()
-    #plt.plot(error_bar.T, color='C0', alpha=0.2)
+    #plt.plot(error_train.T, color='C0', alpha=0.2)
     #plt.plot(error_train.T, color='C1', alpha=0.2)
-    #plt.plot(error_bar.T.mean(axis=1), color='C0')
+    #plt.plot(error_train.T.mean(axis=1), color='C0')
     #plt.plot(error_train.T.mean(axis=1), color='C1')
     #np.argmin(error_train.mean(axis=0))
     #plt.show()
