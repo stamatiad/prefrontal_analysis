@@ -20,6 +20,29 @@ from scipy import stats
 from itertools import chain
 import sys
 
+# import remote debug configuration for PyCharm:
+import pycharm_debug
+#===============================================================================
+# FAST RESULTS: IDD CLUSTERING
+#===============================================================================
+glia_dir = Path("/home/cluster/stefanos/Documents/Glia")
+
+NWBfile = analysis.load_nwb_from_neuron(
+    glia_dir,
+    reload_raw=False,
+    new_params={
+        'excitation_bias': 1.0,
+        'inhibition_bias': 2.0,
+        'nmda_bias': 6.0,
+        'ntrials': 1,
+        'sim_duration': 1.1,
+        'cp': 2,
+        'experiment_config': 'structured_1longdend_ir'
+    }
+)
+
+sys.exit(0)
+
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (5, 5)
 plt.rcParams['pdf.fonttype'] = 42

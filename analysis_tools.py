@@ -139,6 +139,39 @@ def simulation_template_save(**kwargs):
     f"{kwargs['postfix']}")
     return mystr
 
+def simulation_template_load_iid(**kwargs):
+    mystr = (f"{kwargs['prefix']}"
+             f"SN{kwargs['animal_model']}"
+             f"LC{kwargs['learning_condition']}"
+             f"TR{kwargs['trial']}"
+             f"_EB{kwargs['excitation_bias']:.3f}"
+             f"_IB{kwargs['inhibition_bias']:.3f}"
+             f"_GBF2.000"
+             f"_NMDAb{kwargs['nmda_bias']:.3f}"
+             f"_AMPAb{kwargs['ampa_bias']:.3f}"
+             f"_CP{kwargs['cp']}"
+             f"_DCP{kwargs['dend_clust_perc']}"
+             f"_DCS{kwargs['dend_clust_seg']}"
+             f"_{kwargs['experiment_config']}_simdur{kwargs['sim_duration']}"
+             f"{kwargs['postfix']}")
+    return mystr
+
+def simulation_template_save_iid(**kwargs):
+    mystr = (f"{kwargs['prefix']}"
+             f"SN{kwargs['animal_model']}"
+             f"LC{kwargs['learning_condition']}"
+             f"TR{kwargs['trial_first']}-{kwargs['trial_last']}"
+             f"_EB{kwargs['excitation_bias']:.3f}"
+             f"_IB{kwargs['inhibition_bias']:.3f}"
+             f"_GBF2.000"
+             f"_NMDAb{kwargs['nmda_bias']:.3f}"
+             f"_AMPAb{kwargs['ampa_bias']:.3f}"
+             f"_CP{kwargs['cp']}"
+             f"_DCP{kwargs['dend_clust_perc']}"
+             f"_DCS{kwargs['dend_clust_seg']}"
+             f"_{kwargs['experiment_config']}_simdur{kwargs['sim_duration']}"
+             f"{kwargs['postfix']}")
+    return mystr
 # These are the different templates I use when simulating in NEURON.
 # To avoid confusion, since these change based on sim parameters (checking them,
 # reviewers comments, experimentation) I must pass the one I use in each
@@ -147,7 +180,9 @@ simulation_templates = {
     "load_old": simulation_template_load_old,
     "save_old": simulation_template_save_old,
     "load": simulation_template_load,
-    "save": simulation_template_save
+    "save": simulation_template_save,
+    "load_iid": simulation_template_load_iid,
+    "save_iid": simulation_template_save_iid,
 }
 
 #TODO: name them correctly:
@@ -591,7 +626,6 @@ def load_nwb_from_neuron(
         'spike_lower_threshold': -10,
         'data_dim': 2,
         'samples_per_ms': 10,
-        'q_size': 50,
         'nmda_bias': 3.0,
         'ampa_bias': 1.0,
         'animal_model': 1,
@@ -654,6 +688,7 @@ def load_nwb_from_neuron(
 def load_raw_neuron(inputdir, rundir, reload_raw=False):
     try:
         inputfile = inputdir.joinpath(rundir).joinpath('vsoma.hdf5')
+        print(f'Neuron output folder is:\n{rundir}\n')
         # If input hdf file exists, just take the traces.
         if reload_raw or not inputfile.exists():
             #print(f'Converting data to HDF in dir:\n\t{rundir}')
@@ -671,20 +706,23 @@ def load_raw_neuron(inputdir, rundir, reload_raw=False):
 
 def create_nwb_file(inputdir=None, outputdir=None, \
                     include_membrane_potential=False, **kwargs):
+    #TODO: this should get automagicaly all the keys in the dict and create one same named variable for each one.
+    # Finally to pass the value of the dict to the new variable.
     # Get parameters externally:
     experiment_config, animal_model, learning_condition, ntrials, trial_len, ncells, stim_start_offset, \
     stim_stop_offset, samples_per_ms, spike_upper_threshold, spike_lower_threshold, excitation_bias, \
-        inhibition_bias, nmda_bias, ampa_bias, sim_duration, q_size, fn_prefix, fn_postfix, cp= \
+        inhibition_bias, nmda_bias, ampa_bias, sim_duration, q_size, fn_prefix, fn_postfix, cp, dcp, dcs= \
         getargs('experiment_config', 'animal_model', 'learning_condition', 'ntrials', 'trial_len', 'ncells', 'stim_start_offset', \
                    'stim_stop_offset', 'samples_per_ms', 'spike_upper_threshold', 'spike_lower_threshold', \
-                'excitation_bias', 'inhibition_bias', 'nmda_bias', 'ampa_bias', 'sim_duration', 'q_size', 'prefix', 'postfix', 'cp',kwargs)
+                'excitation_bias', 'inhibition_bias', 'nmda_bias', 'ampa_bias', 'sim_duration', 'q_size', 'prefix', 'postfix', 'cp','dend_clust_perc','dend_clust_seg',kwargs)
+    #TODO: THis is implemented wrong!
     no_need_to_reload_neuron = False
     if no_need_to_reload_neuron:
         reload_raw = False
         print("I AM NOT RELOADING THE HDF5 FROM NEURON!")
     else:
         reload_raw = kwargs.get('reload_raw', False)
-        print("I AM WILL RELOAD THE HDF5 FROM NEURON! TIME CONSUMING!")
+        print("I WILL RELOAD THE HDF5 FROM NEURON! TIME CONSUMING!")
 
     template_postfix = kwargs.get('template_postfix', '')
 
@@ -728,6 +766,7 @@ def create_nwb_file(inputdir=None, outputdir=None, \
         # get input dir and search for hdf file. if non existent create it.
         print(f'Trial {trial}. ', end='')
         rundir = inputdir.joinpath(
+            #TODO: this should read the args from a kwargs type of dict, rather than each variable on its own
             simulation_templates[f'load{template_postfix}'](
                 prefix=fn_prefix,
                 excitation_bias=excitation_bias,
@@ -740,6 +779,8 @@ def create_nwb_file(inputdir=None, outputdir=None, \
                 trial=trial,
                 experiment_config=experiment_config,
                 cp=cp,
+                dend_clust_perc=dcp,
+                dend_clust_seg=dcs,
                 postfix=fn_postfix
             ))
         voltage_traces = load_raw_neuron(inputdir, rundir, reload_raw=reload_raw)
