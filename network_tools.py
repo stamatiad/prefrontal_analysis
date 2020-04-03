@@ -30,6 +30,7 @@ from pathlib import Path
 import pickle
 import json
 import seaborn as sb
+import re
 
 plt.rcParams.update({'font.family': 'Helvetica'})
 plt.rcParams["figure.figsize"] = (15, 15)
@@ -325,8 +326,46 @@ class Network:
         # Save the updated upairs to the network object:
         self.upairs_d = tmp_network_upairs
 
-    @property
-    def connection_functions_d(self):
+
+    '''
+    @connection_functions_d.setter
+    def connection_functions_d(self, val):
+        #TODO: implement that constraint:
+        # In my code I only update the below keys, so only those are allowed to
+        # be updated.
+        pair_type, conn_type, conn_func = val
+        # Update connection functions dictionary:
+        self._connection_functions_d[pair_type][conn_type] = conn_func
+    '''
+
+    def get_connection_function(self, pair_type=None, conn_type=None):
+        return self._connection_functions_d[pair_type][conn_type]
+
+    def set_connection_function(self, pair_type=None, conn_type=None,
+                                conn_func=None):
+        self._connection_functions_d[pair_type][conn_type] = conn_func
+
+    def __init__(self, serial_no, pc_no, pv_no):
+        ''' Initialize network class.
+        param serial_no Serial Number of the network, to recreate it no matter what.
+
+        '''
+        print('Initializing Network')
+        self.serial_no = serial_no
+        self.pc_no = pc_no
+        self.pv_no = pv_no
+        print('Network have %d PCs' % self.pc_no)
+        print(self.pc_no)
+        print(self.cell_no)
+        # Initialize connectivity matrices:
+        # configurations is a dictionary, since we can have multiple:
+        #self.configurations = {} #np.full((self.cell_no, self.cell_no), False)
+        #self.configuration_rnd = np.full((self.cell_no, self.cell_no), False)
+        self.connectivity_mat = np.full((self.cell_no, self.cell_no), False)
+        self.weights_mat = np.full((self.cell_no, self.cell_no), 0.0)
+        self.upairs_d = {}
+        self.configuration_alias = ''
+        self.stats = {}
         # Define connectivity probability functions (distance dependent):
         # Neuronal pairs are unordered {A,B}, considering their type.
         # For each  pair we have three distinct, distance-dependend connection probabilities:
@@ -354,13 +393,22 @@ class Network:
             = lambda x: self._connection_functions_d['PN_PN']['A2B'](x)
         self._connection_functions_d['PN_PN']['unidirectional'] \
             = lambda x: np.add(self._connection_functions_d['PN_PN']['A2B'](x), self._connection_functions_d['PN_PN']['B2A'](x))
-        # Random/uniform connection functions are refined later on, in order to exactly balance its overall connection
+        # Random/uniform connection functions are refined later on, in order
+        # to exactly balance its overall connection
         self._connection_functions_d['PN_PN']['uniform_reciprocal'] \
             = lambda x: np.multiply(np.ones(x.shape), 0)
         self._connection_functions_d['PN_PN']['uniform_A2B'] \
             = lambda x: np.multiply(np.ones(x.shape), 0)
         self._connection_functions_d['PN_PN']['uniform_B2A'] \
             = lambda x: np.multiply(np.ones(x.shape), 0)
+        # Random/uniform connection functions are refined later on, in order
+        # to exactly balance its overall connection (dd = distance dependend)
+        self._connection_functions_d['PN_PN']['uniform_reciprocal_dd'] \
+            = lambda x: np.multiply(np.ones(x.shape), 1)
+        self._connection_functions_d['PN_PN']['uniform_A2B_dd'] \
+            = lambda x: np.multiply(np.ones(x.shape), 1)
+        self._connection_functions_d['PN_PN']['uniform_B2A_dd'] \
+            = lambda x: np.multiply(np.ones(x.shape), 1)
         # probability with the structured configuration.
         # PN with PV connectivity:
         self._connection_functions_d['PN_PV'] = {}
@@ -380,42 +428,6 @@ class Network:
             = lambda x: np.multiply(np.ones(x.shape), 0.0675)
         self._connection_functions_d['PV_PV']['B2A'] \
             = lambda x: np.multiply(np.ones(x.shape), 0.0675)
-        return self._connection_functions_d
-
-    @connection_functions_d.setter
-    def connection_functions_d(self, new_tup):
-        #TODO: implement that constraint:
-        # In my code I only update the below keys, so only those are allowed to
-        # be updated.
-        pair_type = new_tup[0]
-        conn_type = new_tup[1]
-        conn_func = new_tup[2]
-        # Update connection functions dictionary:
-        self._connection_functions_d[pair_type][conn_type] = conn_func
-
-
-    def __init__(self, serial_no, pc_no, pv_no):
-        ''' Initialize network class.
-        param serial_no Serial Number of the network, to recreate it no matter what.
-
-        '''
-        print('Initializing Network')
-        self.serial_no = serial_no
-        self.pc_no = pc_no
-        self.pv_no = pv_no
-        print('Network have %d PCs' % self.pc_no)
-        print(self.pc_no)
-        print(self.cell_no)
-        # Initialize connectivity matrices:
-        # configurations is a dictionary, since we can have multiple:
-        #self.configurations = {} #np.full((self.cell_no, self.cell_no), False)
-        #self.configuration_rnd = np.full((self.cell_no, self.cell_no), False)
-        self.connectivity_mat = np.full((self.cell_no, self.cell_no), False)
-        self.weights_mat = np.full((self.cell_no, self.cell_no), 0.0)
-        self.upairs_d = {}
-        self.configuration_alias = ''
-        self.stats = {}
-        pass
 
     @with_reproducible_rng
     def populate_network(self, cube_side_len: int, plot=False):
@@ -553,13 +565,17 @@ class Network:
             #new_upairs = [None]*len(upairs)
             prev_i = 0
             query_pair_types = sorted(set(x.type_cells for x in upairs))
-            # Sort the set (since its order is random!), to get reproducible RNG results!
+            #TODO: Sort the set (since its order is random!), to get
+            # reproducible RNG results! IS THIS NECESSARY?
             for pair_type in query_pair_types:
                 matching_upairs = [x for x in upairs if x.type_cells == pair_type]
                 upairs_dist = np.asarray([p.distance for p in matching_upairs])
                 prob_arr = np.full((len(connection_protocol)+1,len(matching_upairs)), 0.0)
                 for i, conn_type in enumerate(connection_protocol.values(), 1):
-                    prob_arr[i, :] = self.connection_functions_d[pair_type][conn_type](upairs_dist)
+                    prob_arr[i, :] = self.get_connection_function(
+                        pair_type=pair_type,
+                        conn_type=conn_type
+                    )(upairs_dist)
                 prob_arr = np.cumsum(prob_arr, axis=0)
                 # Don't forget to include the (closed) last bin!
                 prob_arr_flat = np.append(np.add(prob_arr, np.tile(np.arange(len(matching_upairs)),
@@ -568,19 +584,21 @@ class Network:
                 rnd_arr_flat = np.add(np.random.rand(1, len(matching_upairs)), np.arange(len(matching_upairs)))
                 #DEBUG
                 if False:
-                    filename = Path.cwd().joinpath('debug_files','error',f'network_debug_rnd_arr_flat_time_2_SN{self.serial_no}.hdf5')
+                    filename = Path.cwd().joinpath('debug_files',
+                                                   f'network_debug_rnd_arr_flat_time_1_SN{self.serial_no}.hdf5')
                     df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
                                        'configuration_alias': self.configuration_alias})
                     df.to_hdf(filename, key='attributes', mode='w')
                     df = pd.DataFrame(rnd_arr_flat)
                     df.to_hdf(filename, key='rnd_arr_flat')
 
-                    filename = Path.cwd().joinpath('debug_files','error',f'network_debug_prob_arr_time_2_SN{self.serial_no}.hdf5')
+                    filename = Path.cwd().joinpath('debug_files',
+                                                   f'network_debug_prob_arr_flat_time_1_SN{self.serial_no}.hdf5')
                     df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
                                        'configuration_alias': self.configuration_alias})
                     df.to_hdf(filename, key='attributes', mode='w')
-                    df = pd.DataFrame(prob_arr)
-                    df.to_hdf(filename, key='prob_arr')
+                    df = pd.DataFrame(prob_arr_flat)
+                    df.to_hdf(filename, key='prob_arr_flat')
                 #END DEBUG
                 blah = np.histogram(rnd_arr_flat, bins=prob_arr_flat)[0]
                 blah2 = np.nonzero(blah)[0]
@@ -598,6 +616,82 @@ class Network:
                         upair.prob_f = np.append(prob_arr[:, i-prev_i], 1)
 
                 prev_i += len(matching_upairs)
+
+            return upairs
+
+        @time_it
+        def connect_selected_pairs(upairs, connection_protocol=None,
+                            export_probabilities=False):
+            '''
+            Connects i.e. recomputes connection probabilities and resample
+            them to get a connection type only for the the given upairs.
+            :param upairs:
+            :return:
+            '''
+            # The initial concept was this function to be mappable to every pair, and connect it based on its type.
+            # Unfortunately python's function call overhead is huge, so we need to become more array friendly
+            # utilizing numpy efficient functions. Unfortunately this affects the readability of the code:
+            prev_i = 0
+            #TODO: You need to make sure these are only ONE TYPE OF CELLS
+            pair_types = sorted(set(x.type_cells for x in upairs))
+            try:
+                if len(pair_types) > 1:
+                    raise ValueError
+                else:
+                    pair_type = pair_types[0]
+            except ValueError:
+                print('You need to provide cells of the same type!')
+
+            upairs_dist = np.asarray([p.distance for p in upairs])
+            prob_arr = np.full((len(connection_protocol)+1,len(upairs)), 0.0)
+            for i, conn_type in enumerate(connection_protocol.values(), 1):
+                prob_arr[i, :] = self.get_connection_function(
+                    pair_type=pair_type,
+                    conn_type=conn_type
+                )(upairs_dist)
+            prob_arr = np.cumsum(prob_arr, axis=0)
+            # Don't forget to include the (closed) last bin!
+            prob_arr_flat = np.append(np.add(prob_arr, np.tile(np.arange(len(
+                upairs)), (len(connection_protocol)+1, 1))).flatten('F'),
+                                      len(upairs))
+            print(f'Length of matching pairs {len(upairs)}')
+            rnd_arr_flat = np.add(np.random.rand(1, len(upairs)), np.arange(len(upairs)))
+
+            # DEBUG
+            if False:
+                filename = Path.cwd().joinpath('debug_files',
+                                               f'network_sel_debug_rnd_arr_flat_SN{self.serial_no}.hdf5')
+                df = pd.DataFrame(
+                    {'serial_no': [self.serial_no], 'pc_no': [self.pc_no],
+                     'pv_no': [self.pv_no],
+                     'configuration_alias': self.configuration_alias})
+                df.to_hdf(filename, key='attributes', mode='w')
+                df = pd.DataFrame(rnd_arr_flat)
+                df.to_hdf(filename, key='rnd_arr_flat')
+
+                filename = Path.cwd().joinpath('debug_files',
+                                               f'network_sel_debug_prob_arr_flat_S'
+                                               f'N{self.serial_no}.hdf5')
+                df = pd.DataFrame(
+                    {'serial_no': [self.serial_no], 'pc_no': [self.pc_no],
+                     'pv_no': [self.pv_no],
+                     'configuration_alias': self.configuration_alias})
+                df.to_hdf(filename, key='attributes', mode='w')
+                df = pd.DataFrame(prob_arr_flat)
+                df.to_hdf(filename, key='prob_arr_flat')
+            # END DEBUG
+
+            blah = np.histogram(rnd_arr_flat, bins=prob_arr_flat)[0]
+            blah2 = np.nonzero(blah)[0]
+            blah3 = np.arange(0, prob_arr_flat.size, len(connection_protocol)+1)
+            conn_code_arr = np.subtract(blah2, blah3[:-1])
+            #TODO: now that upair is an object I can just update it:
+            for i, (upair, conn_code) in enumerate(zip(upairs, conn_code_arr)):
+                upair.type_conn = connection_protocol.get(conn_code, 'none')
+                if export_probabilities:
+                    upair.prob_f = np.append(prob_arr[:, i-prev_i], 1)
+
+            prev_i += len(upairs)
 
             return upairs
 
@@ -642,6 +736,14 @@ class Network:
                     mat[upair.a, upair.b] = True
                 elif upair.type_conn == 'uniform_B2A':
                     mat[upair.b, upair.a] = True
+                # This is the random/uniform distance dependent:
+                elif upair.type_conn == 'uniform_reciprocal_dd':
+                    mat[upair.a, upair.b] = True
+                    mat[upair.b, upair.a] = True
+                elif upair.type_conn == 'uniform_A2B_dd':
+                    mat[upair.a, upair.b] = True
+                elif upair.type_conn == 'uniform_B2A_dd':
+                    mat[upair.b, upair.a] = True
                 elif upair.type_conn == 'total':
                     # Custom connectivity rules, need custom implementation. Lets leave it here for now:
                     # Total probability rule means that we return connection probability, rather than connectivity:
@@ -658,12 +760,24 @@ class Network:
             uniform_prob_reciprocal = uniform_prob_unidirectional**2
             #uniform_prob_reciprocal = average_conn_prob**2
             #uniform_prob_unidirectional = (average_conn_prob - (average_conn_prob**2))/2
-            self.connection_functions_d['PN_PN']['uniform_reciprocal'] \
-                = lambda x: np.multiply(np.ones(x.shape), uniform_prob_reciprocal)
-            self.connection_functions_d['PN_PN']['uniform_A2B'] \
-                = lambda x: np.multiply(np.ones(x.shape), uniform_prob_unidirectional)
-            self.connection_functions_d['PN_PN']['uniform_B2A'] \
-                = lambda x: np.multiply(np.ones(x.shape), uniform_prob_unidirectional)
+            self.set_connection_function(
+                pair_type='PN_PN',
+                conn_type='uniform_reciprocal',
+                conn_func=lambda x: \
+                    np.multiply(np.ones(x.shape), uniform_prob_reciprocal)
+            )
+            self.set_connection_function(
+                pair_type='PN_PN',
+                conn_type='uniform_A2B',
+                conn_func=lambda x: \
+                    np.multiply(np.ones(x.shape), uniform_prob_unidirectional)
+            )
+            self.set_connection_function(
+                pair_type='PN_PN',
+                conn_type='uniform_B2A',
+                conn_func=lambda x: \
+                    np.multiply(np.ones(x.shape), uniform_prob_unidirectional)
+            )
             # Utilize only the uniform type of connection:
             uniform = {0: 'uniform_reciprocal', 1: 'uniform_A2B', 2: 'uniform_B2A'}
 
@@ -676,6 +790,83 @@ class Network:
 
             return upairs2mat(connected_upairs)
 
+        # This function was deleted in commit:
+        # dc0c1ba5ea3363c351b1130d74c7bb61185d34bf
+        # I'm repurposing it here for intermediate connectivity cases.
+        def perform_random_dd_connectivity(percentage=None):
+            '''
+            Performs random, yet distance dependend connectivity. It replaces
+            some (percentage) of the already existing (structured)
+            connections with random ones, weighting the overal iid connection
+            probability based on distance.
+            :param percentage: The percentage of the random, distance dependent.
+            :return:
+            '''
+
+            # As in the random connectivity, use the same types of
+            # connection, but weight them by each pair's intersomatic distance.
+            # The iid probability of connection is p = sqrt(overall + 1) - 1
+            # as previously, but I'm calculating it by recalculating the
+            # overall term based on distance (x) of each pair.
+
+            # derive the weighted probabilities from the already defined and
+            # distance dependent total probability. I'm using the original
+            # 'total' probability function for clarity on what i'm doing.
+            self.set_connection_function(
+                pair_type='PN_PN',
+                conn_type='uniform_reciprocal_dd',
+                conn_func=lambda x: np.power(np.sqrt(
+                    self.get_connection_function(
+                        pair_type='PN_PN',
+                        conn_type='total',
+                    )(x)
+                    +1)-1,2)
+            )
+            self.set_connection_function(
+                pair_type='PN_PN',
+                conn_type='uniform_A2B_dd',
+                conn_func=lambda x: np.sqrt(
+                    self.get_connection_function(
+                        pair_type='PN_PN',
+                        conn_type='total',
+                    )(x)
+                    +1)-1
+            )
+            self.set_connection_function(
+                    pair_type='PN_PN',
+                    conn_type='uniform_B2A_dd',
+                    conn_func=lambda x: np.sqrt(
+                        self.get_connection_function(
+                            pair_type='PN_PN',
+                            conn_type='total',
+                        )(x)
+                        +1)-1
+            )
+            # Provide the strings for the connections to be performed:
+            uniform_dd = {0: 'uniform_reciprocal_dd', 1: 'uniform_A2B_dd',
+                       2: 'uniform_B2A_dd'}
+
+            # now I need to selectively reapply this connectivity to only a
+            # portion of the PN cells (need to recompute the probability as
+            # well).
+
+            # Get only pyramidal to pyramidal pairs:
+            with self.get_upairs(cell_type='PN_PN') as pn_upairs:
+                # Get a random percentage of these to alter their
+                # connectivity into random and distance dependent:
+
+                idx_pn = np.random.permutation(len(pn_upairs))
+                # Replace % of the reciprocal pairs with non connected:
+                total_upairs_reconnected = int(len(pn_upairs) * percentage)
+                pn_upairs_affected = np.array(pn_upairs)[idx_pn[:total_upairs_reconnected]]
+
+                # Update the connectivity matrix only for the affected cells:
+                connected_upairs = connect_selected_pairs(
+                    pn_upairs_affected.tolist(),
+                    connection_protocol=uniform_dd
+                )
+
+            return upairs2mat(pn_upairs)
 
 
         def perform_structured_connectivity():
@@ -797,15 +988,16 @@ class Network:
                 #TODO: the context manager will update the upairs: are the
                 # distances correct? Fix them?
 
-            # Save the clustering coefficient, for plotting it later.
-            configuration_alias = 'structured'
-            filename = Path(rf'C:\Users\steve\Documents\analysis\Python\new_files'). \
-                joinpath(f'{configuration_alias}_network_SN{self.serial_no}_clust_coeff.hdf5')
-            df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
-                               'configuration_alias': self.configuration_alias})
-            df.to_hdf(filename, key='attributes', mode='w')
-            df = pd.DataFrame(cc)
-            df.to_hdf(filename, key='clust_coeff')
+            if False:
+                # Save the clustering coefficient, for plotting it later.
+                configuration_alias = 'structured'
+                filename = Path(rf'C:\Users\steve\Documents\analysis\Python\new_files'). \
+                    joinpath(f'{configuration_alias}_network_SN{self.serial_no}_clust_coeff.hdf5')
+                df = pd.DataFrame({'serial_no': [self.serial_no], 'pc_no': [self.pc_no], 'pv_no': [self.pv_no],
+                                   'configuration_alias': self.configuration_alias})
+                df.to_hdf(filename, key='attributes', mode='w')
+                df = pd.DataFrame(cc)
+                df.to_hdf(filename, key='clust_coeff')
 
             # Plot
             if plot:
@@ -895,8 +1087,40 @@ class Network:
             excitatory_conn_mat = perform_random_connectivity()
 
         # if configuration is structured,
-        if self.configuration_alias is 'structured':
+        elif self.configuration_alias is 'structured':
             excitatory_conn_mat = perform_structured_connectivity()
+
+        # If connectivity is intermediate:
+        #TODO: check for the substring, because we need also the percentage
+        elif 'intermediate' in self.configuration_alias:
+            percentage = \
+                int(re.search(r'\d+', self.configuration_alias).group())
+            try:
+                if percentage > 100:
+                    raise ValueError
+            except ValueError:
+                print('Random configuration percentage given is not correct!')
+            # Initially perform structured connectivity
+            str_connmat = perform_structured_connectivity()
+            fig, ax = plt.subplots()
+            cax = ax.imshow(str_connmat, interpolation='nearest', cmap=cm.afmhot)
+            ax.set_title(f'Network_sn{self.serial_no}_str_connmat_of '
+                         f'{self.configuration_alias}')
+            plt.savefig(f'Network_sn{self.serial_no}_str_conn_mat_of '
+                         f'{self.configuration_alias}')
+
+            excitatory_conn_mat = perform_random_dd_connectivity(percentage/100)
+            fig, ax = plt.subplots()
+            cax = ax.imshow(excitatory_conn_mat, interpolation='nearest', cmap=cm.afmhot)
+            ax.set_title(f'Network_sn{self.serial_no}_sel_connmat_of '
+                         f'{self.configuration_alias}')
+            plt.savefig(f'Network_sn{self.serial_no}_sel_conn_mat_of '
+                        f'{self.configuration_alias}')
+        else:
+            try:
+                raise ValueError
+            except ValueError:
+                print('Can not interpret the connection configuration alias!')
 
         # Save resulting connectivity matrix to the network:
         connectivity_mat[:self.pc_no, :self.pc_no] = excitatory_conn_mat
@@ -913,7 +1137,7 @@ class Network:
 
     @with_reproducible_rng
     def initialize_trials(self, trial_no=0, stimulated_pn_no=50):
-        # initialize stimulated cells in each trials:
+        # initialize stimulated cells in each trial:
         self.trial_no = trial_no
         self.stimulated_cells = np.full((self.trial_no, stimulated_pn_no), 0, dtype=int)
         for trial in range(self.trial_no):
@@ -951,6 +1175,7 @@ class Network:
         # Every connected pair has weight of one:
         self.weights_mat = np.asarray(self.connectivity_mat, dtype=float)
 
+        '''
         #need to create weights from common neighbors:
         scipy.stats.skewnorm.pdf()
         cn_range = np.arange(0, 8, 0.01)
@@ -982,6 +1207,7 @@ class Network:
         plot(CNsnormal(:,:)');hold on;
         set(gca, 'xtick', 1: 60:length(rang));
         set(gca, 'xticklabel', rang(1: 60:end));
+        '''
 
         '''
         # Inhibitory weights are connection type dependent:

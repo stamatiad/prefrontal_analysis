@@ -7,6 +7,19 @@ import network_tools as nt
 import sys
 from pathlib import Path
 
+# ===%% Pycharm debug: %%===
+import pydevd_pycharm
+sys.path.append("pydevd-pycharm.egg")
+DEBUG = False
+if DEBUG:
+    pydevd_pycharm.settrace(
+        'nestboxx.ddns.net',
+        port=12345,
+        stdoutToServer=True,
+        stderrToServer=True
+    )
+# ===%% -------------- %%===
+
 # Check python version and installed packages:
 #nt.check_requirements()
 
@@ -24,24 +37,28 @@ if __name__ == '__main__':
         net_structured = nt.Network(serial_no=serial_no, pc_no=pn_no, pv_no=pv_no)
 
         # A cube of side 180 um, has about 60000 cells.
-        net_structured.populate_network(cube_side_len=cube_side_length, plot=True)
+        net_structured.populate_network(cube_side_len=cube_side_length,
+                                        plot=False)
 
         # Create both structured and random configurations:
         net_structured.create_connections(
-            alias='structured', rearrange_iterations=1000, plot=True
+            alias='intermediate_100', rearrange_iterations=1000, plot=False
         )
 
         net_structured.create_weights()
         net_structured.create_network_stats()
+        overall_conn_prob = net_structured.stats['averageConnectivity']
 
         # Initialize 100 trials:
         net_structured.initialize_trials(trial_no=trial_no)
 
         # Export parameters to NEURON hoc files:
-        net_structured.export_network_parameters(export_path=Path.cwd().joinpath('correct_net_files'))
+        net_structured.export_network_parameters(
+            export_path=Path.cwd().joinpath('intermediate_files'))
 
         # Save Network parameters and data to a HDF5 file:
-        net_structured.save_data(export_path=Path.cwd().joinpath('correct_net_files'))
+        net_structured.save_data(
+            export_path=Path.cwd().joinpath('intermediate_files'))
 
         print('Tutto pronto!')
         sys.exit(0)

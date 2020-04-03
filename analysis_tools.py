@@ -26,6 +26,97 @@ import matrix_utils as matu
 
 import load_raw_batch as load_raw
 from sklearn.cluster import AffinityPropagation as AP
+import copy, sys, os
+from collections import OrderedDict
+
+def print_exception_info():
+    exc_type, exc_obj, exc_tb = sys.exc_info()
+    fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+    print(exc_type, fname, exc_tb.tb_lineno)
+
+def append_results_to_array(array=None):
+    '''
+    This function appends results AND corresponding run attributes to an array.
+    This array can later on converted to a dataframe for ease of access.
+    :param array:
+    :return:
+    '''
+    def callable(function):
+        @wraps(function)
+        def wrapped(*args, **kwargs):
+            result_nwb_obj = function(*args, **kwargs)
+            array.append(
+                {
+                    'NWBfile': result_nwb_obj,
+                    **kwargs
+                }
+            )
+            #print(f'{function.__name__} took {toc-tic} seconds.')
+            return result_nwb_obj
+        return wrapped
+    return callable
+
+def run_for_all_parameters(function, *args, **kwargs):
+    '''
+    This wrapper calls the function for all the parameters contained in the
+    params dictionary, using the keys as kwargs and their values as the
+    kwargs values. If the dictionary values are arrays it iterates through
+    all the values.
+    This is just for space savings since it omits the use of multiple nested
+    for loops in succession for different simulations. Used nicely with a
+    partial in order to reduce the params size.
+    Also this should save the data in another wrapped function or please
+    modify it to take an extra array argument and place the function results
+    there.
+    :param params:  Should be an ordered dict!
+    :return:
+    '''
+    def pop_one(obj=None):
+        if isinstance(obj, list):
+            for item in obj:
+                yield item
+        else:
+            yield obj
+
+    def all_dict_combinations(*args, **kwargs):
+        '''
+        Iterate in a consumable (generator) and recursive way through a dictionary.
+        Since I'm using recursion it is important that the dict maintains the order!
+        :param dict:
+        :return:
+        '''
+        # This is an OrderedDict
+        auto_param_array = kwargs['auto_param_array']
+        if len(auto_param_array) == 0:
+            # remove our function specific kwarg:
+            kwargs.pop('auto_param_array')
+            # run the function:
+            function(*args, **kwargs)
+            return
+
+        passable = copy.deepcopy(auto_param_array)
+        item_tuple = passable.popitem()
+        key = item_tuple[0]
+        for value in pop_one(item_tuple[1]):
+            all_dict_combinations(
+                    *args,
+                    **{
+                        **kwargs,
+                        **{key: value},
+                        'auto_param_array': passable
+                    }
+                )
+
+    # if this throws KeyError you should not use the function in the
+    # first place! The existence of params is given.
+    auto_param_array = OrderedDict(kwargs['auto_param_array'])
+    # you also initialize the function run parameters:
+    all_dict_combinations(
+        *args,
+        **{
+            **kwargs,
+            'auto_param_array': auto_param_array
+        })
 
 def time_it(function):
     @wraps(function)
@@ -66,6 +157,28 @@ def nwb_unique_rng(function):
         print(f'{function.__name__} reseeds the RNG.')
         return function(*args, **kwargs)
     return seed_rng
+
+def with_reproducible_rng(class_method):
+    '''
+    This is a function wrapper that calls rng.seed before every method call. Therefore user is expected to get the exact
+    same results every time between different method calls of the same class instance.
+    Multiple method calls in main file will produce the exact same results. This is of course if model parameters are
+    the same between calls; changing e.g. cell no, will invoke different number of rand() called in each case.
+    As seed, the network serial number is used.
+    A function wrapper is used to dissociate different function calls: e.g. creating stimulus will be the same, even if
+    user changed the number of rand() was called in a previous class function, resulting in the same stimulated cells.
+    Multiple method calls in main file will produce the exact same results. This is of course if model parameters are
+    the same between calls; changing e.g. cell no, will invoke different number of rand() called in each case.
+    :param func:
+    :return:
+    '''
+    @wraps(class_method)
+    def reset_rng(*args, **kwargs):
+        # this translates to self.serial_no ar runtime
+        np.random.seed(kwargs['serial_no'])
+        print(f'{class_method.__name__} reseeds the RNG.')
+        return class_method(*args, **kwargs)
+    return reset_rng
 
 def exception_logger(function):
     @wraps(function)
@@ -140,6 +253,21 @@ def simulation_template_save(**kwargs):
     return mystr
 
 def simulation_template_load_iid(**kwargs):
+    # This is a hack because I'm adding variables as I move along
+    # for the reviews: I need to brake experiment configuration to different
+    # dendritic lengths and number, as well as the network configuration.
+
+    # One must either provide the full experiment config string OR the
+    # individual parameters:
+    experiment_config = kwargs.get('experiment_config', None)
+    if not experiment_config:
+        try:
+            dendlen = kwargs['dendlen']
+            dendno = kwargs['dendno']
+            connectivity_type = kwargs['connectivity_type']
+        except KeyError:
+            print(f'You forgot to provide experiment configuration parameters!')
+        experiment_config = f'{connectivity_type}_{dendno}{dendlen}dend'
     mystr = (f"{kwargs['prefix']}"
              f"SN{kwargs['animal_model']}"
              f"LC{kwargs['learning_condition']}"
@@ -152,11 +280,26 @@ def simulation_template_load_iid(**kwargs):
              f"_CP{kwargs['cp']}"
              f"_DCP{kwargs['dend_clust_perc']}"
              f"_DCS{kwargs['dend_clust_seg']}"
-             f"_{kwargs['experiment_config']}_simdur{kwargs['sim_duration']}"
+             f"_{experiment_config}_simdur{kwargs['sim_duration']}"
              f"{kwargs['postfix']}")
     return mystr
 
 def simulation_template_save_iid(**kwargs):
+    # This is a hack because I'm adding variables as I move along
+    # for the reviews: I need to brake experiment configuration to different
+    # dendritic lengths and number, as well as the network configuration.
+
+    # One must either provide the full experiment config string OR the
+    # individual parameters:
+    experiment_config = kwargs.get('experiment_config', None)
+    if not experiment_config:
+        try:
+            dendlen = kwargs['dendlen']
+            dendno = kwargs['dendno']
+            connectivity_type = kwargs['connectivity_type']
+        except KeyError:
+            print(f'You forgot to provide experiment configuration parameters!')
+        experiment_config = f'{connectivity_type}_{dendno}{dendlen}dend'
     mystr = (f"{kwargs['prefix']}"
              f"SN{kwargs['animal_model']}"
              f"LC{kwargs['learning_condition']}"
@@ -169,9 +312,74 @@ def simulation_template_save_iid(**kwargs):
              f"_CP{kwargs['cp']}"
              f"_DCP{kwargs['dend_clust_perc']}"
              f"_DCS{kwargs['dend_clust_seg']}"
-             f"_{kwargs['experiment_config']}_simdur{kwargs['sim_duration']}"
+             f"_{experiment_config}_simdur{kwargs['sim_duration']}"
              f"{kwargs['postfix']}")
     return mystr
+
+def simulation_template_load_iid_ri(**kwargs):
+    # This is a hack because I'm adding variables as I move along
+    # for the reviews: I need to brake experiment configuration to different
+    # dendritic lengths and number, as well as the network configuration.
+
+    # One must either provide the full experiment config string OR the
+    # individual parameters:
+    experiment_config = kwargs.get('experiment_config', None)
+    if not experiment_config:
+        try:
+            dendlen = kwargs['dendlen']
+            dendno = kwargs['dendno']
+            connectivity_type = kwargs['connectivity_type']
+        except KeyError:
+            print(f'You forgot to provide experiment configuration parameters!')
+        experiment_config = f'{connectivity_type}_{dendno}{dendlen}dend'
+    mystr = (f"{kwargs['prefix']}"
+             f"SN{kwargs['animal_model']}"
+             f"LC{kwargs['learning_condition']}"
+             f"TR{kwargs['trial']}"
+             f"_EB{kwargs['excitation_bias']:.3f}"
+             f"_IB{kwargs['inhibition_bias']:.3f}"
+             f"_GBF2.000"
+             f"_NMDAb{kwargs['nmda_bias']:.3f}"
+             f"_AMPAb{kwargs['ampa_bias']:.3f}"
+             f"_RI{kwargs['ri']}"
+             f"_DCP{kwargs['dend_clust_perc']}"
+             f"_DCS{kwargs['dend_clust_seg']}"
+             f"_{experiment_config}_simdur{kwargs['sim_duration']}"
+             f"{kwargs['postfix']}")
+    return mystr
+
+def simulation_template_save_iid_ri(**kwargs):
+    # This is a hack because I'm adding variables as I move along
+    # for the reviews: I need to brake experiment configuration to different
+    # dendritic lengths and number, as well as the network configuration.
+
+    # One must either provide the full experiment config string OR the
+    # individual parameters:
+    experiment_config = kwargs.get('experiment_config', None)
+    if not experiment_config:
+        try:
+            dendlen = kwargs['dendlen']
+            dendno = kwargs['dendno']
+            connectivity_type = kwargs['connectivity_type']
+        except KeyError:
+            print(f'You forgot to provide experiment configuration parameters!')
+        experiment_config = f'{connectivity_type}_{dendno}{dendlen}dend'
+    mystr = (f"{kwargs['prefix']}"
+             f"SN{kwargs['animal_model']}"
+             f"LC{kwargs['learning_condition']}"
+             f"TR{kwargs['trial_first']}-{kwargs['trial_last']}"
+             f"_EB{kwargs['excitation_bias']:.3f}"
+             f"_IB{kwargs['inhibition_bias']:.3f}"
+             f"_GBF2.000"
+             f"_NMDAb{kwargs['nmda_bias']:.3f}"
+             f"_AMPAb{kwargs['ampa_bias']:.3f}"
+             f"_RI{kwargs['ri']}"
+             f"_DCP{kwargs['dend_clust_perc']}"
+             f"_DCS{kwargs['dend_clust_seg']}"
+             f"_{experiment_config}_simdur{kwargs['sim_duration']}"
+             f"{kwargs['postfix']}")
+    return mystr
+
 # These are the different templates I use when simulating in NEURON.
 # To avoid confusion, since these change based on sim parameters (checking them,
 # reviewers comments, experimentation) I must pass the one I use in each
@@ -183,6 +391,8 @@ simulation_templates = {
     "save": simulation_template_save,
     "load_iid": simulation_template_load_iid,
     "save_iid": simulation_template_save_iid,
+    "load_iid_ri": simulation_template_load_iid_ri,
+    "save_iid_ri": simulation_template_save_iid_ri,
 }
 
 #TODO: name them correctly:
@@ -607,7 +817,6 @@ def create_nwb_validation_file_ampatest(inputdir=None, outputdir=None,
 
 def load_nwb_from_neuron(
     data_folder,
-    new_params=None,
     reload_raw=False,
     include_membrane_potential=False,
     **kwargs):
@@ -635,10 +844,12 @@ def load_nwb_from_neuron(
         'trial': 0,
         'sps': 10,
     }
-    template_postfix = kwargs.get('template_postfix', '')
+    # TODO: Where it gets its default value? Raise KeyError to notice it:
+    #template_postfix = kwargs.get('template_postfix', '')
+    template_postfix = kwargs['template_postfix']
 
     # Compute internal characteristics.
-    all_input_params = {**analysis_parameters, **new_params}
+    all_input_params = {**analysis_parameters, **kwargs}
     all_input_params['trial_len'] = \
         all_input_params['sim_duration'] * 1000
     all_input_params['total_qs'] = \
@@ -661,14 +872,16 @@ def load_nwb_from_neuron(
 
     if reload_raw or not already_converted:
         try:
+            # TODO: should check the order of the args for any shadowing!
             create_nwb_file(
-                inputdir=data_folder,
-                outputdir=data_folder,
-                same_io_folder=True,
-                include_membrane_potential=include_membrane_potential,
-                reload_raw=reload_raw,
-                template_postfix=template_postfix,
+                **{
+                'inputdir': data_folder,
+                'outputdir': data_folder,
+                'same_io_folder': True,
+                'include_membrane_potential': include_membrane_potential,
+                'reload_raw': reload_raw,
                 **all_input_params
+            }
             )
         except Exception as e:
             print(str(e))
@@ -686,9 +899,16 @@ def load_nwb_from_neuron(
 
 
 def load_raw_neuron(inputdir, rundir, reload_raw=False):
+    '''
+    This function will create HDF5 files from raw NEURON output (text files).
+    :param inputdir:
+    :param rundir:
+    :param reload_raw: If set to true, will re-create HDF5 files even if
+    already existing (if one re-ran NEURON on the same experiment).
+    :return:
+    '''
     try:
         inputfile = inputdir.joinpath(rundir).joinpath('vsoma.hdf5')
-        print(f'Neuron output folder is:\n{rundir}\n')
         # If input hdf file exists, just take the traces.
         if reload_raw or not inputfile.exists():
             #print(f'Converting data to HDF in dir:\n\t{rundir}')
@@ -706,6 +926,18 @@ def load_raw_neuron(inputdir, rundir, reload_raw=False):
 
 def create_nwb_file(inputdir=None, outputdir=None, \
                     include_membrane_potential=False, **kwargs):
+    '''
+    This function will create a NWB file from neuron output.
+    In will automatically detect if raw neuron output (text files) are
+    converted to HDF5 format for faster loading. The callee is responsible
+    for checking if the specific NWB is already created and not call this
+    function.
+    :param inputdir:
+    :param outputdir:
+    :param include_membrane_potential:
+    :param kwargs:
+    :return:
+    '''
     #TODO: this should get automagicaly all the keys in the dict and create one same named variable for each one.
     # Finally to pass the value of the dict to the new variable.
     # Get parameters externally:
@@ -715,14 +947,17 @@ def create_nwb_file(inputdir=None, outputdir=None, \
         getargs('experiment_config', 'animal_model', 'learning_condition', 'ntrials', 'trial_len', 'ncells', 'stim_start_offset', \
                    'stim_stop_offset', 'samples_per_ms', 'spike_upper_threshold', 'spike_lower_threshold', \
                 'excitation_bias', 'inhibition_bias', 'nmda_bias', 'ampa_bias', 'sim_duration', 'q_size', 'prefix', 'postfix', 'cp','dend_clust_perc','dend_clust_seg',kwargs)
-    #TODO: THis is implemented wrong!
+
+    #THis is an override to force the function to re-create the HDF5 files
+    # from raw NEURON output.
     no_need_to_reload_neuron = False
     if no_need_to_reload_neuron:
         reload_raw = False
-        print("I AM NOT RELOADING THE HDF5 FROM NEURON!")
+        print("NOT RELOADING THE RAW NEURON DATA. POSSIBLE MISSING HDF5 WILL GENERATE ERROR!")
     else:
         reload_raw = kwargs.get('reload_raw', False)
-        print("I WILL RELOAD THE HDF5 FROM NEURON! TIME CONSUMING!")
+        if reload_raw:
+            print("RELOADING THE RAW NEURON DATA ONTO HDF5! TIME CONSUMING!")
 
     template_postfix = kwargs.get('template_postfix', '')
 
@@ -739,6 +974,16 @@ def create_nwb_file(inputdir=None, outputdir=None, \
         'pn_no': pn_no,
         'pv_no': pv_no
     }
+    #TODO: make it a function later on
+    experiment_config = kwargs.get('experiment_config', None)
+    if not experiment_config:
+        try:
+            dendlen = kwargs['dendlen']
+            dendno = kwargs['dendno']
+            connectivity_type = kwargs['connectivity_type']
+        except KeyError:
+            print(f'You forgot to provide experiment configuration parameters!')
+        experiment_config = f'{connectivity_type}_{dendno}{dendlen}dend'
     nwbfile = NWBFile(
         session_description='NEURON simulation results.',
         identifier=experiment_config,
@@ -761,27 +1006,32 @@ def create_nwb_file(inputdir=None, outputdir=None, \
     vsoma = np.zeros((ncells, nsamples), dtype=float)
     trial_offset_samples = 0
     trials_loaded = []
+    # Visualize the location from which the function is loading runs:
+    # Here I'm using the save template, because it mentions the total number of
+    # trials requested to load and also the various parameters of the simulation
+    # so an eye checking that this is the correct run can be performed as
+    # loading.
+    general_tmpl = simulation_templates[f'save{template_postfix}'](
+        **{
+            **kwargs,
+            'trial_first': 0,
+            'trial_last': ntrials - 1,
+        }
+    )
+    print(f'Simulation directory is:\n{inputdir}')
+    print('-------------------------------------------------------------------')
+    print(f'Simulation template is:\n{general_tmpl}')
+    print('-------------------------------------------------------------------')
     for trial, (trial_start_t, trial_end_t) in enumerate(generate_slices(size=nsamples, number=ntrials)):
         # Search inputdir for files specified in the parameters
         # get input dir and search for hdf file. if non existent create it.
         print(f'Trial {trial}. ', end='')
         rundir = inputdir.joinpath(
-            #TODO: this should read the args from a kwargs type of dict, rather than each variable on its own
             simulation_templates[f'load{template_postfix}'](
-                prefix=fn_prefix,
-                excitation_bias=excitation_bias,
-                inhibition_bias=inhibition_bias,
-                nmda_bias=nmda_bias,
-                ampa_bias=ampa_bias,
-                sim_duration=sim_duration,
-                animal_model=animal_model,
-                learning_condition=learning_condition,
-                trial=trial,
-                experiment_config=experiment_config,
-                cp=cp,
-                dend_clust_perc=dcp,
-                dend_clust_seg=dcs,
-                postfix=fn_postfix
+                **{
+                    **kwargs,
+                    'trial': trial,
+                }
             ))
         voltage_traces = load_raw_neuron(inputdir, rundir, reload_raw=reload_raw)
         if voltage_traces is not None:
@@ -916,6 +1166,7 @@ def create_nwb_file(inputdir=None, outputdir=None, \
             np.add.at(binned_activity[cellid][:], bins, 1)
     except Exception as e:
         print(str(e))
+        print_exception_info()
         raise e
 
     # Chunk and compress the data:
@@ -947,19 +1198,11 @@ def create_nwb_file(inputdir=None, outputdir=None, \
 
     if kwargs.get('same_io_folder', False):
         outfn = simulation_templates[f'save{template_postfix}'](
-            prefix=fn_prefix,
-            excitation_bias=excitation_bias,
-            inhibition_bias=inhibition_bias,
-            nmda_bias=nmda_bias,
-            ampa_bias=ampa_bias,
-            sim_duration=sim_duration,
-            animal_model=animal_model,
-            learning_condition=learning_condition,
-            trial_first=0,
-            trial_last=ntrials - 1,
-            experiment_config=experiment_config,
-            cp=cp,
-            postfix=fn_postfix
+            **{
+                'trial_first': 0,
+                'trial_last': ntrials - 1,
+                **kwargs
+            }
         ) + '.nwb'
         output_file = inputdir.joinpath(
             outfn
@@ -4247,7 +4490,8 @@ def determine_number_of_ensembles(
 # Clustering with Affinity propagation:
 #TODO: need to make one for normal files also (no only NWB ones)!
 # make reproducible rng decorator
-def apclusterk(s, requested_k, prc=0):
+@with_reproducible_rng
+def apclusterk(s, requested_k, prc=0, serial_no=None):
     max_bifurcation_tries = 100
     N = s.shape[0]
     # Add a little noise:
