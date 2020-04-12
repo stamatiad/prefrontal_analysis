@@ -27,11 +27,12 @@ import sys
 from functools import wraps
 from collections import OrderedDict
 import copy
+import time
 
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
 sys.path.append("pydevd-pycharm.egg")
-DEBUG = True
+DEBUG = False
 if DEBUG:
     pydevd_pycharm.settrace(
         '79.167.94.93',
@@ -54,39 +55,189 @@ glia_dir = Path("/home/cluster/stefanos/Documents/Glia")
 
 cp_array = [2, 3, 4, 5, 6, 7]
 ri_array = [125, 83, 62, 41, 35]
-sparse_cp_trials = lambda cp: (cp - 1) * 10 + 1
-cp_trials_len = 0
-for cp in cp_array:
-    cp_trials_len += cp
-NWBfiles_1smalldend = []
-NWBfiles_2smalldend = []
-NWBfiles_1mediumdend = []
-NWBfiles_2mediumdend = []
-NWBfiles_1longdend = []
-NWBfiles_2longdend = []
 
+# You need a version with kwarg!
+def sparse_cp_trials(cp=None, **kwargs):
+    return (cp - 1) * 10 + 1
+
+def all_cp_trials(cp=None, **kwargs):
+    return cp * 10
+
+# This is our main data array, later to be converted to dataframe:
 data = []
 
 dcp_array = [25, 50, 75, 100]
 dcs_array = [0, 1, 2]
 
-
 '''
-def blah(*args, **kwargs):
-    print(f'Here are my args:')
-    for arg in args:
-        print(f'arg: {arg}')
-    print(f'Here are my kwargs:')
-    for k,v in kwargs.items():
-        print(f'Key: {k}, value {v}.')
-
-params = {'param1':[1,2,3], 'param2':[4,5]}
-analysis.run_for_all_parameters(blah, 2, **{'param0': 0, 'auto_param_array':
-    params})
-'''
-
-
+# %% Nassi meeting CLUSTER/Location:
 # %% Load NEURON data
+# This partial combines the simulations ran:
+random_input_dend_cluster_sims = \
+    analysis.append_results_to_array(array=data)(
+        partial(analysis.load_nwb_from_neuron,
+                glia_dir,
+                excitation_bias=1.75,
+                inhibition_bias=3.0,
+                nmda_bias=6.0,
+                sim_duration=5,
+                prefix='iid2_',
+                template_postfix='_iid_ri',
+                experiment_config='structured',
+                )
+    )
+
+params = {
+    'dend_clust_perc': dcp_array,
+    'dend_clust_seg': dcs_array,
+    'ri': [50],
+    'ntrials': [100],
+}
+
+analysis.run_for_all_parameters(
+    random_input_dend_cluster_sims,
+    **{'auto_param_array': params}
+)
+
+df = pd.DataFrame(data)
+# Use len for speed and float since we get a percentage:
+df['attractors_len'] = [-1] * len(df.index)
+
+# Dont use the ntrials, since can vary between configurations:
+params.pop('ntrials')
+
+# Add the number of attractors found on the dataframe
+analysis.run_for_all_parameters(
+    analysis.query_and_add_attractors_len_column,
+    df,
+    **{'auto_param_array': params}
+)
+
+# Now run the analysis/plotting to check if you have a paper:
+# Print the correlation of free variables with attractor number:
+for param, vals in params.items():
+    data = {}
+    for i, val in enumerate(vals):
+        query_d = { param: val }
+        nwb_index = (df[list(query_d)] == pd.Series(query_d)).all(axis=1)
+        df_index = nwb_index.values.astype(int).nonzero()[0]
+        tmp_var = df.loc[df_index, 'attractors_len'].values
+        # Since (yet) zero attractors means no data, make them nan:
+        data[i] = tmp_var[np.nonzero(tmp_var)[0]]
+
+    fig, axis = plt.subplots()
+    for i in range(len(vals)):
+        axis.scatter(
+            np.ones(len(data[i])) * i,
+            data[i],
+            c='blue',
+            marker='o'
+        )
+        axis.scatter(i, np.mean(data[i]), c='red', marker='+')
+    axis.set_ylabel(f"Attractor Number")
+    fig.savefig(f'data_Nassi_{param}_RI50.png')
+    plt.close(fig)
+sys.exit(0)
+'''
+
+# %% Nassi meeting MULTIDEND/DIFF SIZE:
+# %% Load NEURON data
+# This partial combines the simulations ran:
+random_input_dend_multidend_sims = \
+    analysis.append_results_to_array(array=data)(
+        partial(analysis.load_nwb_from_neuron,
+                glia_dir,
+                excitation_bias=1.75,
+                inhibition_bias=3.0,
+                nmda_bias=6.0,
+                sim_duration=5,
+                prefix='',
+                template_postfix='_ri',
+                )
+    )
+
+params = {
+    'dendlen': ['small', 'medium', 'long'],
+    'dendno': [1, 2],
+    'connectivity_type': 'structured',
+    'ri': [50],
+    'ntrials': [100],
+}
+
+analysis.run_for_all_parameters(
+    random_input_dend_multidend_sims,
+    **{'auto_param_array': params}
+)
+
+df = pd.DataFrame(data)
+# Use len for speed and float since we get a percentage:
+df['attractors_len'] = [-1] * len(df.index)
+
+# Dont use the ntrials, since can vary between configurations:
+params.pop('ntrials')
+
+# Add the number of attractors found on the dataframe
+analysis.run_for_all_parameters(
+    analysis.query_and_add_attractors_len_column,
+    df,
+    **{'auto_param_array': params}
+)
+
+# Now run the analysis/plotting to check if you have a paper:
+# Print the correlation of free variables with attractor number:
+for param, vals in params.items():
+    data = {}
+    for i, val in enumerate(vals):
+        query_d = { param: val }
+        nwb_index = (df[list(query_d)] == pd.Series(query_d)).all(axis=1)
+        df_index = nwb_index.values.astype(int).nonzero()[0]
+        tmp_var = df.loc[df_index, 'attractors_len'].values
+        # Since (yet) zero attractors means no data, make them nan:
+        data[i] = tmp_var[np.nonzero(tmp_var)[0]]
+
+    fig, axis = plt.subplots()
+    for i in range(len(vals)):
+        axis.scatter(
+            np.ones(len(data[i])) * i,
+            data[i],
+            c='blue',
+            marker='o'
+        )
+        axis.scatter(i, np.mean(data[i]), c='red', marker='+')
+    axis.set_ylabel(f"Attractor Number")
+    fig.savefig(f'data_Nassi_{param}_RI50.png')
+    plt.close(fig)
+sys.exit(0)
+
+# %% Nassi meeting CP
+# %% Load NEURON data
+# This partial combines the simulations ran:
+anatomical_cluster_cp_sims = \
+    analysis.append_results_to_array(array=data)(
+        partial(analysis.load_nwb_from_neuron,
+                glia_dir,
+                excitation_bias=1.75,
+                inhibition_bias=3.0,
+                nmda_bias=6.0,
+                sim_duration=5,
+                prefix='',
+                template_postfix='',
+                experiment_config='structured_allt'
+                )
+    )
+
+params = {
+      'cp': [2,3,4,5],
+    'ntrials': all_cp_trials,
+}
+
+analysis.run_for_all_parameters(
+    anatomical_cluster_cp_sims,
+    **{'auto_param_array': params}
+)
+
+sys.exit(0)
+
 # this is exploratory to see where in the intermediate connectivity I need to
 # change the E/I in order to get PA:
 # This partial combines the simulations ran:
@@ -95,24 +246,26 @@ anatomical_cluster_iid_sims_intermediate = \
         partial(analysis.load_nwb_from_neuron,
                 glia_dir,
                 excitation_bias=1.75,
-                inhibition_bias=1.5,
+                inhibition_bias=3.0,
                 nmda_bias=6.0,
-                sim_duration=2,
+                sim_duration=5,
                 prefix='iid2_',
                 template_postfix='_iid'
                 )
     )
 
 # Load each run simulation:
-dcp_array = [25, 100]
+dcp_array = [25, 50, 75, 100]
 dcs_array = [0, 1, 2]
+
 params = {'dend_clust_perc': dcp_array, 'dend_clust_seg': dcs_array,
-          'cp': [2], 'ntrials': 11,
+          'cp': cp_array, 'ntrials': sparse_cp_trials,
           'dendlen': ['small','medium','long'],
           'dendno': [1,2],
           'connectivity_type': [
-             'intermediate_60',
-              'intermediate_80',
+             'intermediate_20',
+              'intermediate_40',
+              'intermediate_60',
           ]}
 
 analysis.run_for_all_parameters(
@@ -120,88 +273,110 @@ analysis.run_for_all_parameters(
     **{'auto_param_array': params}
 )
 
-def query_and_add_pa_column(dataframe, **kwargs):
-    '''
-    Queries the dataframe NWB objects and calculates the PA for each one (
-    supports multiple runs on a single NWB file).
-    Saves the results on a new column on the dataframe named 'PA'.
-    ATTENTION: kwargs should be only the dataframe query terms! So the kwargs is
-    the equivalent of the 'filter' dictionary for the dataframe!
-    '''
-    #TODO: implement something to filter out nonexistend keys/columns.
-    #df_keys = set(df.columns.values.astype(str))
-    #query_keys = set(filter_d.keys())
-    ## Remove nonexistent query keys:
-    #query_keys - df_keys
+sys.exit(0)
 
-    #dataframe.loc[(dataframe[list(kwargs)] == pd.Series(kwargs)).all(axis=1)]
-    nwb_index = (dataframe[list(kwargs)] == pd.Series(kwargs)).all(axis=1)
-    # this should be a single entry!
-    if nwb_index.values.astype(int).nonzero()[0].size > 1:
-        try:
-            raise ValueError
-        except ValueError:
-            print('Multiple dataframe rows correspond to this query! PA '
-                  'values will be wrong! Exiting...')
-    df_index = nwb_index.values.astype(int).nonzero()[0][0]
-    # Get the corresponding NWB file:
-    NWBfile_array = dataframe[
-        nwb_index
-    ]['NWBfile'].values.tolist()
-    # Get NWB's trials PA:
-    trials_pa = list(analysis.nwb_iter(NWBfile_array[0].trials[
-                                           'persistent_activity']))
-    # Save back to dataframe the PA percentage:
-    dataframe.at[df_index, 'PA'] = np.array(trials_pa).astype(int).mean()
+
+df = pd.DataFrame(data)
+# Use len for speed and float since we get a percentage:
+df['attractors_len'] = [-1] * len(df.index)
+
+# Dont use the ntrials, since can vary between configurations:
+params.pop('ntrials')
+
+tic = time.perf_counter()
+# Add the number of attractors found on the dataframe
+analysis.run_for_all_parameters(
+    analysis.query_and_add_attractors_len_column,
+    df,
+    **{'auto_param_array': params}
+)
+toc = time.perf_counter()
+print(f'Finding attractors took {toc - tic} seconds.')
+
+# Now run the analysis/plotting to check if you have a paper:
+print('Must do analysis')
+
+# Print the correlation of free variables with attractor number:
+for param, vals in params.items():
+    data = {}
+    for i, val in enumerate(vals):
+        query_d = { param: val }
+        nwb_index = (df[list(query_d)] == pd.Series(query_d)).all(axis=1)
+        df_index = nwb_index.values.astype(int).nonzero()[0]
+        tmp_var = df.loc[df_index, 'attractors_len'].values
+        # Since (yet) zero attractors means no data, make them nan:
+        data[i] = tmp_var[np.nonzero(tmp_var)[0]]
+
+    fig, axis = plt.subplots()
+    for i in range(len(vals)):
+        axis.scatter(
+            np.ones(len(data[i])) * i,
+            data[i],
+            c='blue',
+            marker='o'
+        )
+        axis.scatter(i, np.mean(data[i]), c='red', marker='+')
+    axis.set_ylabel(f"Attractor Number")
+    fig.savefig(f'data_{param}_CP7_th8.png')
+    plt.close(fig)
+
+sys.exit(0)
+
+query_d = { 'dendno' :1 }
+nwb_index = (df[list(query_d)] == pd.Series(query_d)).all(axis=1)
+df_index = nwb_index.values.astype(int).nonzero()[0]
+tmp_var = df.loc[df_index, 'attractors_len'].values
+# Since (yet) zero attractors means no data, make them nan:
+data = tmp_var[np.nonzero(tmp_var)[0]]
+data_len = tmp_var[np.nonzero(tmp_var)[0]].size
+
+fig, axis = plt.subplots()
+axis.plot(np.arange(data_len), data)
+fig.savefig('data_dendno_1.png')
+plt.close(fig)
+
 
 df = pd.DataFrame(data)
 # Use len for speed and float since we get a percentage:
 df['PA'] = [-1.0] * len(df.index)
 
 analysis.run_for_all_parameters(
-    query_and_add_pa_column,
+    analysis.query_and_add_pa_column,
     df,
     **{'auto_param_array': params}
 )
 
 # make a function that will traverse the dataframe and add a PA column with
 # the average PA on each NWB file.
-'''
-simulation = f'iid2_SN1LC1TR0_EB1.750_IB1' \
-             f'.500_GBF2.000_NMDAb6.000_AMPAb1' \
-             f'.000_CP2_DCP100_DCS2_intermediate_60_1smalldend_simdur2'
-filter_d = {
-    'dend_clust_perc': 100, 'dend_clust_seg': 2,
-    'cp': 2, 'ntrials': 11,
-    'dendlen': 'small',
-    'dendno': 2,
-    'connectivity_type': 'intermediate_60',
-}
-nwb_index = (df[list(filter_d)] == pd.Series(filter_d)).all(axis=1)
-df.loc[nwb_index]
-'''
 
 dendno_array = [1,2]
 dendlen_array = ['small', 'medium', 'long']
 
 # Do this list a picture with named axis:
+std_params = {'cp': 2, 'connectivity_type': 'intermediate_60'}
 fig, axes = plt.subplots(2, 3, sharex=True, sharey=True)
 for dn, dendno in enumerate(dendno_array):
     for dl, dendlen in enumerate(dendlen_array):
-        pa_array = np.zeros((len(dcp_array), len(dcs_array)), dtype=float)
+        pa_array = np.ones((len(dcp_array), len(dcs_array)), dtype=float)
+        pa_array = np.multiply(pa_array, -1)
         for i, dcp in enumerate(dcp_array):
             for j, dcs in enumerate(dcs_array):
-                # This is the most anti-pythonic syntax ever:
-                df_indices = \
-                    (df['cp'] == 2) \
-                    & (df['dend_clust_perc'] == dcp) \
-                    & (df['dend_clust_seg'] == dcs) \
-                    & (df['dendno'] == dendno) \
-                    & (df['dendlen'] == dendlen) \
-                    & (df['connectivity_type'] == 'intermediate_80')
-
-                pa_array[i,j] = df.at[df_indices.values.astype(int).nonzero()[
-                                       0][0], 'PA']
+                # this should be a single entry on the dataframe!
+                df_query = {
+                    'dend_clust_perc': dcp,
+                    'dend_clust_seg': dcs,
+                    'dendno': dendno,
+                    'dendlen': dendlen,
+                    **std_params
+                }
+                df_indices = (df[list(df_query)] == pd.Series(
+                    df_query)).all(axis=1)
+                df_indices_int = df_indices.values.astype(int).nonzero()[0]
+                if df_indices_int.size < 1:
+                    print(f'ERROR: Nonexistent on dataframe! Entry:'
+                          f' {df_query}!')
+                else:
+                    pa_array[i,j] = df.at[df_indices_int[0], 'PA']
         axes[dn][dl].imshow(pa_array, cmap='Blues', vmin=0.0, vmax=1.0)
         print(f'on dend no {dn}, dend len {dl}:')
         print(pa_array)
@@ -213,8 +388,9 @@ for i, (row, dendno) in enumerate(zip(axes, dendno_array)):
         if j == 0:
             cell.set_ylabel(f"percent (#dend:{dendno})")
 
-fig.savefig(f'Intermediate_80_CP2.png')
+fig.savefig(f"{std_params['connectivity_type']}_CP{std_params['cp']}_IB3.0.png")
 plt.close()
+
 ## add a big axis, hide frame
 #fig.add_subplot(111, frameon=False)
 ## hide tick and tick label of the big axis

@@ -90,6 +90,13 @@ def run_for_all_parameters(function, *args, **kwargs):
         if len(auto_param_array) == 0:
             # remove our function specific kwarg:
             kwargs.pop('auto_param_array')
+            # This is a hack, albeit a beautiful one:
+            # if any of the values must depend on some other/s values wait at
+            # the last moment and call it. You must do this for all the
+            # callable in the kwargs.
+            for k,v in kwargs.items():
+                if hasattr(v, '__call__'):
+                    kwargs[k] = v(**kwargs)
             # run the function:
             function(*args, **kwargs)
             return
@@ -252,6 +259,58 @@ def simulation_template_save(**kwargs):
     f"{kwargs['postfix']}")
     return mystr
 
+def simulation_template_load_ri(**kwargs):
+    # One must either provide the full experiment config string OR the
+    # individual parameters:
+    experiment_config = kwargs.get('experiment_config', None)
+    if not experiment_config:
+        try:
+            dendlen = kwargs['dendlen']
+            dendno = kwargs['dendno']
+            connectivity_type = kwargs['connectivity_type']
+            experiment_config = f'{connectivity_type}_{dendno}{dendlen}dend'
+        except KeyError:
+            print(f'You forgot to provide experiment configuration parameters!')
+    mystr = (f"{kwargs['prefix']}"
+             f"SN{kwargs['animal_model']}"
+             f"LC{kwargs['learning_condition']}"
+             f"TR{kwargs['trial']}"
+             f"_EB{kwargs['excitation_bias']:.3f}"
+             f"_IB{kwargs['inhibition_bias']:.3f}"
+             f"_GBF2.000"
+             f"_NMDAb{kwargs['nmda_bias']:.3f}"
+             f"_AMPAb{kwargs['ampa_bias']:.3f}"
+             f"_RI{kwargs['ri']}"
+             f"_{experiment_config}_simdur{kwargs['sim_duration']}"
+             f"{kwargs['postfix']}")
+    return mystr
+
+def simulation_template_save_ri(**kwargs):
+    # One must either provide the full experiment config string OR the
+    # individual parameters:
+    experiment_config = kwargs.get('experiment_config', None)
+    if not experiment_config:
+        try:
+            dendlen = kwargs['dendlen']
+            dendno = kwargs['dendno']
+            connectivity_type = kwargs['connectivity_type']
+            experiment_config = f'{connectivity_type}_{dendno}{dendlen}dend'
+        except KeyError:
+            print(f'You forgot to provide experiment configuration parameters!')
+    mystr = (f"{kwargs['prefix']}"
+             f"SN{kwargs['animal_model']}"
+             f"LC{kwargs['learning_condition']}"
+             f"TR{kwargs['trial_first']}-{kwargs['trial_last']}"
+             f"_EB{kwargs['excitation_bias']:.3f}"
+             f"_IB{kwargs['inhibition_bias']:.3f}"
+             f"_GBF2.000"
+             f"_NMDAb{kwargs['nmda_bias']:.3f}"
+             f"_AMPAb{kwargs['ampa_bias']:.3f}"
+             f"_RI{kwargs['ri']}"
+             f"_{experiment_config}_simdur{kwargs['sim_duration']}"
+             f"{kwargs['postfix']}")
+    return mystr
+
 def simulation_template_load_iid(**kwargs):
     # This is a hack because I'm adding variables as I move along
     # for the reviews: I need to brake experiment configuration to different
@@ -389,6 +448,8 @@ simulation_templates = {
     "save_old": simulation_template_save_old,
     "load": simulation_template_load,
     "save": simulation_template_save,
+    "load_ri": simulation_template_load_ri,
+    "save_ri": simulation_template_save_ri,
     "load_iid": simulation_template_load_iid,
     "save_iid": simulation_template_save_iid,
     "load_iid_ri": simulation_template_load_iid_ri,
@@ -1090,7 +1151,8 @@ def create_nwb_file(inputdir=None, outputdir=None, \
             trial_offset_samples += nsamples
 
     if len(trials_loaded) == 0:
-        print('ERROR no trials found whatsoever for this folder!\n\tReturning None!')
+        print(f'ERROR no trials found for {general_tmpl}\n\tReturning '
+              'None!')
         raise FileNotFoundError
 
     if include_membrane_potential:
@@ -4197,6 +4259,9 @@ def determine_number_of_clusters(
             'correct_trials_idx', 'correct_trials_no'
         ]
     )
+    #TODO: Need to have in the code the distinction of valid trials:
+    if correct_trials_no == 0:
+        return 0, None, None, None
 
     #TODO: this custom range must be given by the caller!
     total_trial_qs = trial_len / q_size
@@ -4210,6 +4275,10 @@ def determine_number_of_clusters(
         custom_range=(start_q, total_trial_qs),
         plot=False
     )
+    #TODO: Apparently this CAN have no activity in the last second?? Is not
+    # this the definition of PA?
+    if data_pca.size == 0:
+        return 0, None, None, None
 
     # Keep only prominent principal components from the data set:
     data_pca = data_pca[:no_optimal_L, :, :]
@@ -4244,9 +4313,12 @@ def determine_number_of_clusters(
         # Calculate BIC for up to max_clusters:
         for i, k in enumerate(range(1, max_clusters + 1)):
             #print(f'Clustering with {k} clusters.')
-            klabels, J_k, md_array, md_params_d = kmeans_clustering(
-                data=data_pca, k=k, max_iterations=100, **kwargs
-            )
+            try:
+                klabels, J_k, md_array, md_params_d = kmeans_clustering(
+                    data=data_pca, k=k, max_iterations=100, **kwargs
+                )
+            except Exception as e:
+                print(f'something hapened {str(e)}')
             # I need to check overfitting (clustering into multiple subclusters).
             #  Since
             # the BIC will BE better moving over greater k, we need to calculate a
@@ -4567,8 +4639,8 @@ def apclusterk(s, requested_k, prc=0, serial_no=None):
             i = i + 1
 
     # Use bisection method to find k:
-    idx = None
     if abs(tmpk - requested_k) / requested_k * 100 > prc:
+        idx = None
         print('Applying bisection method:\n')
         lowk = tmpk
         lowpref = tmppref
@@ -4593,6 +4665,21 @@ def apclusterk(s, requested_k, prc=0, serial_no=None):
     print(f'Found {tmpk} clusters using a preference of {pref}\n')
     return idx
 
+@with_reproducible_rng
+def get_random_subset(stim_cells_list, max_stim_size=50, **kwargs):
+    # Kwargs must contain serial_no for reproducible rng.
+    new_stim_cells = []
+    for cluster, anatomical_cluster in enumerate(stim_cells_list):
+        new_stim_cells.append([])
+        for trial in range(10*len(stim_cells_list)):
+            rnd_idx = np.random.permutation(anatomical_cluster.size)
+            new_stim_cells[cluster].append(
+                np.sort(anatomical_cluster[rnd_idx[:max_stim_size]], axis=None)
+            )
+
+    return new_stim_cells
+
+
 def compare_dend_params(NWBarray_of_arrays, dataset_names, **kwargs):
     '''
     Compares NWBarrays with qualitatively different runs.
@@ -4607,6 +4694,9 @@ def compare_dend_params(NWBarray_of_arrays, dataset_names, **kwargs):
     delay_range = (20, int(trial_len / 50))
     all_range = (0, int(trial_len / 50))
 
+    # To properly visualize the simulations corresponding to each dendritic
+    # configuration, get the valid (having PA) trials and flag them with a
+    # unique int for each dend configuration. So this is only for plotting.
     k_labels_arrays = [
         [i+1] * get_nwb_list_valid_ntrials(NWBarray_of_arrays[i])
         for i in range(len(NWBarray_of_arrays))
@@ -4660,6 +4750,82 @@ def compare_dend_params(NWBarray_of_arrays, dataset_names, **kwargs):
         plot_axes=plot_axes,
         legend_labels=label_tags
     )
+
+def query_and_add_pa_column(dataframe, **kwargs):
+    '''
+    Queries the dataframe NWB objects and calculates the PA for each one (
+    supports multiple runs on a single NWB file).
+    Saves the results on a new column on the dataframe named 'PA'.
+    ATTENTION: kwargs should be only the dataframe query terms! So the kwargs is
+    the equivalent of the 'filter' dictionary for the dataframe!
+    '''
+    #TODO: implement something to filter out nonexistend keys/columns.
+    #df_keys = set(df.columns.values.astype(str))
+    #query_keys = set(filter_d.keys())
+    ## Remove nonexistent query keys:
+    #query_keys - df_keys
+
+    #dataframe.loc[(dataframe[list(kwargs)] == pd.Series(kwargs)).all(axis=1)]
+    nwb_index = (dataframe[list(kwargs)] == pd.Series(kwargs)).all(axis=1)
+    # this should be a single entry!
+    if nwb_index.values.astype(int).nonzero()[0].size > 1:
+        try:
+            raise ValueError
+        except ValueError:
+            print('Multiple dataframe rows correspond to this query! PA '
+                  'values will be wrong! Exiting...')
+    df_index = nwb_index.values.astype(int).nonzero()[0][0]
+    # Get the corresponding NWB file:
+    NWBfile_array = dataframe[
+        nwb_index
+    ]['NWBfile'].values.tolist()
+    if NWBfile_array[0] is not None:
+        # Get NWB's trials PA:
+        trials_pa = list(nwb_iter(NWBfile_array[0].trials[
+                                               'persistent_activity']))
+        # Save back to dataframe the PA percentage:
+        dataframe.at[df_index, 'PA'] = np.array(trials_pa).astype(int).mean()
+
+def query_and_add_attractors_len_column(dataframe, **kwargs):
+    '''
+    This should group the NWB rows by their CP value, so same CP belong to
+    the same group. Then computes the number of attractors for each group.
+    Saves the results on a new column on the dataframe named 'attractors_len'.
+    This way reusability is maximised: if in need to plot the result just
+    query for the specific CP group and get all the NWB files return as a
+    list and feed them to the plotting function.
+
+    ATTENTION: kwargs should be only the dataframe query terms! So the kwargs is
+    the equivalent of the 'filter' dictionary for the dataframe!
+    '''
+    #TODO: implement something to filter out nonexistend keys/columns.
+
+    # Get the index of the NWB files that equal the given parameters:
+    nwb_index = (dataframe[list(kwargs)] == pd.Series(kwargs)).all(axis=1)
+    df_index = nwb_index.values.astype(int).nonzero()[0]
+
+    # If entries in the dataframe exist:
+    if df_index.size == 1:
+        # Get the corresponding NWB file:
+        NWBfile = dataframe[
+            nwb_index
+        ]['NWBfile'].values[0]
+
+        # Calculate for the grouped NWB files their number of attractors:
+        trial_len = get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=['trial_len']
+        )
+        delay_range = (20, int(trial_len / 50))
+
+        K_star, * _ = determine_number_of_clusters(
+            NWBfile_array=[NWBfile],
+            max_clusters=20,
+            custom_range=delay_range
+        )
+
+        # Now Write the number of attractors on 'attractors_len' on the dataframe.
+        dataframe.loc[df_index, 'attractors_len'] = K_star
 
 
 if __name__ == "__main__":

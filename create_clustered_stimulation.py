@@ -11,7 +11,7 @@ from shutil import copyfile
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
 sys.path.append("pydevd-pycharm.egg")
-DEBUG = False
+DEBUG = True
 if DEBUG:
     pydevd_pycharm.settrace(
         'nestboxx.ddns.net',
@@ -45,6 +45,68 @@ def initialize_trials(serial_no, trial_no, stimulated_pn_no):
         stimulated_cells[trial][:]  = np.sort(np.random.permutation(np.arange(250))[:stimulated_pn_no])
     return stimulated_cells
 
+# This is the subset per cluster: RNG also on cluster input per trial:
+def export_network_cluster_parameters_per_trial(
+        export_path=None,
+        stimulated_cells=None,
+        **kwargs
+):
+    # Export Network Connectivity:
+    # Export parameter matrices in .hoc file:
+    pc_no = 250
+    pv_no = 83
+    cell_no = 333
+    cluster_no = len(stimulated_cells)
+    trials_per_cluster = 10
+    total_trial_no = cluster_no * trials_per_cluster
+    #SPS = Stimulated Population Size:
+    import_hdf5_filename = export_path.joinpath(
+        f'importNetworkParameters_{configuration_alias}_SN{serial_no}_CP{cluster_no}.hoc'
+    )
+    with open( import_hdf5_filename, 'w') as f:
+        f.write(f'// This HOC file was generated with network_tools python module.\n')
+        f.write(f'nPCcells={pc_no}\n')
+        f.write(f'nPVcells={pv_no}\n')
+        f.write(f'nAllCells={cell_no}\n')
+        f.write(f'// Object decleration:\n')
+        f.write(f'objref C, W\n')
+        f.write(f'objref StimulatedPNs[{total_trial_no}]\n')
+        f.write(f'C = new Matrix(nAllCells, nAllCells)\n')
+        f.write(f'W = new Matrix(nAllCells, nAllCells)\n')
+        f.write(f'\n// Import parameters: (long-long text following!)\n')
+        # Network connectivity:
+        pairs = [(i, j) for i in range(cell_no) for j in range(cell_no)]
+        for (i, j) in pairs:
+            f.write(f'C.x[{i}][{j}]={int(connectivity_mat[i, j])}\n')
+        for (i, j) in pairs:
+            f.write(f'W.x[{i}][{j}]={weights_mat[i, j]}\n')
+        # Network stimulation:
+        trial_increment = 0
+        for cluster in range(cluster_no):
+            for trial in range(trial_increment, trials_per_cluster*cluster_no):
+                f.write(f'StimulatedPNs[{trial}]=new Vector('
+                        f'{stimulated_cells[cluster][trial].size})\n')
+                for i in range(stimulated_cells[cluster][trial].size):
+                    # stimcells is a Nx1 array:
+                    f.write(f'StimulatedPNs[{trial}].x[{i}]='
+                            f'{stimulated_cells[cluster][trial][i]}\n')
+        f.write('//EOF\n')
+    # also write the same file for all the dend configurations:
+    #ui = input(f'Proceed in generating dend files for file'
+    #           f' {import_hdf5_filename}?')
+    #if 'yes' in ui:
+    if False:
+        for dendlen in ['small','medium','long']:
+            for dendno in [1,2]:
+                tmp_fn = export_path.joinpath(
+                    f'importNetworkParameters_{configuration_alias}_{dendno}'
+                    f'{dendlen}dend_SN{serial_no}_CP{cluster_no}.hoc'
+                )
+                copyfile(import_hdf5_filename, tmp_fn)
+
+
+
+# This is for same stim in each cluster. RNG only on internal neuron model vars.
 def export_network_cluster_parameters(
     export_path=None,
     stimulated_cells=None,
@@ -106,9 +168,10 @@ def export_network_cluster_parameters(
 # ==============================================================================
 
 # Load original network dataset:
-export_path = Path('/home/cluster/stefanos/Documents/GitHub/prefrontal_analysis/intermediate_files/')
+export_path = Path('/home/cluster/stefanos/Documents/GitHub'
+                   '/prefrontal_analysis/subset_files/')
 filename_prefix = ''
-configuration_alias = 'intermediate_80'
+configuration_alias = 'structured'
 serial_no = 1
 filename_postfix = ''
 filename = export_path.joinpath(f'{filename_prefix}{configuration_alias}_network_SN'
@@ -129,9 +192,14 @@ for cluster_no in [2,3,4,5,6,7]:
     for c in range(cluster_no):
         stimulated_cells.append(np.argwhere(ap_labels == c))
 
-    export_network_cluster_parameters(
+    # Keep only a random subset of each cluster's neurons on each trial.
+    new_stim_cells = analysis.get_random_subset(
+        stimulated_cells, max_stim_size=50, serial_no=serial_no
+    )
+
+    export_network_cluster_parameters_per_trial(
         export_path=export_path,
-        stimulated_cells=stimulated_cells,
+        stimulated_cells=new_stim_cells,
         trials_per_cluster=10
     )
 
