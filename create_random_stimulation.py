@@ -138,8 +138,8 @@ weights_mat = pd.read_hdf(filename, key='weights_mat').values
 #stimulated_cells = create_random_stimulation(serial_no, stim_size=50)
 stimulated_cells = initialize_trials(
     serial_no,
-    trial_no=10,
-    stimulated_pn_no=int(250/5)
+    trial_no=50,
+    stimulated_pn_no=int(250/7)
 )
 
 export_network_cluster_parameters(

@@ -13,7 +13,6 @@ from collections import defaultdict
 from functools import partial
 from pathlib import Path
 from pynwb import NWBHDF5IO
-from itertools import chain
 import matplotlib.gridspec as gridspec
 from mpl_toolkits.mplot3d import Axes3D
 import scipy.stats
@@ -67,176 +66,431 @@ def all_cp_trials(cp=None, **kwargs):
 data = []
 
 dcp_array = [25, 50, 75, 100]
-dcs_array = [0, 1, 2]
+dcs_array = [0, 2, 4]
 
-'''
 # %% Nassi meeting CLUSTER/Location:
 # %% Load NEURON data
-# This partial combines the simulations ran:
-random_input_dend_cluster_sims = \
-    analysis.append_results_to_array(array=data)(
-        partial(analysis.load_nwb_from_neuron,
-                glia_dir,
-                excitation_bias=1.75,
-                inhibition_bias=3.0,
-                nmda_bias=6.0,
-                sim_duration=5,
-                prefix='iid2_',
-                template_postfix='_iid_ri',
-                experiment_config='structured',
-                )
+if False:
+    # This partial combines the simulations ran:
+    random_input_dend_cluster_sims = \
+        analysis.append_results_to_array(array=data)(
+            partial(analysis.load_nwb_from_neuron,
+                    glia_dir,
+                    excitation_bias=1.75,
+                    inhibition_bias=2.0,
+                    nmda_bias=6.0,
+                    sim_duration=5,
+                    prefix='iid3_',
+                    template_postfix='_iid_ri',
+                    experiment_config='structured',
+                    )
+        )
+
+    params = {
+        'dend_clust_perc': [25, 50],
+        'dend_clust_seg': dcs_array,
+        'ri': [50],
+        'ntrials': [100],
+    }
+
+    analysis.run_for_all_parameters(
+        random_input_dend_cluster_sims,
+        **{'auto_param_array': params}
     )
 
-params = {
-    'dend_clust_perc': dcp_array,
-    'dend_clust_seg': dcs_array,
-    'ri': [50],
-    'ntrials': [100],
-}
+    df = pd.DataFrame(data)
+    '''
+    df['PA'] = [-1.0] * len(df.index)
+    df['attractors_len'] = [-1] * len(df.index)
+    df['sparsness'] = [-1.0] * len(df.index)
 
-analysis.run_for_all_parameters(
-    random_input_dend_cluster_sims,
-    **{'auto_param_array': params}
-)
+    # Dont use the ntrials, since can vary between configurations:
+    params.pop('ntrials')
 
-df = pd.DataFrame(data)
-# Use len for speed and float since we get a percentage:
-df['attractors_len'] = [-1] * len(df.index)
+    # Add the number of attractors found on the dataframe
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_attractors_len_column,
+        df,
+        **{'auto_param_array': params}
+    )
 
-# Dont use the ntrials, since can vary between configurations:
-params.pop('ntrials')
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_pa_column,
+        df,
+        **{'auto_param_array': params}
+    )
 
-# Add the number of attractors found on the dataframe
-analysis.run_for_all_parameters(
-    analysis.query_and_add_attractors_len_column,
-    df,
-    **{'auto_param_array': params}
-)
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_sparsness_column,
+        df,
+        **{'auto_param_array': params}
+    )
+    '''
 
-# Now run the analysis/plotting to check if you have a paper:
-# Print the correlation of free variables with attractor number:
-for param, vals in params.items():
-    data = {}
-    for i, val in enumerate(vals):
-        query_d = { param: val }
-        nwb_index = (df[list(query_d)] == pd.Series(query_d)).all(axis=1)
-        df_index = nwb_index.values.astype(int).nonzero()[0]
-        tmp_var = df.loc[df_index, 'attractors_len'].values
-        # Since (yet) zero attractors means no data, make them nan:
-        data[i] = tmp_var[np.nonzero(tmp_var)[0]]
+    with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
+        print(df)
 
-    fig, axis = plt.subplots()
-    for i in range(len(vals)):
-        axis.scatter(
-            np.ones(len(data[i])) * i,
-            data[i],
-            c='blue',
-            marker='o'
+    print("checkpoint")
+
+    NWB_array = []
+    for index in range(df.shape[0]):
+        NWB_array.append(df.loc[index, 'NWBfile'])
+
+    for index, NWBfile in enumerate(NWB_array):
+        #Manually plot different trials of the same stimuli:
+        #This is a manual version of the compare_dend_params()
+        trial_len, ntrials = analysis.get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=['trial_len', 'ntrials']
         )
-        axis.scatter(i, np.mean(data[i]), c='red', marker='+')
-    axis.set_ylabel(f"Attractor Number")
-    fig.savefig(f'data_Nassi_{param}_RI50.png')
-    plt.close(fig)
-sys.exit(0)
-'''
+        delay_range = (20, int(trial_len / 50))
+        all_range = (0, int(trial_len / 50))
+
+        # Assume 10 trials per stimulus:
+        k_labels_arrays = [
+            [i+1] * 10
+            for i in range(int(ntrials/10))
+        ]
+        K_labels = np.array(list(chain(*k_labels_arrays)))
+
+        label_tags = [
+            f'Stimulus {i+1}'
+            for i in range(int(ntrials / 10))
+        ]
+
+        fig = plt.figure()
+        plot_axis = fig.add_subplot(111)
+
+        analysis.pcaL2(
+            NWBfile_array=[NWBfile],
+            custom_range=delay_range,
+            klabels=K_labels,
+            smooth=True,
+            plot_2d=True,
+            plot_stim_color=True,
+            plot_axes=plot_axis,
+            legend_labels=label_tags
+        )
+        plt.savefig(f"PCA_DS_CLUST_STIMULUS_index_{index}.png")
+    sys.exit(0)
+
+    fig = plt.figure()
+    plot_axis = fig.add_subplot(111)
+    analysis.compare_dend_params(
+        NWBarray_of_arrays=NWB_array,
+        dataset_names=[
+            'Clustering 25% proximal',
+            'Clustering 50% proximal',
+            'Clustering 25% medial',
+            'Clustering 50% medial',
+            'Clustering 25% distal',
+            'Clustering 50% distal',
+        ],
+        plot_axis=plot_axis
+    )
+    plt.savefig(f"PCA_DS_ALLCLUST.png")
+    print("checkpoint")
+    sys.exit(0)
+
+    for index in range(df.shape[0]):
+        NWBfile = df.loc[index, 'NWBfile']
+        trial_len = analysis.get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=['trial_len']
+        )
+        delay_range = (20, int(trial_len / 50))
+        K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+            NWBfile_array=[NWBfile],
+            max_clusters=20,
+            custom_range=delay_range
+        )
+        fig = plt.figure()
+        plot_axes = fig.add_subplot(111)
+        try:
+            analysis.pcaL2(
+                NWBfile_array=[NWBfile],
+                custom_range=delay_range,
+                klabels=K_labels,
+                smooth=True,
+                plot_2d=True,
+                plot_stim_color=True,
+                plot_axes=plot_axes,
+            )
+        except ValueError:
+            pass
+        fig.savefig(f"PCA_DATA_DS_IB2_CLUST_index_{index}.png")
+
+    sys.exit(0)
+
+    # Now run the analysis/plotting to check if you have a paper:
+    # Print the correlation of free variables with attractor number:
+    for param, vals in params.items():
+        data = {}
+        for i, val in enumerate(vals):
+            query_d = { param: val }
+            nwb_index = (df[list(query_d)] == pd.Series(query_d)).all(axis=1)
+            df_index = nwb_index.values.astype(int).nonzero()[0]
+            tmp_var = df.loc[df_index, 'attractors_len'].values
+            # Since (yet) zero attractors means no data, make them nan:
+            data[i] = tmp_var[np.nonzero(tmp_var)[0]]
+
+        fig, axis = plt.subplots()
+        for i in range(len(vals)):
+            axis.scatter(
+                np.ones(len(data[i])) * i,
+                data[i],
+                c='blue',
+                marker='o'
+            )
+            axis.scatter(i, np.mean(data[i]), c='red', marker='+')
+        axis.set_ylabel(f"Attractor Number")
+        fig.savefig(f"data_Nassi_{param}_RI{params['ri'][0]}.png")
+        plt.close(fig)
+    sys.exit(0)
 
 # %% Nassi meeting MULTIDEND/DIFF SIZE:
 # %% Load NEURON data
-# This partial combines the simulations ran:
-random_input_dend_multidend_sims = \
-    analysis.append_results_to_array(array=data)(
-        partial(analysis.load_nwb_from_neuron,
-                glia_dir,
-                excitation_bias=1.75,
-                inhibition_bias=3.0,
-                nmda_bias=6.0,
-                sim_duration=5,
-                prefix='',
-                template_postfix='_ri',
-                )
+if True:
+    # This partial combines the simulations ran:
+    random_input_dend_multidend_sims = \
+        analysis.append_results_to_array(array=data)(
+            partial(analysis.load_nwb_from_neuron,
+                    glia_dir,
+                    excitation_bias=1.75,
+                    inhibition_bias=3.0,
+                    nmda_bias=6.0,
+                    sim_duration=5,
+                    prefix='ds',
+                    template_postfix='_ri',
+                    )
+        )
+
+    params = {
+        'dendlen': [ 'medium', 'long'],
+        'dendno': [1,2],
+        'connectivity_type': 'structured',
+        'ri': [50],
+        'ntrials': [100],
+    }
+
+    analysis.run_for_all_parameters(
+        random_input_dend_multidend_sims,
+        **{'auto_param_array': params}
     )
 
-params = {
-    'dendlen': ['small', 'medium', 'long'],
-    'dendno': [1, 2],
-    'connectivity_type': 'structured',
-    'ri': [50],
-    'ntrials': [100],
-}
+    df = pd.DataFrame(data)
+    '''
+    # Use len for speed and float since we get a percentage:
+    df['attractors_len'] = [-1] * len(df.index)
+    df['PA'] = [-1.0] * len(df.index)
+    df['sparsness'] = [-1.0] * len(df.index)
 
-analysis.run_for_all_parameters(
-    random_input_dend_multidend_sims,
-    **{'auto_param_array': params}
-)
+    # Dont use the ntrials, since can vary between configurations:
+    params.pop('ntrials')
 
-df = pd.DataFrame(data)
-# Use len for speed and float since we get a percentage:
-df['attractors_len'] = [-1] * len(df.index)
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_pa_column,
+        df,
+        **{'auto_param_array': params}
+    )
+    # Add the number of attractors found on the dataframe
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_attractors_len_column,
+        df,
+        **{'auto_param_array': params}
+    )
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_sparsness_column,
+        df,
+        **{'auto_param_array': params}
+    )
+    '''
 
-# Dont use the ntrials, since can vary between configurations:
-params.pop('ntrials')
+    with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
+        print(df)
 
-# Add the number of attractors found on the dataframe
-analysis.run_for_all_parameters(
-    analysis.query_and_add_attractors_len_column,
-    df,
-    **{'auto_param_array': params}
-)
+    print("checkpoint")
 
-# Now run the analysis/plotting to check if you have a paper:
-# Print the correlation of free variables with attractor number:
-for param, vals in params.items():
-    data = {}
-    for i, val in enumerate(vals):
-        query_d = { param: val }
-        nwb_index = (df[list(query_d)] == pd.Series(query_d)).all(axis=1)
-        df_index = nwb_index.values.astype(int).nonzero()[0]
-        tmp_var = df.loc[df_index, 'attractors_len'].values
-        # Since (yet) zero attractors means no data, make them nan:
-        data[i] = tmp_var[np.nonzero(tmp_var)[0]]
+    NWB_array = []
+    for index in range(df.shape[0]):
+        NWB_array.append(df.loc[index, 'NWBfile'])
 
-    fig, axis = plt.subplots()
-    for i in range(len(vals)):
-        axis.scatter(
-            np.ones(len(data[i])) * i,
-            data[i],
-            c='blue',
-            marker='o'
+    for index, NWBfile in enumerate(NWB_array):
+        #Manually plot different trials of the same stimuli:
+        #This is a manual version of the compare_dend_params()
+        trial_len, ntrials = analysis.get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=['trial_len', 'ntrials']
         )
-        axis.scatter(i, np.mean(data[i]), c='red', marker='+')
-    axis.set_ylabel(f"Attractor Number")
-    fig.savefig(f'data_Nassi_{param}_RI50.png')
-    plt.close(fig)
-sys.exit(0)
+        delay_range = (20, int(trial_len / 50))
+        all_range = (0, int(trial_len / 50))
+
+        # Assume 10 trials per stimulus:
+        k_labels_arrays = [
+            [i+1] * 10
+            for i in range(int(ntrials/10))
+        ]
+        K_labels = np.array(list(chain(*k_labels_arrays)))
+
+        label_tags = [
+            f'Stimulus {i+1}'
+            for i in range(int(ntrials / 10))
+        ]
+
+        fig = plt.figure()
+        plot_axis = fig.add_subplot(111)
+
+        analysis.pcaL2(
+            NWBfile_array=[NWBfile],
+            custom_range=delay_range,
+            klabels=K_labels,
+            smooth=True,
+            plot_2d=True,
+            plot_stim_color=True,
+            plot_axes=plot_axis,
+            legend_labels=label_tags
+        )
+        plt.savefig(f"PCA_DS_MORPH_STIMULUS_index_{index}.png")
+    sys.exit(0)
+
+    sys.exit(0)
+    for index in [3]:
+        NWBfile = df.loc[index, 'NWBfile']
+        trial_len = analysis.get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=['trial_len']
+        )
+        delay_range = (20, int(trial_len / 50))
+        K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+            NWBfile_array=[NWBfile],
+            max_clusters=20,
+            custom_range=delay_range
+        )
+        fig = plt.figure()
+        #plot_axes = fig.add_subplot(111, projection='3d')
+        plot_axes = fig.add_subplot(111)
+        analysis.pcaL2(
+            NWBfile_array=[NWBfile],
+            custom_range=delay_range,
+            klabels=K_labels,
+            smooth=True,
+            plot_2d=True,
+            plot_3d=False,
+            plot_stim_color=True,
+            plot_axes=plot_axes,
+        )
+        fig.savefig(f"PCA_DATA_DETAILED_MORPH_IB3_index_{index}_2d.png")
+    sys.exit(0)
+    # Now run the analysis/plotting to check if you have a paper:
+    # Print the correlation of free variables with attractor number:
+    for param, vals in params.items():
+        data = {}
+        for i, val in enumerate(vals):
+            query_d = { param: val }
+            nwb_index = (df[list(query_d)] == pd.Series(query_d)).all(axis=1)
+            df_index = nwb_index.values.astype(int).nonzero()[0]
+            tmp_var = df.loc[df_index, 'attractors_len'].values
+            # Since (yet) zero attractors means no data, make them nan:
+            data[i] = tmp_var[np.nonzero(tmp_var)[0]]
+
+        fig, axis = plt.subplots()
+        for i in range(len(vals)):
+            axis.scatter(
+                np.ones(len(data[i])) * i,
+                data[i],
+                c='blue',
+                marker='o'
+            )
+            axis.scatter(i, np.mean(data[i]), c='red', marker='+')
+        axis.set_ylabel(f"Attractor Number")
+        fig.savefig(f'data_Nassi_{param}_RI50.png')
+        plt.close(fig)
+    sys.exit(0)
 
 # %% Nassi meeting CP
 # %% Load NEURON data
-# This partial combines the simulations ran:
-anatomical_cluster_cp_sims = \
-    analysis.append_results_to_array(array=data)(
-        partial(analysis.load_nwb_from_neuron,
-                glia_dir,
-                excitation_bias=1.75,
-                inhibition_bias=3.0,
-                nmda_bias=6.0,
-                sim_duration=5,
-                prefix='',
-                template_postfix='',
-                experiment_config='structured_allt'
-                )
+if False:
+    # This partial combines the simulations ran:
+    anatomical_cluster_cp_sims = \
+        analysis.append_results_to_array(array=data)(
+            partial(analysis.load_nwb_from_neuron,
+                    glia_dir,
+                    excitation_bias=1.75,
+                    inhibition_bias=3.0,
+                    nmda_bias=6.0,
+                    sim_duration=5,
+                    prefix='',
+                    template_postfix='',
+                    experiment_config='structured_allt'
+                    )
+        )
+
+    params = {
+          'cp': [2,3,4,5],
+        'ntrials': all_cp_trials,
+    }
+
+    analysis.run_for_all_parameters(
+        anatomical_cluster_cp_sims,
+        **{'auto_param_array': params}
     )
 
-params = {
-      'cp': [2,3,4,5],
-    'ntrials': all_cp_trials,
-}
+    df = pd.DataFrame(data)
+    # Use len for speed and float since we get a percentage:
+    df['attractors_len'] = [-1] * len(df.index)
+    df['PA'] = [-1.0] * len(df.index)
+    df['sparsness'] = [-1.0] * len(df.index)
 
-analysis.run_for_all_parameters(
-    anatomical_cluster_cp_sims,
-    **{'auto_param_array': params}
-)
+    # Dont use the ntrials, since can vary between configurations:
+    params.pop('ntrials')
 
-sys.exit(0)
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_pa_column,
+        df,
+        **{'auto_param_array': params}
+    )
+    # Add the number of attractors found on the dataframe
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_attractors_len_column,
+        df,
+        **{'auto_param_array': params}
+    )
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_sparsness_column,
+        df,
+        **{'auto_param_array': params}
+    )
+
+    with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
+        print(df)
+
+    for index in range(df.shape[0]):
+        NWBfile = df.loc[index, 'NWBfile']
+        trial_len = analysis.get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=['trial_len']
+        )
+        delay_range = (20, int(trial_len / 50))
+        K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+            NWBfile_array=[NWBfile],
+            max_clusters=20,
+            custom_range=delay_range
+        )
+        fig = plt.figure()
+        #plot_axes = fig.add_subplot(111, projection='3d')
+        plot_axes = fig.add_subplot(111)
+        analysis.pcaL2(
+            NWBfile_array=[NWBfile],
+            custom_range=delay_range,
+            klabels=K_labels,
+            smooth=True,
+            plot_2d=True,
+            plot_3d=False,
+            plot_stim_color=True,
+            plot_axes=plot_axes,
+        )
+        fig.savefig(f"PCA_DATA_DETAILED_CP_index_{index}_2d.png")
+    sys.exit(0)
 
 # this is exploratory to see where in the intermediate connectivity I need to
 # change the E/I in order to get PA:

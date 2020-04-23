@@ -83,13 +83,15 @@ def export_network_cluster_parameters_per_trial(
         # Network stimulation:
         trial_increment = 0
         for cluster in range(cluster_no):
-            for trial in range(trial_increment, trials_per_cluster*cluster_no):
-                f.write(f'StimulatedPNs[{trial}]=new Vector('
+            for trial, trial_global in enumerate(range(trial_increment,
+                               trials_per_cluster + trial_increment)):
+                f.write(f'StimulatedPNs[{trial_global}]=new Vector('
                         f'{stimulated_cells[cluster][trial].size})\n')
                 for i in range(stimulated_cells[cluster][trial].size):
                     # stimcells is a Nx1 array:
-                    f.write(f'StimulatedPNs[{trial}].x[{i}]='
+                    f.write(f'StimulatedPNs[{trial_global}].x[{i}]='
                             f'{stimulated_cells[cluster][trial][i]}\n')
+            trial_increment += trials_per_cluster
         f.write('//EOF\n')
     # also write the same file for all the dend configurations:
     #ui = input(f'Proceed in generating dend files for file'

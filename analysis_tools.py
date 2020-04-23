@@ -2615,7 +2615,7 @@ def pcaL2(
         NWBfile_array=[], plot_2d=False, plot_3d=False, custom_range=None,
         klabels=None, pca_components=20, smooth=False, plot_axes=None,
         axis_label_font_size=12, tick_label_font_size=12, labelpad_x=10,
-        labelpad_y=10, **kwargs
+        labelpad_y=10, only_trials=None, **kwargs
 ):
     '''
     This function reads binned activity from a list of files and performs PCA
@@ -2672,10 +2672,19 @@ def pcaL2(
             acquisition['binned_activity']. \
             data[:pn_no, :]. \
             reshape(pn_no, ntrials, trial_q_no)
-        # Slice out non correct trials and unwanted trial periods:
-        tmp = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
-        # Reshape in array with m=cells, n=time bins.
-        tmp = tmp.reshape(pn_no, correct_trials_no * duration)
+        #If you care only about specific trials, get them:
+        requested_trials = kwargs.get('only_trials', None)
+        if requested_trials:
+            # Slice out non correct trials and unwanted trial periods:
+            tmp = binned_network_activity[:, requested_trials,
+            trial_slice_start:trial_slice_stop]
+            # Reshape in array with m=cells, n=time bins.
+            tmp = tmp.reshape(pn_no, len(requested_trials) * duration)
+        else:
+            # Slice out non correct trials and unwanted trial periods:
+            tmp = binned_network_activity[:, correct_trials_idx, trial_slice_start:trial_slice_stop]
+            # Reshape in array with m=cells, n=time bins.
+            tmp = tmp.reshape(pn_no, correct_trials_no * duration)
         # Concatinate it the pool array:
         if pool_array.size:
             pool_array = np.concatenate((pool_array, tmp), axis=1)
@@ -2795,6 +2804,16 @@ def pcaL2(
             ]
         )
         )
+        color_values.append(make_colormap(
+            [
+                c('olivedrab'), c('olivedrab'), 0.0,
+                c('olivedrab'), c('yellowgreen'), 0.99,
+                c('yellowgreen')
+            ]
+        )
+        )
+        # Add more colors in case there is need for them:
+        color_values = [*color_values, *color_values]
 
         # Scatterplot:
         if klabels is not None:
@@ -4671,7 +4690,7 @@ def get_random_subset(stim_cells_list, max_stim_size=50, **kwargs):
     new_stim_cells = []
     for cluster, anatomical_cluster in enumerate(stim_cells_list):
         new_stim_cells.append([])
-        for trial in range(10*len(stim_cells_list)):
+        for trial in range(10):
             rnd_idx = np.random.permutation(anatomical_cluster.size)
             new_stim_cells[cluster].append(
                 np.sort(anatomical_cluster[rnd_idx[:max_stim_size]], axis=None)
@@ -4731,13 +4750,14 @@ def compare_dend_params(NWBarray_of_arrays, dataset_names, **kwargs):
 
     plot_3d = kwargs.get('plot_3d', False)
     plot_2d = not plot_3d
+    plot_axis = kwargs.get('plot_axis', None)
 
-    fig = plt.figure()
-    plt.ion()
-    if plot_2d:
-        plot_axes = fig.add_subplot(111)
-    else:
-        plot_axes = fig.add_subplot(111, projection='3d')
+    if plot_axis is None:
+        fig = plt.figure()
+        if plot_2d:
+            plot_axis = fig.add_subplot(111)
+        else:
+            plot_axis = fig.add_subplot(111, projection='3d')
 
     pcaL2(
         NWBfile_array=NWBfile_array,
@@ -4747,7 +4767,7 @@ def compare_dend_params(NWBarray_of_arrays, dataset_names, **kwargs):
         plot_2d=plot_2d,
         plot_3d=plot_3d,
         plot_stim_color=True,
-        plot_axes=plot_axes,
+        plot_axes=plot_axis,
         legend_labels=label_tags
     )
 
@@ -4818,15 +4838,55 @@ def query_and_add_attractors_len_column(dataframe, **kwargs):
         )
         delay_range = (20, int(trial_len / 50))
 
-        K_star, * _ = determine_number_of_clusters(
-            NWBfile_array=[NWBfile],
-            max_clusters=20,
-            custom_range=delay_range
+        try:
+            K_star, * _ = determine_number_of_clusters(
+                NWBfile_array=[NWBfile],
+                max_clusters=20,
+                custom_range=delay_range
+            )
+
+            # Now Write the number of attractors on 'attractors_len' on the dataframe.
+            dataframe.loc[df_index, 'attractors_len'] = K_star
+        except Exception:
+            print("Skipping NWBfile with no valid trials.")
+
+
+def query_and_add_sparsness_column(dataframe, **kwargs):
+    '''
+    ATTENTION: kwargs should be only the dataframe query terms! So the kwargs is
+    the equivalent of the 'filter' dictionary for the dataframe!
+    '''
+    #TODO: implement something to filter out nonexistend keys/columns.
+
+    # Get the index of the NWB files that equal the given parameters:
+    nwb_index = (dataframe[list(kwargs)] == pd.Series(kwargs)).all(axis=1)
+    df_index = nwb_index.values.astype(int).nonzero()[0]
+
+    # If entries in the dataframe exist:
+    if df_index.size == 1:
+        # Get the corresponding NWB file:
+        NWBfile = dataframe[
+            nwb_index
+        ]['NWBfile'].values[0]
+
+        # Calculate for the grouped NWB files their number of attractors:
+        trial_len = get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=['trial_len']
         )
+        delay_range = (20, int(trial_len / 50))
 
-        # Now Write the number of attractors on 'attractors_len' on the dataframe.
-        dataframe.loc[df_index, 'attractors_len'] = K_star
+        overall_sparsness = -1.0
+        try:
+            overall_sparsness = sparsness(
+                NWBfile=NWBfile,
+                custom_range=delay_range
+            )
 
+            # Now Write the number of attractors on 'attractors_len' on the dataframe.
+            dataframe.loc[df_index, 'sparsness'] = overall_sparsness
+        except ValueError:
+            print("Skipping NWBfile with no valid trials.")
 
 if __name__ == "__main__":
 
