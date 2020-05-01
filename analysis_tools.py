@@ -4688,9 +4688,10 @@ def apclusterk(s, requested_k, prc=0, serial_no=None):
 def get_random_subset(stim_cells_list, max_stim_size=50, **kwargs):
     # Kwargs must contain serial_no for reproducible rng.
     new_stim_cells = []
+    # Max no of trials is 50, comparable for all cluster configs.
     for cluster, anatomical_cluster in enumerate(stim_cells_list):
         new_stim_cells.append([])
-        for trial in range(10):
+        for trial in range(int(np.ceil(50/len(stim_cells_list)))):
             rnd_idx = np.random.permutation(anatomical_cluster.size)
             new_stim_cells[cluster].append(
                 np.sort(anatomical_cluster[rnd_idx[:max_stim_size]], axis=None)

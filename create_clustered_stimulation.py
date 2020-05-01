@@ -11,7 +11,7 @@ from shutil import copyfile
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
 sys.path.append("pydevd-pycharm.egg")
-DEBUG = True
+DEBUG = False
 if DEBUG:
     pydevd_pycharm.settrace(
         'nestboxx.ddns.net',
@@ -57,7 +57,7 @@ def export_network_cluster_parameters_per_trial(
     pv_no = 83
     cell_no = 333
     cluster_no = len(stimulated_cells)
-    trials_per_cluster = 10
+    trials_per_cluster = len(stimulated_cells[0])
     total_trial_no = cluster_no * trials_per_cluster
     #SPS = Stimulated Population Size:
     import_hdf5_filename = export_path.joinpath(

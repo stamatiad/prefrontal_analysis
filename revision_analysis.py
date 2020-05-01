@@ -31,7 +31,7 @@ import time
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
 sys.path.append("pydevd-pycharm.egg")
-DEBUG = False
+DEBUG = True
 if DEBUG:
     pydevd_pycharm.settrace(
         '79.167.94.93',
@@ -70,7 +70,7 @@ dcs_array = [0, 2, 4]
 
 # %% Nassi meeting CLUSTER/Location:
 # %% Load NEURON data
-if False:
+if True:
     # This partial combines the simulations ran:
     random_input_dend_cluster_sims = \
         analysis.append_results_to_array(array=data)(
@@ -250,7 +250,7 @@ if False:
 
 # %% Nassi meeting MULTIDEND/DIFF SIZE:
 # %% Load NEURON data
-if True:
+if False:
     # This partial combines the simulations ran:
     random_input_dend_multidend_sims = \
         analysis.append_results_to_array(array=data)(
@@ -266,8 +266,8 @@ if True:
         )
 
     params = {
-        'dendlen': [ 'medium', 'long'],
-        'dendno': [1,2],
+        'dendlen': [ 'medium'],
+        'dendno': [2],
         'connectivity_type': 'structured',
         'ri': [50],
         'ntrials': [100],
@@ -279,7 +279,6 @@ if True:
     )
 
     df = pd.DataFrame(data)
-    '''
     # Use len for speed and float since we get a percentage:
     df['attractors_len'] = [-1] * len(df.index)
     df['PA'] = [-1.0] * len(df.index)
@@ -304,13 +303,13 @@ if True:
         df,
         **{'auto_param_array': params}
     )
-    '''
 
     with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
         print(df)
 
     print("checkpoint")
 
+    '''
     NWB_array = []
     for index in range(df.shape[0]):
         NWB_array.append(df.loc[index, 'NWBfile'])
@@ -354,7 +353,8 @@ if True:
     sys.exit(0)
 
     sys.exit(0)
-    for index in [3]:
+    '''
+    for index in [0]:
         NWBfile = df.loc[index, 'NWBfile']
         trial_len = analysis.get_acquisition_parameters(
             input_NWBfile=NWBfile,
@@ -379,7 +379,7 @@ if True:
             plot_stim_color=True,
             plot_axes=plot_axes,
         )
-        fig.savefig(f"PCA_DATA_DETAILED_MORPH_IB3_index_{index}_2d.png")
+        fig.savefig(f"PCA_DATA_DETAILED_MORPH_IB3_index_0{index}_2d.png")
     sys.exit(0)
     # Now run the analysis/plotting to check if you have a paper:
     # Print the correlation of free variables with attractor number:
@@ -421,13 +421,14 @@ if False:
                     sim_duration=5,
                     prefix='',
                     template_postfix='',
-                    experiment_config='structured_allt'
+                    experiment_config='structured_allt',
+                    reload_raw=True
                     )
         )
 
     params = {
           'cp': [2,3,4,5],
-        'ntrials': all_cp_trials,
+        'ntrials': [50],
     }
 
     analysis.run_for_all_parameters(
@@ -489,7 +490,7 @@ if False:
             plot_stim_color=True,
             plot_axes=plot_axes,
         )
-        fig.savefig(f"PCA_DATA_DETAILED_CP_index_{index}_2d.png")
+        fig.savefig(f"PCA_DATA_DETAILED_CP_index_{index}_2d_new.png")
     sys.exit(0)
 
 # this is exploratory to see where in the intermediate connectivity I need to
