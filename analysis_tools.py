@@ -117,6 +117,7 @@ def run_for_all_parameters(function, *args, **kwargs):
     # if this throws KeyError you should not use the function in the
     # first place! The existence of params is given.
     auto_param_array = OrderedDict(kwargs['auto_param_array'])
+    print(f"Running for parameters:\n {auto_param_array}")
     # you also initialize the function run parameters:
     all_dict_combinations(
         *args,
@@ -1817,6 +1818,10 @@ def sparsness(NWBfile, custom_range=None):
                 'correct_trials_idx', 'correct_trials_no'
             ]
         )
+
+    # Make delay period the default period:
+    if custom_range is None:
+        custom_range = (20, int(trial_len / 50))
 
     tmp = get_correct_trials(NWBfile, custom_range=custom_range)
 

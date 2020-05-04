@@ -31,7 +31,7 @@ import time
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
 sys.path.append("pydevd-pycharm.egg")
-DEBUG = True
+DEBUG = False
 if DEBUG:
     pydevd_pycharm.settrace(
         '79.167.94.93',
@@ -43,10 +43,12 @@ if DEBUG:
 
 # %% Initialization
 if DEBUG:
-    matplotlib.interactive('on')
-    matplotlib.use('Qt5Agg')
+    matplotlib.interactive('off')
+    #matplotlib.interactive('on')
+    #matplotlib.use('Qt5Agg')
 else:
     matplotlib.interactive('off')
+
 print(f'Matplotlib is interactive: {matplotlib.is_interactive()}')
 print(matplotlib.rcParams['backend'])
 
@@ -68,9 +70,225 @@ data = []
 dcp_array = [25, 50, 75, 100]
 dcs_array = [0, 2, 4]
 
+blah = \
+    analysis.append_results_to_array(array=data)(
+        partial(analysis.load_nwb_from_neuron,
+                glia_dir,
+                excitation_bias=1.75,
+                nmda_bias=6.0,
+                sim_duration=5,
+                prefix='ds',
+                template_postfix='_ri',
+                dendlen='medium',
+                dendno=1,
+                connectivity_type='structured',
+                ri=50,
+                ntrials=1,
+                )
+    )
+
+params = {
+    'inhibition_bias': [2.0, 2.5],
+    'learning_condition': list(range(10, 51))
+}
+
+analysis.run_for_all_parameters(
+    blah,
+    **{'auto_param_array': params}
+)
+
+df = pd.DataFrame(data)
+df['PA'] = [-1.0] * len(df.index)
+df['sparsness'] = [-1.0] * len(df.index)
+analysis.run_for_all_parameters(
+    analysis.query_and_add_pa_column,
+    df,
+    **{'auto_param_array': params}
+)
+analysis.run_for_all_parameters(
+    analysis.query_and_add_sparsness_column,
+    df,
+    **{'auto_param_array': params}
+)
+with pd.option_context('display.max_rows', None, 'display.max_columns',
+                       None):  # more options can be specified also
+    print(df)
+
+sys.exit(0)
+'''
+
+NWBfile = analysis.load_nwb_from_neuron(
+    glia_dir,
+    excitation_bias=1.75,
+    inhibition_bias=2.0,
+    nmda_bias=6.0,
+    sim_duration=5,
+    prefix='ds',
+    template_postfix='_ri',
+    dendlen='medium',
+    dendno=1,
+    connectivity_type='structured',
+    ri=50,
+    ntrials=1,
+    learning_condition=9,
+)
+print('PA:'
+      f'{analysis.get_nwb_list_valid_ntrials([NWBfile])}'
+      )
+
+binned_network_activity = NWBfile. \
+                              acquisition['binned_activity']. \
+                              data[:250, :]
+fig1,ax1 = plt.subplots()
+ax1.imshow(binned_network_activity[:50,:])
+plt.savefig("BLAH.png")
+print('Sparseness:'
+      f'{analysis.sparsness(NWBfile)}'
+      )
+sys.exit(0)
+'''
+
+# %% Trimmed synapses simulations:
+# %% Load NEURON data
+if False:
+    # This partial combines the simulations ran:
+    dend_trimsyn_sims = \
+        analysis.append_results_to_array(array=data)(
+            partial(analysis.load_nwb_from_neuron,
+                    glia_dir,
+                    excitation_bias=1.75,
+                    inhibition_bias=1.5,
+                    nmda_bias=6.0,
+                    sim_duration=5,
+                    prefix='ts',
+                    template_postfix='_ri',
+                    experiment_config='structured',
+                    )
+        )
+
+    params = {
+        'ri': [50],
+        'ntrials': [500],
+    }
+
+    analysis.run_for_all_parameters(
+        dend_trimsyn_sims,
+        **{'auto_param_array': params}
+    )
+
+    df = pd.DataFrame(data)
+    df['PA'] = [-1.0] * len(df.index)
+    df['sparsness'] = [-1.0] * len(df.index)
+    params.pop('ntrials')
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_pa_column,
+        df,
+        **{'auto_param_array': params}
+    )
+
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_sparsness_column,
+        df,
+        **{'auto_param_array': params}
+    )
+    '''
+    df['attractors_len'] = [-1] * len(df.index)
+
+    # Dont use the ntrials, since can vary between configurations:
+
+    # Add the number of attractors found on the dataframe
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_attractors_len_column,
+        df,
+        **{'auto_param_array': params}
+    )
+
+    '''
+
+    with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
+        print(df)
+
+    print("checkpoint")
+
+    NWB_array = []
+    for index in range(df.shape[0]):
+        NWB_array.append(df.loc[index, 'NWBfile'])
+
+    '''
+    # out, because not enough colors for stimuli
+    print("plotting Stimulus")
+    for index, NWBfile in enumerate(NWB_array):
+        #Manually plot different trials of the same stimuli:
+        #This is a manual version of the compare_dend_params()
+        trial_len, ntrials = analysis.get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=['trial_len', 'ntrials']
+        )
+        delay_range = (20, int(trial_len / 50))
+        all_range = (0, int(trial_len / 50))
+
+        # Assume 10 trials per stimulus:
+        k_labels_arrays = [
+            [i+1]
+            for i in range(ntrials)
+        ]
+        K_labels = np.array(list(chain(*k_labels_arrays)))
+
+        label_tags = [
+            f'Stimulus {i+1}'
+            for i in range(ntrials)
+        ]
+
+        fig = plt.figure()
+        plot_axis = fig.add_subplot(111)
+
+        analysis.pcaL2(
+            NWBfile_array=[NWBfile],
+            custom_range=delay_range,
+            klabels=K_labels,
+            smooth=True,
+            plot_2d=True,
+            plot_stim_color=True,
+            plot_axes=plot_axis,
+            legend_labels=label_tags
+        )
+        plt.savefig(f"PCA_TS_STIMULUS_IB1_index_{index}.png")
+    '''
+
+    print("plotting attractors")
+    for index in range(df.shape[0]):
+        NWBfile = df.loc[index, 'NWBfile']
+        trial_len = analysis.get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=['trial_len']
+        )
+        delay_range = (20, int(trial_len / 50))
+        K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+            NWBfile_array=[NWBfile],
+            max_clusters=20,
+            custom_range=delay_range
+        )
+        fig = plt.figure()
+        plot_axes = fig.add_subplot(111)
+        try:
+            analysis.pcaL2(
+                NWBfile_array=[NWBfile],
+                custom_range=delay_range,
+                klabels=K_labels,
+                smooth=True,
+                plot_2d=True,
+                plot_stim_color=True,
+                plot_axes=plot_axes,
+            )
+        except ValueError:
+            pass
+        plt.savefig(f"PCA_TS_STIMULUS_IB1.5_Attractors_index_{index}.png")
+
+
+
 # %% Nassi meeting CLUSTER/Location:
 # %% Load NEURON data
-if True:
+if False:
     # This partial combines the simulations ran:
     random_input_dend_cluster_sims = \
         analysis.append_results_to_array(array=data)(
@@ -251,13 +469,14 @@ if True:
 # %% Nassi meeting MULTIDEND/DIFF SIZE:
 # %% Load NEURON data
 if False:
+    print("Running the morphological analysis")
     # This partial combines the simulations ran:
     random_input_dend_multidend_sims = \
         analysis.append_results_to_array(array=data)(
             partial(analysis.load_nwb_from_neuron,
                     glia_dir,
                     excitation_bias=1.75,
-                    inhibition_bias=3.0,
+                    inhibition_bias=1.5,
                     nmda_bias=6.0,
                     sim_duration=5,
                     prefix='ds',
@@ -267,10 +486,11 @@ if False:
 
     params = {
         'dendlen': [ 'medium'],
-        'dendno': [2],
+        'dendno': [1,2],
         'connectivity_type': 'structured',
         'ri': [50],
-        'ntrials': [100],
+        'ntrials': [500],
+        'learning_condition': [4,7]
     }
 
     analysis.run_for_all_parameters(
@@ -278,23 +498,27 @@ if False:
         **{'auto_param_array': params}
     )
 
+    print("Creating dataframe")
     df = pd.DataFrame(data)
     # Use len for speed and float since we get a percentage:
-    df['attractors_len'] = [-1] * len(df.index)
     df['PA'] = [-1.0] * len(df.index)
     df['sparsness'] = [-1.0] * len(df.index)
 
     # Dont use the ntrials, since can vary between configurations:
     params.pop('ntrials')
 
-    analysis.run_for_all_parameters(
-        analysis.query_and_add_pa_column,
-        df,
-        **{'auto_param_array': params}
-    )
+    '''
+    df['attractors_len'] = [-1] * len(df.index)
     # Add the number of attractors found on the dataframe
     analysis.run_for_all_parameters(
         analysis.query_and_add_attractors_len_column,
+        df,
+        **{'auto_param_array': params}
+    )
+    '''
+
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_pa_column,
         df,
         **{'auto_param_array': params}
     )
@@ -308,6 +532,7 @@ if False:
         print(df)
 
     print("checkpoint")
+    #sys.exit(0)
 
     '''
     NWB_array = []
@@ -354,7 +579,9 @@ if False:
 
     sys.exit(0)
     '''
-    for index in [0]:
+
+    for index in range(df.shape[0]):
+        print(f'On index {index}')
         NWBfile = df.loc[index, 'NWBfile']
         trial_len = analysis.get_acquisition_parameters(
             input_NWBfile=NWBfile,
@@ -379,7 +606,11 @@ if False:
             plot_stim_color=True,
             plot_axes=plot_axes,
         )
-        fig.savefig(f"PCA_DATA_DETAILED_MORPH_IB3_index_0{index}_2d.png")
+        print('saving figure')
+        fig.savefig(
+            f"PCA_DATA_DETAILED_MORPH_IB1.5_index_{index}"
+            f"_LC{df.loc[index,'learning_condition']}.png"
+        )
     sys.exit(0)
     # Now run the analysis/plotting to check if you have a paper:
     # Print the correlation of free variables with attractor number:
