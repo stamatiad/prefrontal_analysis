@@ -45,10 +45,16 @@ def append_results_to_array(array=None):
     return callable
 
 def synaptic_projections_histo(plot=False, **kwargs):
-    data_dir = base_path.joinpath(
-        analysis.simulation_templates['load_iid_ri'](
-        **kwargs)
-    )
+    if False:
+        data_dir = base_path.joinpath(
+            analysis.simulation_templates['load_iid_ri'](
+            **kwargs)
+        )
+    if True:
+        data_dir = base_path.joinpath(
+            analysis.simulation_templates['load_ri'](
+            **kwargs)
+        )
     if not data_dir.is_dir():
         print("Dir non existent!")
         return 1
@@ -71,9 +77,9 @@ def synaptic_projections_histo(plot=False, **kwargs):
                 else:
                     pid_list.append(float(re.search('0\.[0-9]*', line)[0]))
 
-    nseg = 5
-    pid_histo = np.full((5,),0, dtype='int64')
-    histo_array = np.empty((250,5))
+    nseg = 2
+    pid_histo = np.full((nseg,),0, dtype='int64')
+    histo_array = np.empty((250,nseg))
     histo_array[:] = np.nan
     #TODO: THIS IS MADE FOR CLUSTBIAS VERSION!
     for n in range(250):
@@ -82,7 +88,7 @@ def synaptic_projections_histo(plot=False, **kwargs):
                 tmp_histo = \
                     np.histogram(
                         pyramidal_projections[m, n],
-                        bins=np.arange(0, 1.2, 0.2)
+                        bins=np.arange(0, 1.2, 1/nseg)
                     )[0]
 
                 pid_histo = np.add(
@@ -93,32 +99,54 @@ def synaptic_projections_histo(plot=False, **kwargs):
                 break
 
     pid_histo = np.around(pid_histo/np.sum(pid_histo), decimals=2)
-    syn_perc = np.full((11,5),0)
-    for seg in range(5):
+    syn_perc = np.full((11,nseg),0)
+    for seg in range(nseg):
         for syn in range(11):
             syn_perc[syn, seg] = np.sum(histo_array[:, seg] == syn)
 
     syn_perc_cumsum = np.cumsum(syn_perc, axis=0)
 
-    labels = ['1', '2', '3', '4', '5']
-    width = 0.35  # the width of the bars: can also be len(x) sequence
+    # 5 segment case:
+    if False:
+        labels = ['1', '2', '3', '4', '5']
+        width = 0.35  # the width of the bars: can also be len(x) sequence
 
-    fig, ax = plt.subplots()
+        fig, ax = plt.subplots()
 
-    ax.bar(labels, syn_perc[0, :].tolist(), width, label=f'syn#0')
-    for i in range(1,11):
-        ax.bar(labels, syn_perc[i,:].tolist(), width, label=f'syn#{i}',
-               bottom=syn_perc_cumsum[i-1,:].tolist())
+        ax.bar(labels, syn_perc[0, :].tolist(), width, label=f'syn#0')
+        for i in range(1,11):
+            ax.bar(labels, syn_perc[i,:].tolist(), width, label=f'syn#{i}',
+                   bottom=syn_perc_cumsum[i-1,:].tolist())
 
-    ax.set_ylabel('# synapses')
-    ax.set_title('Synapse distribution per segment')
-    ax.legend()
-    #dend_clust_seg = kwargs['dend_clust_seg']
-    #dend_clust_perc = kwargs['dend_clust_perc']
-    #plt.savefig(f'syn_dist_DCP{dend_clust_perc}_DCS{dend_clust_seg}.png')
-    dendno = kwargs['dendno']
-    dendlen = kwargs['dendlen']
-    plt.savefig(f'syn_dist_dendno{dendno}_dendlen{dendlen}.png')
+        ax.set_ylabel('# synapses')
+        ax.set_title('Synapse distribution per segment')
+        ax.legend()
+        dend_clust_seg = kwargs['dend_clust_seg']
+        dend_clust_perc = kwargs['dend_clust_perc']
+        plt.savefig(f'syn_dist_DCP{dend_clust_perc}_DCS{dend_clust_seg}.png')
+
+    if True:
+        labels = ['1', '2']
+        width = 0.35  # the width of the bars: can also be len(x) sequence
+
+        fig, ax = plt.subplots()
+
+        ax.bar(labels, syn_perc[0, :].tolist(), width, label=f'syn#0')
+        for i in range(1,11):
+            ax.bar(labels, syn_perc[i,:].tolist(), width, label=f'syn#{i}',
+                   bottom=syn_perc_cumsum[i-1,:].tolist())
+
+        dendno = kwargs['dendno']
+        dendlen = kwargs['dendlen']
+        learning_condition = kwargs['learning_condition']
+        ax.set_ylabel('# synapses')
+        ax.set_ylabel('segment id')
+        ax.set_title(f'Synapse distribution ({dendno}'
+                     f'{dendlen}dend, LC{learning_condition})')
+        ax.legend()
+        plt.savefig(
+            f'syn_dist_{dendno}{dendlen}dend_LC{learning_condition}.png'
+        )
 
     if plot:
         fig, ax = plt.subplots()
@@ -127,54 +155,56 @@ def synaptic_projections_histo(plot=False, **kwargs):
     return pid_histo
 
 
-# Heavy lifting Clustering:
-read_syn_projections = \
-    append_results_to_array(array=data)(
-        partial(synaptic_projections_histo,
-                animal_model=1,
-                learning_condition=1,
-                trial=0,
-                ampa_bias=1,
-                postfix='',
-                excitation_bias=1.75,
-                inhibition_bias=2.0,
-                nmda_bias=6.0,
-                sim_duration=5,
-                prefix='iid3_',
-                experiment_config='structured',
-                )
-    )
+if False:
+    # Heavy lifting Clustering:
+    read_syn_projections = \
+        append_results_to_array(array=data)(
+            partial(synaptic_projections_histo,
+                    animal_model=1,
+                    learning_condition=1,
+                    trial=0,
+                    ampa_bias=1,
+                    postfix='',
+                    excitation_bias=1.75,
+                    inhibition_bias=2.0,
+                    nmda_bias=6.0,
+                    sim_duration=5,
+                    prefix='iid3_',
+                    experiment_config='structured',
+                    )
+        )
 
-params = {
-    'dend_clust_perc': [25, 50],
-    'dend_clust_seg': [0, 2, 4],
-    'ri': [50],
-}
+    params = {
+        'dend_clust_perc': [25, 50],
+        'dend_clust_seg': [0, 2, 4],
+        'ri': [50],
+    }
 
-# MAIN COMPUTE: Morphological:
-read_syn_projections_2 = \
-    append_results_to_array(array=data)(
-        partial(synaptic_projections_histo,
-                animal_model=1,
-                learning_condition=1,
-                trial=0,
-                ampa_bias=1,
-                postfix='',
-                excitation_bias=1.75,
-                inhibition_bias=3.0,
-                nmda_bias=6.0,
-                sim_duration=5,
-                prefix='ds',
-                template_postfix='_ri',
-                )
-    )
+if True:
+    # MAIN COMPUTE: Morphological:
+    read_syn_projections_2 = \
+        append_results_to_array(array=data)(
+            partial(synaptic_projections_histo,
+                    animal_model=1,
+                    learning_condition=2,
+                    trial=0,
+                    ampa_bias=1,
+                    postfix='',
+                    excitation_bias=1.75,
+                    inhibition_bias=3.0,
+                    nmda_bias=6.0,
+                    sim_duration=5,
+                    prefix='ds',
+                    template_postfix='_ri',
+                    )
+        )
 
     params = {
         'dendlen': [ 'medium'],
-        'dendno': [1,2],
+        'dendno': [1],
         'connectivity_type': 'structured',
         'ri': [50],
-        'ntrials': [500],
+        'ntrials': [1],
     }
 
 analysis.run_for_all_parameters(

@@ -2818,7 +2818,13 @@ def pcaL2(
         )
         )
         # Add more colors in case there is need for them:
-        color_values = [*color_values, *color_values]
+        color_values = [
+                *color_values,
+                *color_values,
+                *color_values,
+                *color_values,
+                *color_values,
+                ]
 
         # Scatterplot:
         if klabels is not None:
@@ -4875,15 +4881,15 @@ def query_and_add_sparsness_column(dataframe, **kwargs):
             nwb_index
         ]['NWBfile'].values[0]
 
-        # Calculate for the grouped NWB files their number of attractors:
-        trial_len = get_acquisition_parameters(
-            input_NWBfile=NWBfile,
-            requested_parameters=['trial_len']
-        )
-        delay_range = (20, int(trial_len / 50))
-
         overall_sparsness = -1.0
         try:
+            # Calculate for the grouped NWB files their number of attractors:
+            trial_len = get_acquisition_parameters(
+                input_NWBfile=NWBfile,
+                requested_parameters=['trial_len']
+            )
+            delay_range = (20, int(trial_len / 50))
+
             overall_sparsness = sparsness(
                 NWBfile=NWBfile,
                 custom_range=delay_range
@@ -4892,6 +4898,8 @@ def query_and_add_sparsness_column(dataframe, **kwargs):
             # Now Write the number of attractors on 'attractors_len' on the dataframe.
             dataframe.loc[df_index, 'sparsness'] = overall_sparsness
         except ValueError:
+            print("Skipping NWBfile with no valid trials.")
+        except AttributeError:
             print("Skipping NWBfile with no valid trials.")
 
 if __name__ == "__main__":

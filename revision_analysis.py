@@ -1,5 +1,4 @@
-# %% Imports
-
+# %% Imports 
 import analysis_tools as analysis
 import numpy as np
 from numpy import matlib
@@ -70,6 +69,7 @@ data = []
 dcp_array = [25, 50, 75, 100]
 dcs_array = [0, 2, 4]
 
+'''
 blah = \
     analysis.append_results_to_array(array=data)(
         partial(analysis.load_nwb_from_neuron,
@@ -77,19 +77,19 @@ blah = \
                 excitation_bias=1.75,
                 nmda_bias=6.0,
                 sim_duration=5,
-                prefix='ds',
+                prefix='t3d2',
                 template_postfix='_ri',
                 dendlen='medium',
-                dendno=1,
+                dendno=4,
                 connectivity_type='structured',
                 ri=50,
-                ntrials=1,
+                ntrials=100,
                 )
     )
 
 params = {
-    'inhibition_bias': [2.0, 2.5],
-    'learning_condition': list(range(10, 51))
+    'inhibition_bias': [2.5, 3.0],
+    'learning_condition': [1]
 }
 
 analysis.run_for_all_parameters(
@@ -117,30 +117,35 @@ with pd.option_context('display.max_rows', None, 'display.max_columns',
 sys.exit(0)
 '''
 
+'''
 NWBfile = analysis.load_nwb_from_neuron(
     glia_dir,
     excitation_bias=1.75,
-    inhibition_bias=2.0,
+    inhibition_bias=1.0,
     nmda_bias=6.0,
     sim_duration=5,
-    prefix='ds',
+    prefix='t3d',
     template_postfix='_ri',
     dendlen='medium',
-    dendno=1,
+    dendno=3,
     connectivity_type='structured',
     ri=50,
     ntrials=1,
-    learning_condition=9,
+    learning_condition=1,
+    reload_raw=True
 )
-print('PA:'
-      f'{analysis.get_nwb_list_valid_ntrials([NWBfile])}'
-      )
 
+print(f"NWB:{NWBfile}")
 binned_network_activity = NWBfile. \
                               acquisition['binned_activity']. \
                               data[:250, :]
+print(f"{binned_network_activity.shape}")
+
+print('PA:'
+      f'{analysis.get_nwb_list_valid_ntrials([NWBfile])}'
+      )
 fig1,ax1 = plt.subplots()
-ax1.imshow(binned_network_activity[:50,:])
+ax1.imshow(binned_network_activity[:50,0,:])
 plt.savefig("BLAH.png")
 print('Sparseness:'
       f'{analysis.sparsness(NWBfile)}'
@@ -476,21 +481,21 @@ if False:
             partial(analysis.load_nwb_from_neuron,
                     glia_dir,
                     excitation_bias=1.75,
-                    inhibition_bias=1.5,
                     nmda_bias=6.0,
                     sim_duration=5,
-                    prefix='ds',
                     template_postfix='_ri',
                     )
         )
 
     params = {
+        'prefix': ['ds'],
         'dendlen': [ 'medium'],
-        'dendno': [1,2],
+        'dendno': [3],
         'connectivity_type': 'structured',
         'ri': [50],
-        'ntrials': [500],
-        'learning_condition': [4,7]
+        'ntrials': [100],
+        'learning_condition': [1],
+        'inhibition_bias':[3.0],
     }
 
     analysis.run_for_all_parameters(
@@ -534,7 +539,6 @@ if False:
     print("checkpoint")
     #sys.exit(0)
 
-    '''
     NWB_array = []
     for index in range(df.shape[0]):
         NWB_array.append(df.loc[index, 'NWBfile'])
@@ -551,34 +555,42 @@ if False:
 
         # Assume 10 trials per stimulus:
         k_labels_arrays = [
-            [i+1] * 10
-            for i in range(int(ntrials/10))
+            [i+1]
+            for i in range(int(ntrials))
         ]
         K_labels = np.array(list(chain(*k_labels_arrays)))
 
         label_tags = [
             f'Stimulus {i+1}'
-            for i in range(int(ntrials / 10))
+            for i in range(int(ntrials))
         ]
 
-        fig = plt.figure()
-        plot_axis = fig.add_subplot(111)
+        try:
+            fig = plt.figure()
+            plot_axis = fig.add_subplot(111)
 
-        analysis.pcaL2(
-            NWBfile_array=[NWBfile],
-            custom_range=delay_range,
-            klabels=K_labels,
-            smooth=True,
-            plot_2d=True,
-            plot_stim_color=True,
-            plot_axes=plot_axis,
-            legend_labels=label_tags
-        )
-        plt.savefig(f"PCA_DS_MORPH_STIMULUS_index_{index}.png")
-    sys.exit(0)
-
-    sys.exit(0)
-    '''
+            analysis.pcaL2(
+                NWBfile_array=[NWBfile],
+                custom_range=delay_range,
+                klabels=K_labels,
+                smooth=True,
+                plot_2d=True,
+                plot_stim_color=True,
+                plot_axes=plot_axis,
+                legend_labels=label_tags
+            )
+            print('saving figure')
+            IB = df.loc[index, 'inhibition_bias']
+            LC = df.loc[index,'learning_condition']
+            dendno = df.loc[index,'dendno']
+            dendlen = df.loc[index,'dendlen']
+            fig.savefig(
+                f"MORPH_STIM_{params['prefix']}_IB{IB}"
+                f"_LC{LC}"
+                f"_{dendno}{dendlen}dend.png"
+            )
+        except Exception as e:
+            print(f"Exception during PCA: {str(e)}")
 
     for index in range(df.shape[0]):
         print(f'On index {index}')
@@ -593,25 +605,35 @@ if False:
             max_clusters=20,
             custom_range=delay_range
         )
-        fig = plt.figure()
-        #plot_axes = fig.add_subplot(111, projection='3d')
-        plot_axes = fig.add_subplot(111)
-        analysis.pcaL2(
-            NWBfile_array=[NWBfile],
-            custom_range=delay_range,
-            klabels=K_labels,
-            smooth=True,
-            plot_2d=True,
-            plot_3d=False,
-            plot_stim_color=True,
-            plot_axes=plot_axes,
-        )
-        print('saving figure')
-        fig.savefig(
-            f"PCA_DATA_DETAILED_MORPH_IB1.5_index_{index}"
-            f"_LC{df.loc[index,'learning_condition']}.png"
-        )
+        try:
+            fig = plt.figure()
+            #plot_axes = fig.add_subplot(111, projection='3d')
+            plot_axes = fig.add_subplot(111)
+            analysis.pcaL2(
+                NWBfile_array=[NWBfile],
+                custom_range=delay_range,
+                klabels=K_labels,
+                smooth=True,
+                plot_2d=True,
+                plot_3d=False,
+                plot_stim_color=True,
+                plot_axes=plot_axes,
+            )
+            print('saving figure')
+            IB = df.loc[index, 'inhibition_bias']
+            LC = df.loc[index,'learning_condition']
+            dendno = df.loc[index,'dendno']
+            dendlen = df.loc[index,'dendlen']
+            fig.savefig(
+                f"MORPH_ATTR_{params['prefix']}_IB{IB}"
+                f"_LC{LC}"
+                f"_{dendno}{dendlen}dend.png"
+            )
+        except Exception as e:
+            print(f"Exception during PCA: {str(e)}")
+
     sys.exit(0)
+
     # Now run the analysis/plotting to check if you have a paper:
     # Print the correlation of free variables with attractor number:
     for param, vals in params.items():
