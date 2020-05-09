@@ -1172,12 +1172,14 @@ class Network:
         # Kayaguchi : more potent synapses in reciprocal pairs
         # Perin: more potent synapses with more clustering coeff:
         # We try to combine them
+
         # Every connected pair has weight of one:
         self.weights_mat = np.asarray(self.connectivity_mat, dtype=float)
 
         '''
         #need to create weights from common neighbors:
-        scipy.stats.skewnorm.pdf()
+        #scipy.stats.skewnorm.pdf()
+        np.lognormal
         cn_range = np.arange(0, 8, 0.01)
         #TODO: get them from the CN matrix
         maxNeighbors = 20;

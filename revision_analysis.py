@@ -473,7 +473,7 @@ if False:
 
 # %% Nassi meeting MULTIDEND/DIFF SIZE:
 # %% Load NEURON data
-if False:
+if True:
     print("Running the morphological analysis")
     # This partial combines the simulations ran:
     random_input_dend_multidend_sims = \
@@ -488,14 +488,14 @@ if False:
         )
 
     params = {
-        'prefix': ['ds'],
+        'prefix': ['t3d2'],
         'dendlen': [ 'medium'],
-        'dendno': [3],
+        'dendno': [4],
         'connectivity_type': 'structured',
         'ri': [50],
         'ntrials': [100],
         'learning_condition': [1],
-        'inhibition_bias':[3.0],
+        'inhibition_bias':[2.5, 3.0],
     }
 
     analysis.run_for_all_parameters(
