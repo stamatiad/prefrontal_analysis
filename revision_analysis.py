@@ -69,27 +69,30 @@ data = []
 dcp_array = [25, 50, 75, 100]
 dcs_array = [0, 2, 4]
 
-'''
+#Previous file load was the prefix: t3d2, dendno: 4
 blah = \
     analysis.append_results_to_array(array=data)(
         partial(analysis.load_nwb_from_neuron,
                 glia_dir,
+                learning_condition=1,
                 excitation_bias=1.75,
                 nmda_bias=6.0,
                 sim_duration=5,
-                prefix='t3d2',
-                template_postfix='_ri',
-                dendlen='medium',
-                dendno=4,
+                prefix='sp',
+                template_postfix='_sp_ri',
+                dendlen='original',
+                dendno=1,
                 connectivity_type='structured',
                 ri=50,
-                ntrials=100,
+                ntrials=1,
+                sprw=1,
                 )
     )
 
 params = {
-    'inhibition_bias': [2.5, 3.0],
-    'learning_condition': [1]
+    'inhibition_bias': np.arange(0.5, 3.5, 0.5).tolist(),
+    'sploc': 'distal',
+    'spcl': [0],
 }
 
 analysis.run_for_all_parameters(
@@ -115,7 +118,36 @@ with pd.option_context('display.max_rows', None, 'display.max_columns',
     print(df)
 
 sys.exit(0)
-'''
+# Plot:
+for index in range(df.shape[0]):
+    NWBfile = df.loc[index, 'NWBfile']
+    trial_len = analysis.get_acquisition_parameters(
+        input_NWBfile=NWBfile,
+        requested_parameters=['trial_len']
+    )
+    delay_range = (20, int(trial_len / 50))
+    K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+        NWBfile_array=[NWBfile],
+        max_clusters=20,
+        custom_range=delay_range
+    )
+    fig = plt.figure()
+    plot_axes = fig.add_subplot(111)
+    try:
+        analysis.pcaL2(
+            NWBfile_array=[NWBfile],
+            custom_range=delay_range,
+            klabels=K_labels,
+            smooth=True,
+            plot_2d=True,
+            plot_stim_color=True,
+            plot_axes=plot_axes,
+        )
+    except ValueError:
+        pass
+    plt.savefig(f"PCA_SP_Attractors_distal_cluster_rw.png")
+
+sys.exit(0)
 
 '''
 NWBfile = analysis.load_nwb_from_neuron(
@@ -473,7 +505,7 @@ if False:
 
 # %% Nassi meeting MULTIDEND/DIFF SIZE:
 # %% Load NEURON data
-if True:
+if False:
     print("Running the morphological analysis")
     # This partial combines the simulations ran:
     random_input_dend_multidend_sims = \
