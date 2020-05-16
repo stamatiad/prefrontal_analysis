@@ -40,9 +40,9 @@ def read_train(fn):
 
 valid_dir = Path(f"/home/cluster/stefanos/Documents/GitHub/prefrontal-micro"
 f"/experiment/network/publication_validation/excitatory_validation_multidend")
-sd_file = valid_dir.joinpath('vsoma_sd_normal_CCLAMP_6.0_1.0_1_0_1.75_1_30_1'
+sd_file = valid_dir.joinpath('vsoma_sd_normal_CCLAMP_6.0_1.0_1_0_1.75_3_150_5'
                              '.txt')
-md_file = valid_dir.joinpath('vsoma_md_normal_CCLAMP_6.0_1.0_1_0_1.75_1_30_1'
+md_file = valid_dir.joinpath('vsoma_md_normal_CCLAMP_6.0_1.0_1_0_1.75_3_150_5'
                              '.txt')
 
 sd_vsoma = read_train(sd_file)

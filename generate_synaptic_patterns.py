@@ -121,7 +121,13 @@ def generate_patterns(
     patterns_path = Path(r'/home/cluster/stefanos/Documents/GitHub/prefrontal-micro'
                          r'/experiment/network/synaptic_patterns')
 
-    patterns_df = load_synaptic_patterns(patterns_path)
+    dendlen = kwargs['dendlen']
+    dendno = kwargs['dendno']
+    patterns_df = load_synaptic_patterns(
+        patterns_path,
+        dendlen=dendlen,
+        dendno=dendno
+    )
 
     # Provide the boilerplate to select class preset (e.g. distal)
     case_df = patterns_df.loc[(patterns_df[list(filters)] == pd.Series(
@@ -195,10 +201,11 @@ def generate_patterns(
 
     syn_loc = filters['synapse_location']
     syn_clust = filters['synapse_clustering']
+    dend_clust = filters['dendritic_clustering']
     filename = export_path.joinpath(
-        f"synaptic_patterns_location_{syn_loc}_clustering_"
-        f"{int(syn_clust)}_real_weights_{int(real_weights)}_S"
-        f"N{kwargs['serial_no']}.hoc"
+        f"synaptic_patterns_location_{syn_loc}_syn_clust_"
+        f"{int(syn_clust)}_dend_clust_{dend_clust}_real_weights_"
+        f"{int(real_weights)}_SN{kwargs['serial_no']}.hoc"
     )
     with open(filename, 'w') as f:
         f.write(
@@ -239,11 +246,14 @@ if __name__ == '__main__':
     filters = {
         'synapse_location': 'distal',
         'synapse_clustering': False,
+        'dendritic_clustering': False
     }
     serial_no = 1
 
     generate_patterns(
         filters,
         #weights_mat_pc=create_weights(serial_no=serial_no),
-        serial_no=serial_no
+        serial_no=serial_no,
+        dendlen=150,
+        dendno=3
     )
