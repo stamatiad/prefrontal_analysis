@@ -9,7 +9,7 @@ import pandas as pd
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
 sys.path.append("pydevd-pycharm.egg")
-DEBUG = True
+DEBUG = False
 if DEBUG:
     pydevd_pycharm.settrace(
         '79.167.94.93',
@@ -249,11 +249,14 @@ def load_synaptic_patterns(
 
         # TODO: use expected value to calculate dendritic clustering.
         # Definition of dend clustering: synapses existent on same dendrite:
-        histo, *_ = np.histogram(D_vals, dend_bins)
-        if histo.max() > E_dends:
+        if dendno == 1:
             dend_clust = True
         else:
-            dend_clust = False
+            histo, *_ = np.histogram(D_vals, dend_bins)
+            if histo.max() > E_dends:
+                dend_clust = True
+            else:
+                dend_clust = False
         dend_clusterings.append(dend_clust)
 
 

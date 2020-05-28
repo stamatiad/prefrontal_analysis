@@ -10,6 +10,7 @@ import network_tools as nt
 from itertools import chain
 from load_synaptic_patterns import load_synaptic_patterns
 import analysis_tools as analysis
+from functools import partial
 
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
@@ -17,7 +18,7 @@ sys.path.append("pydevd-pycharm.egg")
 DEBUG = False
 if DEBUG:
     pydevd_pycharm.settrace(
-        '79.167.94.93',
+        '79.167.48.178',
         port=12345,
         stdoutToServer=True,
         stderrToServer=True
@@ -110,7 +111,8 @@ def create_weights(**kwargs):
 
 @analysis.with_reproducible_rng
 def generate_patterns(
-        filters, export_path=Path.cwd(), weights_mat_pc=None, **kwargs
+        export_path=Path.cwd(), weights_mat_pc=None,
+        inhomogeneous=False, **kwargs
 ):
     # THis is optional and more of a verbose error:
     if not kwargs.get('serial_no', None):
@@ -129,9 +131,23 @@ def generate_patterns(
         dendno=dendno
     )
 
-    # Provide the boilerplate to select class preset (e.g. distal)
-    case_df = patterns_df.loc[(patterns_df[list(filters)] == pd.Series(
-        filters)).all(axis=1)]
+    # Change to inhomogeneous patterns if not found!
+    synapse_location = kwargs.get('synapse_location', None)
+    synapse_clustering = kwargs.get('synapse_clustering', None)
+    dendritic_clustering = kwargs.get('dendritic_clustering', None)
+    if synapse_location and synapse_clustering and dendritic_clustering:
+        filters = {
+            'synapse_location':synapse_location,
+            'synapse_clustering': synapse_clustering,
+            'dendritic_clustering': dendritic_clustering
+        }
+
+        # Provide the boilerplate to select class preset (e.g. distal)
+        case_df = patterns_df.loc[(patterns_df[list(filters)] == pd.Series(
+            filters)).all(axis=1)]
+    else:
+        inhomogeneous = True
+        case_df = patterns_df
 
     # Generate NEURON arrays for each PC cell containing PID and W of each synapse:
     # This file will be addressible/identifiable by the filters above and used
@@ -177,6 +193,17 @@ def generate_patterns(
                 query_bin = depol_bin_mat_pc[m, n]
                 # sample the depol values:
                 subdf_idx, *_ = np.where(depol_vals == query_bin)
+                if subdf_idx.size == 0:
+                    # Logically this will be some border case. Print the
+                    # query bin, just in case, to see what's happening.
+                    print(f"No depol val for query bin: {query_bin}")
+                    if np.abs(query_bin - depol_vals.min()) < np.abs(query_bin -
+                                                         depol_vals.max()):
+                        query_bin = depol_vals.min()
+                    else:
+                        query_bin = depol_vals.max()
+                    print(f'\t replaced with {query_bin}')
+                    subdf_idx, *_ = np.where(depol_vals == query_bin)
                 max_ind = subdf_idx.size -1
                 if max_ind == 0:
                     print(f"Single pattern meets criteria! {m},{n}, "
@@ -186,33 +213,43 @@ def generate_patterns(
                     # THis is equivalent to a random permutation
                     rnd_idx = np.random.randint(0, max_ind)
                 case_idx = case_df.index.values
-                pair_PID, pair_W = case_df.loc[
+                pair_PID, pair_W, pair_D = case_df.loc[
                     case_idx[subdf_idx[rnd_idx]]
-                ][['PID','W']]
+                ][['PID','W', 'D']]
                 # Do a check that no PIDs are border cases 0/1:
                 pair_PID[pair_PID==0] = 0.1
                 pair_PID[pair_PID==1] = 0.99
-                pair_d[(m,n)] = (pair_PID, pair_W)
+                pair_d[(m,n)] = (pair_PID, pair_W, pair_D)
 
 
         # create a depol matrix, with 'bin' values:
 
         depol_bin_mat_pc[connectivity_mat_pc] = 1
 
-    syn_loc = filters['synapse_location']
-    syn_clust = filters['synapse_clustering']
-    dend_clust = filters['dendritic_clustering']
-    filename = export_path.joinpath(
-        f"synaptic_patterns_location_{syn_loc}_syn_clust_"
-        f"{int(syn_clust)}_dend_clust_{dend_clust}_real_weights_"
-        f"{int(real_weights)}_SN{kwargs['serial_no']}.hoc"
-    )
+    #TODO: There is no serial number here: only learning condition i.e.
+    # different reshuffling of the synapses. But I use serial_no, in order to
+    # reuse the RNG wrapper. The SN is defined from the network I read/import.
+    if inhomogeneous:
+        filename = export_path.joinpath(
+            f"sp_inhomogeneous_real_weights_{int(real_weights)}_"
+            f"dendno_{dendno}_"
+            f"dendlen_{dendlen}_LC{kwargs['serial_no']}.hoc"
+        )
+    else:
+        filename = export_path.joinpath(
+            f"sp_synloc_{synapse_location}_syncl_"
+            f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
+            f"real_weights_{int(real_weights)}_dendno_{dendno}_"
+            f"dendlen_{dendlen}_LC{kwargs['serial_no']}.hoc"
+        )
+
     with open(filename, 'w') as f:
         f.write(
             f'// This HOC file was generated with generate_patterns python '
             f'module.\n')
         f.write(f'objref synaptic_patterns[250][250]\n')
         f.write(f'objref synaptic_weights[250][250]\n')
+        f.write(f'objref synaptic_dends[250][250]\n')
 
         #in each obj location that conn mat has a connection, create a vector:
         for afferent in range(250):
@@ -226,15 +263,22 @@ def generate_patterns(
                         f'synaptic_weights[{afferent}][{efferent}]=new Vector'
                         f'(5)\n'
                     )
+                    f.write(
+                        f'synaptic_dends[{afferent}][{efferent}]=new Vector'
+                        f'(5)\n'
+                    )
 
-                    PID,W = pair_d[(afferent,efferent)]
-                    for i, (pid, w) in enumerate(zip(PID,W)):
+                    PID, W, D = pair_d[(afferent,efferent)]
+                    for i, (pid, w, d) in enumerate(zip(PID,W, D)):
                         f.write(
                             f'synaptic_patterns[{afferent}][{efferent}].x[{i}]'
                             f'={pid}\n')
                         f.write(
                             f'synaptic_weights[{afferent}][{efferent}].x[{i}]'
                             f'={w}\n')
+                        f.write(
+                            f'synaptic_dends[{afferent}][{efferent}].x[{i}]'
+                            f'={d}\n')
 
         # Network connectivity:
         f.write('//EOF\n')
@@ -243,12 +287,18 @@ def generate_patterns(
     print("Pronto!")
 
 if __name__ == '__main__':
+    # test weights matrix RNG:
+    #weights_mat_pc = create_weights(serial_no=1)
+    #weights_mat_pc2 = create_weights(serial_no=1)
+    #print('done')
+
+    # Old parameters. Filters are provided inside the params now for flexibility
+    '''
     filters = {
         'synapse_location': 'distal',
         'synapse_clustering': False,
         'dendritic_clustering': False
     }
-    serial_no = 1
 
     generate_patterns(
         filters,
@@ -256,4 +306,35 @@ if __name__ == '__main__':
         serial_no=serial_no,
         dendlen=150,
         dendno=3
+    )
+    '''
+    # I need to make this explicit in my code.
+    # This is the synaptic pattern learning condition.
+    #I will keep the same weights matrix instantiation as this is a different
+    # level of inhomogeneity
+    serial_no = 8
+    gp = partial(
+        generate_patterns,
+        weights_mat_pc=create_weights(serial_no=1),
+        serial_no=serial_no,
+    )
+
+    '''
+    params = {
+        'synapse_location': ['proximal'],
+        'synapse_clustering': [ True],
+        'dendritic_clustering': [ True],
+        'dendlen': [30],
+        'dendno': [2,3]
+    }
+    '''
+    # Inhomogeneous patterns!
+    params = {
+        'dendlen': [30, 150],
+        'dendno': [2,3]
+    }
+
+    analysis.run_for_all_parameters(
+        gp,
+        **{'auto_param_array': params}
     )

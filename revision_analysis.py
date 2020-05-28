@@ -33,7 +33,7 @@ sys.path.append("pydevd-pycharm.egg")
 DEBUG = False
 if DEBUG:
     pydevd_pycharm.settrace(
-        '79.167.94.93',
+        '79.167.48.178',
         port=12345,
         stdoutToServer=True,
         stderrToServer=True
@@ -68,6 +68,122 @@ data = []
 
 dcp_array = [25, 50, 75, 100]
 dcs_array = [0, 2, 4]
+
+# synaptic patterns load:
+blah = \
+    analysis.append_results_to_array(array=data)(
+        partial(analysis.load_nwb_from_neuron,
+                glia_dir,
+                excitation_bias=1.75,
+                nmda_bias=6.0,
+                sim_duration=5,
+                prefix='spi',
+                template_postfix='_spi_ri',
+                connectivity_type='structured',
+                ri=50,
+                ntrials=500,
+                sprw=1,
+                reload_raw=False
+                )
+    )
+'''
+params = {
+    'inhibition_bias': [2.0],#np.arange(1.0, 3.5, 0.5).tolist(),
+    'dendlen':['original','small'],
+    'dendno': [2,3],
+    'sploc': ['proximal','distal'],
+    'spcl': [0,1],
+    'spdcl': [0,1],
+}
+params = {
+    'inhibition_bias': [2.0],#np.arange(1.0, 3.5, 0.5).tolist(),
+    'dendlen':['small'],
+    'dendno': [1,2,3],
+    'sploc': ['proximal'],
+    'spcl': [1],
+    'spdcl': [1],
+    'learning_condition': [1,2,3,4],
+}
+'''
+#These are the params for the inhomogenous case.
+params = {
+    'inhibition_bias': [1.8],#np.arange(1.0, 3.5, 0.5).tolist(),
+    'dendlen':['small'],
+    'dendno': [3],
+    'learning_condition': [1,2,3,4],
+}
+
+analysis.run_for_all_parameters(
+    blah,
+    **{'auto_param_array': params}
+)
+
+df = pd.DataFrame(data)
+df['PA'] = [-1.0] * len(df.index)
+df['sparsness'] = [-1.0] * len(df.index)
+analysis.run_for_all_parameters(
+    analysis.query_and_add_pa_column,
+    df,
+    **{'auto_param_array': params}
+)
+analysis.run_for_all_parameters(
+    analysis.query_and_add_sparsness_column,
+    df,
+    **{'auto_param_array': params}
+)
+with pd.option_context('display.max_rows', None, 'display.max_columns',
+                       None):  # more options can be specified also
+    print(df)
+
+#sys.exit(0)
+# Plot:
+for index in range(df.shape[0]):
+    NWBfile = df.loc[index, 'NWBfile']
+    if NWBfile:
+        dendlen = df.loc[index, 'dendlen']
+        dendno = df.loc[index, 'dendno']
+        inhibition_bias = df.loc[index, 'inhibition_bias']
+        '''
+        spcl = df.loc[index, 'spcl']
+        spdcl = df.loc[index, 'spdcl']
+        sploc = df.loc[index, 'sploc']
+        '''
+        PA = df.loc[index, 'PA']
+        LC = df.loc[index, 'learning_condition']
+        trial_len = analysis.get_acquisition_parameters(
+            input_NWBfile=NWBfile,
+            requested_parameters=['trial_len']
+        )
+        delay_range = (20, int(trial_len / 50))
+        K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+            NWBfile_array=[NWBfile],
+            max_clusters=20,
+            custom_range=delay_range
+        )
+        fig = plt.figure()
+        plot_axes = fig.add_subplot(111)
+        try:
+            analysis.pcaL2(
+                NWBfile_array=[NWBfile],
+                custom_range=delay_range,
+                klabels=K_labels,
+                smooth=True,
+                plot_2d=True,
+                plot_stim_color=True,
+                plot_axes=plot_axes,
+            )
+        except ValueError:
+            pass
+
+        plt.savefig(f"SPInhom_Attr_{dendno}{dendlen}dend_"
+                    f"IB{inhibition_bias}_"
+                    f"PA{PA}_LC_{LC}_rw.png")
+        '''
+        plt.savefig(f"SP_Attr_{dendno}{dendlen}dend_spcl{int(spcl)}"
+                    f"_sploc{sploc}_IB{inhibition_bias}_"
+                    f"PA{PA}_LC_{LC}_rw.png")
+        '''
+sys.exit(0)
 
 #Previous file load was the prefix: t3d2, dendno: 4
 blah = \
