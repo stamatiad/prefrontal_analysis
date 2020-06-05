@@ -9,10 +9,10 @@ import pandas as pd
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
 sys.path.append("pydevd-pycharm.egg")
-DEBUG = False
+DEBUG = True
 if DEBUG:
     pydevd_pycharm.settrace(
-        '79.167.94.93',
+        '79.167.48.178',
         port=12345,
         stdoutToServer=True,
         stderrToServer=True
@@ -40,6 +40,7 @@ def load_synaptic_patterns(
         base_path,
         dendlen=None,
         dendno=None,
+        iters=50000,
         min_w=0,
         max_w=4
 ):
@@ -49,15 +50,15 @@ def load_synaptic_patterns(
 
     file = base_path.joinpath(
         f'patterns_dendlen_{dendlen}_dendno_{dendno}_minW_'
-        f'{min_w}_maxW_{max_w}_iters50000'
+        f'{min_w}_maxW_{max_w}_iters{iters}'
                               '.txt')
     with open(file, 'r') as fid:
         patterns = np.array(
             list(map(toFloats, fid.readlines()))
         )
 
-    depol_histo, *_ = np.histogram(patterns[:,15], np.arange(0,20,1))
-    depol_bins = np.digitize(patterns[:,15], np.arange(0,20,1))
+    depol_histo, *_ = np.histogram(patterns[:,15], np.arange(0,50,0.1))
+    depol_bins = np.digitize(patterns[:,15], np.arange(0,50,0.1))
     pid_mat = patterns[:,0:5]
     w_mat = patterns[:,5:10]
     dend_mat = patterns[:,10:15]
@@ -65,10 +66,12 @@ def load_synaptic_patterns(
     # Calculate expected values:
     #TODO: I have confused no of segments and no of synapses.
     nseg = 5
+    nsyn = 5
     nseg_step = 1/nseg
     segments = np.zeros((patterns.shape[0]*nseg*dendno, 2), dtype=float)
     # Get Weights pdf (uniform, but compute it nontheless):
-    weights_bins = np.arange(min_w, max_w + 2, 1.0)
+    new_min_w = np.max([0, min_w])
+    weights_bins = np.arange(new_min_w, max_w + 2, 1.0)
     w_histo, *_ = np.histogram(w_mat.flatten(), weights_bins)
     w_histo = np.divide(w_histo, patterns.shape[0] * nseg)
     for i, (PID_vals, W_vals, D_vals) in enumerate(zip(pid_mat, w_mat,
@@ -90,7 +93,7 @@ def load_synaptic_patterns(
                 W_vals[syn_idx == seg].sum()
             ]
     # Expected synapses per segment:
-    total_syn_bins = np.arange(min_w, np.ceil(5)+2 , 1.0)
+    total_syn_bins = np.arange(0, np.ceil(nsyn)+2 , 1.0)
     total_syn_histo, *_, = np.histogram(segments[:,0], total_syn_bins)
     total_syn_histo = np.divide(total_syn_histo, total_syn_histo.sum())
     E_syns = np.ceil(
@@ -98,7 +101,7 @@ def load_synaptic_patterns(
     )
     # Expected weight per segment
     total_w_max = segments[:,1].max()
-    total_w_bins = np.arange(min_w, np.ceil(total_w_max)+2 , 1.0)
+    total_w_bins = np.arange(new_min_w, np.ceil(total_w_max)+2 , 1.0)
     total_w_histo, *_, = np.histogram(segments[:,1], total_w_bins)
     total_w_histo = np.divide(total_w_histo, total_w_histo.sum())
     E_W = np.multiply(total_w_bins[:-1] + 0.5, total_w_histo).sum()
@@ -112,7 +115,7 @@ def load_synaptic_patterns(
             dendrites[i*dendno + dend, :] = [histo[dend]]
 
     # Expected synapses per dendrite:
-    syn_per_dend_bins = np.arange(0, 5+2, 1)
+    syn_per_dend_bins = np.arange(0, nsyn+2, 1)
     syn_per_dend_histo, *_, = np.histogram(dendrites[:,0], syn_per_dend_bins)
     syn_per_dend_histo = np.divide(syn_per_dend_histo, syn_per_dend_histo.sum())
     E_dends = np.ceil(
@@ -211,8 +214,10 @@ def load_synaptic_patterns(
         depols.append(depol_val)
         bins.append(bin_val)
 
-        histo, *_ = np.histogram(PID_vals, np.arange(0,1.2,0.2))
-        syn_idx = np.digitize(PID_vals, np.arange(0,1.2,0.2)) - 1
+        step = 1/nseg
+
+        histo, *_ = np.histogram(PID_vals, np.arange(0,1.0+step,step))
+        #syn_idx = np.digitize(PID_vals, np.arange(0,1.0+step,step)) - 1
 
         # calculate location bias (proximal, medial distal):
         if histo[:2].sum() > histo[3:].sum():
@@ -288,7 +293,7 @@ def visualize_vsoma():
     for i, file in enumerate(files):
         #sn = re.search('[0-9]*', str(file.name))
         sn = int(str(file.name)[6:11])
-        if sn == 267:
+        if sn == 507:
             with open(file, 'r') as fid:
                 vsoma = np.array(
                     list(map(toFloat, fid.readlines()))
@@ -303,6 +308,9 @@ def visualize_vsoma():
 if __name__ == "__main__":
     load_synaptic_patterns(
         base_path,
-        dendlen=150,
-        dendno=3
+        dendlen=30,
+        dendno=1,
+        iters=100000,
+        min_w=-10,
+        max_w=10
     )
