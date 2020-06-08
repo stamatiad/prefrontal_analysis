@@ -9,7 +9,7 @@ import pandas as pd
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
 sys.path.append("pydevd-pycharm.egg")
-DEBUG = True
+DEBUG = False
 if DEBUG:
     pydevd_pycharm.settrace(
         '79.167.48.178',
@@ -40,10 +40,26 @@ def load_synaptic_patterns(
         base_path,
         dendlen=None,
         dendno=None,
-        iters=50000,
-        min_w=0,
-        max_w=4
+        iters=100000,
+        min_w=-10,
+        max_w=10,
+        nseg=5,
+        nsyn=5,
+        max_depol_val=5
 ):
+    '''
+    TODO:
+    :param base_path:
+    :param dendlen:
+    :param dendno:
+    :param iters:
+    :param min_w:
+    :param max_w:
+    :param nseg:
+    :param nsyn:
+    :param max_depol_val: In mV. Filters the patterns by it.
+    :return:
+    '''
     if not base_path.is_dir():
         print("Dir of voltage files non existent!")
         return 1
@@ -65,8 +81,6 @@ def load_synaptic_patterns(
 
     # Calculate expected values:
     #TODO: I have confused no of segments and no of synapses.
-    nseg = 5
-    nsyn = 5
     nseg_step = 1/nseg
     segments = np.zeros((patterns.shape[0]*nseg*dendno, 2), dtype=float)
     # Get Weights pdf (uniform, but compute it nontheless):
@@ -208,6 +222,10 @@ def load_synaptic_patterns(
     dend_clusterings = []
     for PID_vals, W_vals, D_vals, depol_val, bin_val in zip(
             pid_mat, w_mat, dend_mat, patterns[:, 15], depol_bins):
+
+        if depol_val > max_depol_val:
+            continue
+
         PIDs.append(PID_vals)
         Ws.append(W_vals)
         Ds.append(D_vals)
@@ -219,37 +237,45 @@ def load_synaptic_patterns(
         histo, *_ = np.histogram(PID_vals, np.arange(0,1.0+step,step))
         #syn_idx = np.digitize(PID_vals, np.arange(0,1.0+step,step)) - 1
 
+        median_val = int(np.floor(nseg/2))
         # calculate location bias (proximal, medial distal):
-        if histo[:2].sum() > histo[3:].sum():
-            location = 'proximal'
-        elif histo[:2].sum() < histo[3:].sum():
-            location = 'distal'
+        # If only one segment this is close to the soma: thus proximal
+        if nseg == 1:
+            location ='proximal'
         else:
-            location = 'medial'
+            if histo[:median_val].sum() > histo[median_val+1:].sum():
+                location = 'proximal'
+            elif histo[:median_val].sum() < histo[median_val+1:].sum():
+                location = 'distal'
+            else:
+                location = 'medial'
         locations.append(location)
 
-        # calculate clustering bias (clustering or dispersed):
-        dend_pid_vals = PID_vals + D_vals
-        histo_dend_pid,*_ = np.histogram(
-            dend_pid_vals, np.arange(0,dendno+nseg_step,nseg_step)
-        )
-        syn_idx = np.digitize(
-            dend_pid_vals, np.arange(0,dendno+nseg_step,nseg_step)
-        ) - 1
-        # TODO: use expected value to calculate clustering.
-        # Definition of clustering: synapses stacked on same segment.
-        # The location where histo is > 2 (on syn_idx) must also have
-        # max weights per segment greater than expected value
-        max_w_per_seg = 0
-        for seg in range(nseg*dendno):
-            tmp_w = W_vals[np.where(syn_idx == seg)].sum()
-            if tmp_w > max_w_per_seg:
-                max_w_per_seg = tmp_w
-
-        if histo_dend_pid.max() > E_syns and max_w_per_seg > E_W:
+        if nseg == 1:
             clustering = True
         else:
-            clustering = False
+            # calculate clustering bias (clustering or dispersed):
+            dend_pid_vals = PID_vals + D_vals
+            histo_dend_pid,*_ = np.histogram(
+                dend_pid_vals, np.arange(0,dendno+nseg_step,nseg_step)
+            )
+            syn_idx = np.digitize(
+                dend_pid_vals, np.arange(0,dendno+nseg_step,nseg_step)
+            ) - 1
+            # TODO: use expected value to calculate clustering.
+            # Definition of clustering: synapses stacked on same segment.
+            # The location where histo is > 2 (on syn_idx) must also have
+            # max weights per segment greater than expected value
+            max_w_per_seg = 0
+            for seg in range(nseg*dendno):
+                tmp_w = W_vals[np.where(syn_idx == seg)].sum()
+                if tmp_w > max_w_per_seg:
+                    max_w_per_seg = tmp_w
+
+            if histo_dend_pid.max() > E_syns and max_w_per_seg > E_W:
+                clustering = True
+            else:
+                clustering = False
         clusterings.append(clustering)
 
         # TODO: use expected value to calculate dendritic clustering.
@@ -263,9 +289,6 @@ def load_synaptic_patterns(
             else:
                 dend_clust = False
         dend_clusterings.append(dend_clust)
-
-
-
 
     # Combine into a dataframe:
     df = pd.DataFrame({
@@ -293,24 +316,29 @@ def visualize_vsoma():
     for i, file in enumerate(files):
         #sn = re.search('[0-9]*', str(file.name))
         sn = int(str(file.name)[6:11])
-        if sn == 507:
+        if sn == 0:
             with open(file, 'r') as fid:
                 vsoma = np.array(
                     list(map(toFloat, fid.readlines()))
                 )
 
             fig, ax = plt.subplots()
-            ax.plot(vsoma)
+            ax.plot(vsoma[10:])
             plt.savefig(f"VSOMA_{sn}.png")
 
     print("TUTTO PRONTO!")
 
 if __name__ == "__main__":
+    visualize_vsoma()
+    sys.exit(0)
+
     load_synaptic_patterns(
         base_path,
         dendlen=30,
         dendno=1,
         iters=100000,
         min_w=-10,
-        max_w=10
+        max_w=10,
+        nseg=1,
+        max_depol_val=5
     )

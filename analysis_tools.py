@@ -466,7 +466,7 @@ def simulation_template_load_sp_ri(**kwargs):
              f"_SPLOC{kwargs['sploc']}"
              f"_SPCL{kwargs['spcl']}"
              f"_SPDCL{kwargs['spdcl']}"
-             f"_SPRW{kwargs['sprw']}"
+             f"_WR{kwargs['wr']}"
              f"_simdur{kwargs['sim_duration']}"
              f"{kwargs['postfix']}")
     return mystr
@@ -497,7 +497,7 @@ def simulation_template_save_sp_ri(**kwargs):
              f"_SPLOC{kwargs['sploc']}"
              f"_SPCL{kwargs['spcl']}"
              f"_SPDCL{kwargs['spdcl']}"
-             f"_SPRW{kwargs['sprw']}"
+             f"_WR{kwargs['wr']}"
              f"_simdur{kwargs['sim_duration']}"
              f"{kwargs['postfix']}")
     return mystr
@@ -525,7 +525,7 @@ def simulation_template_load_spi_ri(**kwargs):
              f"_AMPAb{kwargs['ampa_bias']:.3f}"
              f"_RI{kwargs['ri']}"
              f"_{experiment_config}"
-             f"_SPRW{kwargs['sprw']}"
+             f"_WR{kwargs['wr']}"
              f"_simdur{kwargs['sim_duration']}"
              f"{kwargs['postfix']}")
     return mystr
@@ -553,7 +553,7 @@ def simulation_template_save_spi_ri(**kwargs):
              f"_AMPAb{kwargs['ampa_bias']:.3f}"
              f"_RI{kwargs['ri']}"
              f"_{experiment_config}"
-             f"_SPRW{kwargs['sprw']}"
+             f"_WR{kwargs['wr']}"
              f"_simdur{kwargs['sim_duration']}"
              f"{kwargs['postfix']}")
     return mystr
@@ -1608,17 +1608,17 @@ def get_acquisition_parameters(input_NWBfile=None, requested_parameters=[],
     # trim it down i.e. I could have the description also in the spikes and
     # binned sections, rather than only in membrane_potential.
 
-    # Search NWB file for a description, containing the strtingified dict:
-    for k in input_NWBfile.acquisition.keys():
-        if k in input_NWBfile.acquisition:
-            nwbfile_description_d = \
-                eval(input_NWBfile.acquisition[k].description)
-        else:
-            raise ValueError('No description found in NWB!')
-
-    # TODO: this is a little bit problematic, as some of the parameters need
-    # to be computed in advance. So compute them first and then filter them:
     try:
+        # Search NWB file for a description, containing the strtingified dict:
+        for k in input_NWBfile.acquisition.keys():
+            if k in input_NWBfile.acquisition:
+                nwbfile_description_d = \
+                    eval(input_NWBfile.acquisition[k].description)
+            else:
+                raise ValueError('No description found in NWB!')
+
+        # TODO: this is a little bit problematic, as some of the parameters need
+        # to be computed in advance. So compute them first and then filter them:
         animal_model_id = nwbfile_description_d['animal_model']
         learning_condition_id = nwbfile_description_d['learning_condition']
         ncells = nwbfile_description_d['ncells']
@@ -1657,7 +1657,9 @@ def get_acquisition_parameters(input_NWBfile=None, requested_parameters=[],
         #else:
         #    return returned_parameters
     except Exception as e:
-        raise e
+        print(f"EXCEPTION! No NWB file! ({str(e)})")
+        #raise e
+        return None
 
 def calculate_stimulus_isi(NWBfile=None):
 
@@ -4968,14 +4970,14 @@ def query_and_add_attractors_len_column(dataframe, **kwargs):
             nwb_index
         ]['NWBfile'].values[0]
 
-        # Calculate for the grouped NWB files their number of attractors:
-        trial_len = get_acquisition_parameters(
-            input_NWBfile=NWBfile,
-            requested_parameters=['trial_len']
-        )
-        delay_range = (20, int(trial_len / 50))
-
         try:
+            # Calculate for the grouped NWB files their number of attractors:
+            trial_len = get_acquisition_parameters(
+                input_NWBfile=NWBfile,
+                requested_parameters=['trial_len']
+            )
+            delay_range = (20, int(trial_len / 50))
+
             K_star, * _ = determine_number_of_clusters(
                 NWBfile_array=[NWBfile],
                 max_clusters=20,
@@ -5022,10 +5024,8 @@ def query_and_add_sparsness_column(dataframe, **kwargs):
 
             # Now Write the number of attractors on 'attractors_len' on the dataframe.
             dataframe.loc[df_index, 'sparsness'] = overall_sparsness
-        except ValueError:
-            print("Skipping NWBfile with no valid trials.")
-        except AttributeError:
-            print("Skipping NWBfile with no valid trials.")
+        except Exception as e:
+            print(f"Skipping NWBfile with no valid trials. ({str(e)})")
 
 if __name__ == "__main__":
 

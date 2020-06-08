@@ -26,6 +26,7 @@ from functools import wraps
 from collections import OrderedDict
 import copy
 import time
+from sklearn import linear_model
 
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
@@ -69,8 +70,252 @@ data = []
 dcp_array = [25, 50, 75, 100]
 dcs_array = [0, 2, 4]
 
-# synaptic patterns load:
-blah = \
+# LOAD Homogeneous data:runs
+if True:
+    homogeneous_analysis = \
+        analysis.append_results_to_array(array=data)(
+            partial(analysis.load_nwb_from_neuron,
+                    glia_dir,
+                    excitation_bias=1.75,
+                    nmda_bias=6.0,
+                    sim_duration=5,
+                    prefix='sp',
+                    template_postfix='_sp_ri',
+                    connectivity_type='structured',
+                    ri=50,
+                    ntrials=200,
+                    reload_raw=False
+            )
+        )
+
+    params = {
+        'inhibition_bias': [2.0], #np.arange(1.0, 3.5, 0.5).tolist(),
+        'wr': [4], #np.arange(1,10,1).tolist(),
+        'dendlen':['small'],
+        'dendno': [2,3],
+        'sploc': ['proximal'],
+        'spcl': [ 1],
+        'spdcl': [ 1],
+        'learning_condition': [1,2,3,4,5],
+    }
+
+    analysis.run_for_all_parameters(
+        homogeneous_analysis,
+        **{'auto_param_array': params}
+    )
+
+    df = pd.DataFrame(data)
+    df['PA'] = [-1.0] * len(df.index)
+    df['sparsness'] = [-1.0] * len(df.index)
+    df['attractors_len'] = [-1.0] * len(df.index)
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_pa_column,
+        df,
+        **{'auto_param_array': params}
+    )
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_sparsness_column,
+        df,
+        **{'auto_param_array': params}
+    )
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_attractors_len_column,
+        df,
+        **{'auto_param_array': params}
+    )
+    with pd.option_context('display.max_rows', None, 'display.max_columns',
+                           None):  # more options can be specified also
+        print(df)
+
+    #sys.exit(0)
+
+    # Plot:
+    for index in range(df.shape[0]):
+        NWBfile = df.loc[index, 'NWBfile']
+        if NWBfile:
+            dendlen = df.loc[index, 'dendlen']
+            dendno = df.loc[index, 'dendno']
+            inhibition_bias = df.loc[index, 'inhibition_bias']
+            WR = df.loc[index, 'wr']
+            spcl = df.loc[index, 'spcl']
+            spdcl = df.loc[index, 'spdcl']
+            sploc = df.loc[index, 'sploc']
+            PA = df.loc[index, 'PA']
+            LC = df.loc[index, 'learning_condition']
+            trial_len = analysis.get_acquisition_parameters(
+                input_NWBfile=NWBfile,
+                requested_parameters=['trial_len']
+            )
+            delay_range = (20, int(trial_len / 50))
+            K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+                NWBfile_array=[NWBfile],
+                max_clusters=20,
+                custom_range=delay_range
+            )
+            fig = plt.figure()
+            plot_axes = fig.add_subplot(111)
+            try:
+                analysis.pcaL2(
+                    NWBfile_array=[NWBfile],
+                    custom_range=delay_range,
+                    klabels=K_labels,
+                    smooth=True,
+                    plot_2d=True,
+                    plot_stim_color=True,
+                    plot_axes=plot_axes,
+                )
+            except ValueError:
+                pass
+
+            '''
+            plt.savefig(f"SPInhom_Attr_{dendno}{dendlen}dend_"
+                        f"IB{inhibition_bias}_"
+                        f"PA{PA}_LC_{LC}_rw.png")
+            '''
+            plt.savefig(f"SP_Attr_{dendno}{dendlen}dend_spcl{int(spcl)}"
+                        f"_sploc{sploc}_IB{inhibition_bias}_"
+                        f"PA{PA}_LC_{LC}_WR{WR}.png")
+    sys.exit(0)
+
+    # This is a simple boxplot with each case:
+    # It is not very informative about the specific relations of
+    # dependent / independent variables.
+    case_l = [
+        {'dendlen': 'small'},
+        {'dendlen': 'original'},
+        {'spcl': 0, 'spdcl': 0},
+        {'spcl': 1, 'spdcl': 1},
+        {'sploc': 'proximal'},
+        {'sploc': 'distal'},
+    ]
+    case_data = []
+    case_label = []
+    for case in case_l:
+        nwb_index = (df[list(case)] == pd.Series(case)).all(axis=1)
+        attr_len = df.loc[nwb_index, 'attractors_len'].values.tolist()
+        case_data.append(attr_len)
+        case_label.append(
+            f"{next(iter(case.keys()))}:"
+            f"{next(iter(case.values()))}"
+        )
+
+    fig = plt.figure()
+    plot_axes = fig.add_subplot(111)
+    plot_axes.boxplot(case_data)
+    plot_axes.set_xticklabels(case_label, rotation=45, fontsize=8)
+    fig.tight_layout()
+    plt.savefig(f"TEST_small_cases.png")
+
+    # THis is the detailed/individual cases
+    case_l = [
+        [
+            {'dendlen': 'small', 'dendno': 2, 'inhibition_bias':2.0,
+             'spcl': 0, 'spdcl': 0, 'sploc': 'proximal'},
+            {'dendlen': 'small', 'dendno': 3, 'inhibition_bias': 2.0,
+             'spcl': 0, 'spdcl': 0, 'sploc': 'proximal'},
+            {'dendlen': 'original', 'dendno': 2, 'inhibition_bias': 2.0,
+             'spcl': 0, 'spdcl': 0, 'sploc': 'proximal'},
+            {'dendlen': 'original', 'dendno': 3, 'inhibition_bias': 2.0,
+             'spcl': 0, 'spdcl': 0, 'sploc': 'proximal'},
+        ],
+        [
+            {'dendlen': 'small', 'dendno': 2, 'inhibition_bias': 1.8,
+             'spcl': 0, 'spdcl': 0, 'sploc': 'distal'},
+            {'dendlen': 'small', 'dendno': 3, 'inhibition_bias': 2.0,
+             'spcl': 0, 'spdcl': 0, 'sploc': 'distal'},
+            {'dendlen': 'original', 'dendno': 2, 'inhibition_bias': 2.0,
+             'spcl': 0, 'spdcl': 0, 'sploc': 'distal'},
+            {'dendlen': 'original', 'dendno': 3, 'inhibition_bias': 1.8,
+             'spcl': 0, 'spdcl': 0, 'sploc': 'distal'},
+        ],
+        [
+            {'dendlen': 'small', 'dendno': 2, 'inhibition_bias': 2.0,
+             'spcl': 1, 'spdcl': 1, 'sploc': 'proximal'},
+            {'dendlen': 'small', 'dendno': 3, 'inhibition_bias': 2.0,
+             'spcl': 1, 'spdcl': 1, 'sploc': 'proximal'},
+            {'dendlen': 'original', 'dendno': 2, 'inhibition_bias': 2.0,
+             'spcl': 1, 'spdcl': 1, 'sploc': 'proximal'},
+            {'dendlen': 'original', 'dendno': 3, 'inhibition_bias': 2.0,
+             'spcl': 1, 'spdcl': 1, 'sploc': 'proximal'},
+        ],
+        [
+            {'dendlen': 'small', 'dendno': 2, 'inhibition_bias': 2.0,
+             'spcl': 1, 'spdcl': 1, 'sploc': 'distal'},
+            {'dendlen': 'small', 'dendno': 3, 'inhibition_bias': 2.0,
+             'spcl': 1, 'spdcl': 1, 'sploc': 'distal'},
+            {'dendlen': 'original', 'dendno': 2, 'inhibition_bias': 2.0,
+             'spcl': 1, 'spdcl': 1, 'sploc': 'distal'},
+            {'dendlen': 'original', 'dendno': 3, 'inhibition_bias': 2.0,
+             'spcl': 1, 'spdcl': 1, 'sploc': 'distal'},
+        ],
+    ]
+    case_data = []
+    for i, subcases in enumerate(case_l):
+        case_data.append([])
+        for case in subcases:
+            nwb_index = (df[list(case)] == pd.Series(case)).all(axis=1)
+            attr_len = df.loc[nwb_index, 'attractors_len'].values.tolist()
+            case_data[i].append(attr_len[0])
+
+    fig = plt.figure()
+    plot_axes = fig.add_subplot(111)
+
+    x_labels = ['small, 2dend', 'small, 3dend', 'original, 2dend', 'original, '
+                                                                 '3dend']
+    bar_labels = ['proximal, no cluster', 'distal, no cluster',
+                  'proximal, cluster', 'distal, cluster']
+    fill_arr = [False, False, True, True]
+    x = np.arange(len(x_labels))  # the label locations
+    width = 0.5  # the width of the bars
+
+    color_map = cm.get_cmap('Set1')
+    colors = color_map(np.linspace(0,1,9))
+    for i in range(4):
+        _ = plot_axes.bar(x + i*(width / 4), case_data[i], width/4,
+                     label=bar_labels[i], fill=fill_arr[i],
+                          edgecolor=colors[i%2], facecolor=colors[i%2])
+
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    plot_axes.set_ylabel('# of attractors')
+    plot_axes.set_title('Attractors by dendritic configuration')
+    plot_axes.set_xticks(x)
+    plot_axes.set_xticklabels(x_labels, rotation=45, fontsize=14)
+    plot_axes.legend()
+    fig.tight_layout()
+    plt.savefig(f"BAR_all_cases.png")
+
+    # This is my attempt to a multiple linear regression analysis:
+    # This might be nonlinear, I don't really know...
+    proper_df = df[df['NWBfile'].notnull()]
+    independent_var_dt =  proper_df\
+            .drop('attractors_len', 1)\
+            .drop('NWBfile', 1)\
+            .drop('inhibition_bias', 1)\
+            .drop('spdcl', 1) \
+            .drop('PA', 1) \
+            .drop('sparsness', 1)
+    independent_var_dt['dendlen'] = \
+        independent_var_dt['dendlen'].replace('small',0)
+    independent_var_dt['dendlen'] = \
+        independent_var_dt['dendlen'].replace('original',1)
+    independent_var_dt['sploc'] = \
+        independent_var_dt['sploc'].replace('proximal',0)
+    independent_var_dt['sploc'] = \
+        independent_var_dt['sploc'].replace('distal',1)
+    dependent_var_df = pd.DataFrame(
+        proper_df.attractors_len, columns=["attractors_len"]
+    )
+    lm = linear_model.LinearRegression()
+    model = lm.fit(
+        independent_var_dt,dependent_var_df["attractors_len"]
+    )
+    print(model.coef_)
+
+    sys.exit(0)
+
+
+# This is the inhomogeneous case:
+inhomogeneous_analysis = \
     analysis.append_results_to_array(array=data)(
         partial(analysis.load_nwb_from_neuron,
                 glia_dir,
@@ -82,7 +327,7 @@ blah = \
                 connectivity_type='structured',
                 ri=50,
                 ntrials=500,
-                sprw=1,
+                wr=1,
                 reload_raw=False
                 )
     )
@@ -110,11 +355,11 @@ params = {
     'inhibition_bias': [1.8],#np.arange(1.0, 3.5, 0.5).tolist(),
     'dendlen':['small'],
     'dendno': [3],
-    'learning_condition': [1,2,3,4],
+    'learning_condition': list(range(1,11))
 }
 
 analysis.run_for_all_parameters(
-    blah,
+    inhomogeneous_analysis,
     **{'auto_param_array': params}
 )
 
@@ -135,7 +380,7 @@ with pd.option_context('display.max_rows', None, 'display.max_columns',
                        None):  # more options can be specified also
     print(df)
 
-#sys.exit(0)
+sys.exit(0)
 # Plot:
 for index in range(df.shape[0]):
     NWBfile = df.loc[index, 'NWBfile']

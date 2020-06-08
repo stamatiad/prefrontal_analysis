@@ -10,7 +10,7 @@ import network_tools as nt
 from itertools import chain
 from load_synaptic_patterns import load_synaptic_patterns
 import analysis_tools as analysis
-from functools import partial
+from functools import partial, wraps
 
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
@@ -24,6 +24,34 @@ if DEBUG:
         stderrToServer=True
     )
 # ===%% -------------- %%===
+
+def reproducible_weights_rng(class_method):
+    '''
+    Reproducible weights matrix realization
+    :param class_method:
+    :return:
+    '''
+    @wraps(class_method)
+    def reset_rng(*args, **kwargs):
+        # this translates to self.serial_no ar runtime
+        np.random.seed(kwargs['weights_realization'])
+        print(f'{class_method.__name__} reseeds the RNG.')
+        return class_method(*args, **kwargs)
+    return reset_rng
+
+def reproducible_learning_condition_rng(class_method):
+    '''
+    Reproducible weights matrix realization
+    :param class_method:
+    :return:
+    '''
+    @wraps(class_method)
+    def reset_rng(*args, **kwargs):
+        # this translates to self.serial_no ar runtime
+        np.random.seed(kwargs['learning_condition'])
+        print(f'{class_method.__name__} reseeds the RNG.')
+        return class_method(*args, **kwargs)
+    return reset_rng
 
 def get_connectivity_matrix_pc():
     # load connectivity matrix:
@@ -45,12 +73,14 @@ def get_connectivity_matrix_pc():
     return connectivity_mat[:250, :250]
 
 
-@analysis.with_reproducible_rng
+@reproducible_weights_rng
 def create_weights(**kwargs):
     # THis is optional and more of a verbose error:
-    if not kwargs.get('serial_no', None):
+    weights_realization = kwargs.get('weights_realization', None)
+    if not weights_realization:
         raise ValueError('You have not provided serial_no for RNG '
-                         'reproducibility!')
+                     'reproducibility!')
+
 
     connectivity_mat_pc = get_connectivity_matrix_pc()
     tmpnet = nt.Network(serial_no=1, pc_no=250, pv_no=83)
@@ -70,6 +100,16 @@ def create_weights(**kwargs):
 
     # Clip larger weights (I saw some):
     weights_mat_pc[weights_mat_pc > 10] = 10
+
+    #plot the resulting distribution as debugging:
+    # Check similarity with Brunel's data (figure 3D).
+    ncn_bins = ncn.astype(int)
+    max_somatic_depol = 10
+    hist, *_ = np.histogram(weights_mat_pc,
+                            np.arange(0, max_somatic_depol, 0.1))
+    fig, ax = plt.subplots(1, 1)
+    ax.plot(np.arange(0, hist.size), hist / hist.sum(), 'b-', lw=1)
+    fig.savefig(f"WR{weights_realization}_Brunel_Fig3d.png")
 
     if False:
         # validate the weights with respect to common neighbors:
@@ -109,15 +149,17 @@ def create_weights(**kwargs):
     return weights_mat_pc
 
 
-@analysis.with_reproducible_rng
+@reproducible_learning_condition_rng
 def generate_patterns(
         export_path=Path.cwd(), weights_mat_pc=None,
         inhomogeneous=False, **kwargs
 ):
     # THis is optional and more of a verbose error:
-    if not kwargs.get('serial_no', None):
+    learning_condition = kwargs.get('learning_condition', None)
+    weights_realization = kwargs.get('weights_realization', None)
+    if not kwargs.get('learning_condition', None):
         raise ValueError('You have not provided serial_no for RNG '
-                         'reproducibility!')
+                     'reproducibility!')
 
     # Read NEURON pattern data and classify it in a dataframe:
     patterns_path = Path(r'/home/cluster/stefanos/Documents/GitHub/prefrontal-micro'
@@ -125,17 +167,23 @@ def generate_patterns(
 
     dendlen = kwargs['dendlen']
     dendno = kwargs['dendno']
+    nseg = int(dendlen/30.0)
     patterns_df = load_synaptic_patterns(
         patterns_path,
         dendlen=dendlen,
-        dendno=dendno
+        dendno=dendno,
+        nseg=nseg,
+        nsyn=5,
+        max_depol_val=5
     )
 
     # Change to inhomogeneous patterns if not found!
     synapse_location = kwargs.get('synapse_location', None)
     synapse_clustering = kwargs.get('synapse_clustering', None)
     dendritic_clustering = kwargs.get('dendritic_clustering', None)
-    if synapse_location and synapse_clustering and dendritic_clustering:
+    if (synapse_location is not None) and \
+        (synapse_clustering is not None) and \
+        (dendritic_clustering is not None):
         filters = {
             'synapse_location':synapse_location,
             'synapse_clustering': synapse_clustering,
@@ -160,6 +208,11 @@ def generate_patterns(
     # value of somatic depolarization and assign 'uniform' patterns that
     # comply to the filters, yet are homegeneous in their depolarization.
     depol_vals = case_df['somatic_depolarization_bin'].values
+
+    # TODO: compute the histogram to be sure that there are enough
+    #  patterns for each depolarization bin:
+    histo = np.histogram(depol_vals, np.arange(0,20,1))
+
     connectivity_mat_pc = get_connectivity_matrix_pc()
     depol_bin_mat_pc = np.zeros(connectivity_mat_pc.shape)
     if weights_mat_pc is None:
@@ -190,7 +243,7 @@ def generate_patterns(
     for m in range(250):
         for n in range(250):
             if connectivity_mat_pc[m, n]:
-                query_bin = depol_bin_mat_pc[m, n]
+                query_bin = int(depol_bin_mat_pc[m, n])
                 # sample the depol values:
                 subdf_idx, *_ = np.where(depol_vals == query_bin)
                 if subdf_idx.size == 0:
@@ -224,23 +277,23 @@ def generate_patterns(
 
         # create a depol matrix, with 'bin' values:
 
-        depol_bin_mat_pc[connectivity_mat_pc] = 1
+        #depol_bin_mat_pc[connectivity_mat_pc] = 1
 
     #TODO: There is no serial number here: only learning condition i.e.
     # different reshuffling of the synapses. But I use serial_no, in order to
     # reuse the RNG wrapper. The SN is defined from the network I read/import.
+    #CORRECTED I consideer the RW case as the only one
     if inhomogeneous:
         filename = export_path.joinpath(
-            f"sp_inhomogeneous_real_weights_{int(real_weights)}_"
-            f"dendno_{dendno}_"
-            f"dendlen_{dendlen}_LC{kwargs['serial_no']}.hoc"
+            f"sp_inhomogeneous_dendno_{dendno}_dendlen_{dendlen}_"
+            f"wr_{int(weights_realization)}_LC{learning_condition}.hoc"
         )
     else:
         filename = export_path.joinpath(
             f"sp_synloc_{synapse_location}_syncl_"
             f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
-            f"real_weights_{int(real_weights)}_dendno_{dendno}_"
-            f"dendlen_{dendlen}_LC{kwargs['serial_no']}.hoc"
+            f"dendno_{dendno}_dendlen_{dendlen}_"
+            f"wr_{int(weights_realization)}_LC{learning_condition}_old.hoc"
         )
 
     with open(filename, 'w') as f:
@@ -292,49 +345,38 @@ if __name__ == '__main__':
     #weights_mat_pc2 = create_weights(serial_no=1)
     #print('done')
 
-    # Old parameters. Filters are provided inside the params now for flexibility
-    '''
-    filters = {
-        'synapse_location': 'distal',
-        'synapse_clustering': False,
-        'dendritic_clustering': False
-    }
-
-    generate_patterns(
-        filters,
-        #weights_mat_pc=create_weights(serial_no=serial_no),
-        serial_no=serial_no,
-        dendlen=150,
-        dendno=3
-    )
-    '''
-    # I need to make this explicit in my code.
-    # This is the synaptic pattern learning condition.
     #I will keep the same weights matrix instantiation as this is a different
     # level of inhomogeneity
-    serial_no = 8
-    gp = partial(
-        generate_patterns,
-        weights_mat_pc=create_weights(serial_no=1),
-        serial_no=serial_no,
-    )
+    # I will keep this 1 for now:
+    for weights_realization in range(4, 5):
+        # This is the synaptic pattern learning condition.
+        for learning_condition in range(1, 11):
 
-    '''
-    params = {
-        'synapse_location': ['proximal'],
-        'synapse_clustering': [ True],
-        'dendritic_clustering': [ True],
-        'dendlen': [30],
-        'dendno': [2,3]
-    }
-    '''
-    # Inhomogeneous patterns!
-    params = {
-        'dendlen': [30, 150],
-        'dendno': [2,3]
-    }
+            gp = partial(
+                generate_patterns,
+                weights_mat_pc=create_weights(
+                    weights_realization=weights_realization
+                ),
+                learning_condition=learning_condition,
+                weights_realization = weights_realization
+            )
 
-    analysis.run_for_all_parameters(
-        gp,
-        **{'auto_param_array': params}
-    )
+            params = {
+                'synapse_location': ['proximal'],
+                'synapse_clustering': [True],
+                'dendritic_clustering': [True],
+                'dendlen': [30],
+                'dendno': [1,2,3]
+            }
+            '''
+            # Inhomogeneous patterns!
+            params = {
+                'dendlen': [30, 150],
+                'dendno': [2,3]
+            }
+            '''
+
+            analysis.run_for_all_parameters(
+                gp,
+                **{'auto_param_array': params}
+            )
