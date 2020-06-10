@@ -15,7 +15,7 @@ from functools import partial, wraps
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
 sys.path.append("pydevd-pycharm.egg")
-DEBUG = False
+DEBUG = True
 if DEBUG:
     pydevd_pycharm.settrace(
         '79.167.48.178',
@@ -81,6 +81,7 @@ def create_weights(**kwargs):
         raise ValueError('You have not provided serial_no for RNG '
                      'reproducibility!')
 
+    max_weight = 5 #mV
 
     connectivity_mat_pc = get_connectivity_matrix_pc()
     tmpnet = nt.Network(serial_no=1, pc_no=250, pv_no=83)
@@ -99,6 +100,8 @@ def create_weights(**kwargs):
             weights_mat_pc[i, j] = invg_array[int(ncn[i, j])].rvs()
 
     # Clip larger weights (I saw some):
+    hist, *_ = np.histogram(weights_mat_pc,
+                            np.arange(0, 100, 0.1))
     weights_mat_pc[weights_mat_pc > 10] = 10
 
     #plot the resulting distribution as debugging:
@@ -112,6 +115,13 @@ def create_weights(**kwargs):
     fig.savefig(f"WR{weights_realization}_Brunel_Fig3d.png")
 
     if False:
+        #Plot all distributions from where we sample:
+        fig, ax = plt.subplots(1, 1)
+        for k in range(int(ncn.max() + 1)):
+            x = np.linspace(0, max_somatic_depol, num=1000)
+            ax.plot(x, invg_array[k].pdf(x), 'k-', lw=1)
+        fig.savefig(f"WR{weights_realization}_validation_alldists.png")
+
         # validate the weights with respect to common neighbors:
         # This can be bypassed, by adding 1 and converting to int:
         # ncn_bins = np.digitize(ncn, np.arange(0,ncn.max()+1,1))
@@ -130,7 +140,7 @@ def create_weights(**kwargs):
                 fig, ax = plt.subplots(1, 1)
                 ax.plot(x, invg_array[k].pdf(x), 'k-', lw=1)
                 ax.plot(x[:999], hist / hist.sum(), 'b-', lw=1)
-                fig.savefig(f"weights_valid_{k}.png")
+                fig.savefig(f"WR{weights_realization}_validation_{k}.png")
             except Exception:
                 # suck it up
                 pass
@@ -168,13 +178,20 @@ def generate_patterns(
     dendlen = kwargs['dendlen']
     dendno = kwargs['dendno']
     nseg = int(dendlen/30.0)
+    iters = kwargs.get('iters',100000)
+    max_depol_val = kwargs.get('max_depol_val',5)
+    min_w = kwargs.get('min_w', -10)
+    max_w = kwargs.get('max_w',10)
     patterns_df = load_synaptic_patterns(
         patterns_path,
         dendlen=dendlen,
         dendno=dendno,
         nseg=nseg,
         nsyn=5,
-        max_depol_val=5
+        max_depol_val=max_depol_val,
+        min_w=min_w,
+        max_w=max_w,
+        iters=iters
     )
 
     # Change to inhomogeneous patterns if not found!
@@ -207,11 +224,11 @@ def generate_patterns(
     # If I provide a weights matrix for PCs use it. Else, choose a medial
     # value of somatic depolarization and assign 'uniform' patterns that
     # comply to the filters, yet are homegeneous in their depolarization.
-    depol_vals = case_df['somatic_depolarization_bin'].values
+    depol_bins = case_df['somatic_depolarization_bin'].values
 
     # TODO: compute the histogram to be sure that there are enough
     #  patterns for each depolarization bin:
-    histo = np.histogram(depol_vals, np.arange(0,20,1))
+    histo = np.histogram(depol_bins, np.arange(0,80,1))
 
     connectivity_mat_pc = get_connectivity_matrix_pc()
     depol_bin_mat_pc = np.zeros(connectivity_mat_pc.shape)
@@ -220,10 +237,10 @@ def generate_patterns(
         #TODO: this depol bin should be GLOBAL to the df, not after the
         # filters! So the same patterns file, generates consistent no-real
         # weights across realizations.
-        depol_vals_global = patterns_df['somatic_depolarization_bin'].values
+        depol_bins_global = patterns_df['somatic_depolarization_bin'].values
         histo, *_ = np.histogram(
-            depol_vals_global,
-            np.arange(0, int(depol_vals_global.max()) + 1, 1)
+            depol_bins_global,
+            np.arange(0, int(depol_bins_global.max()) + 1, 1)
         )
         depol_bin = np.argmax(histo) + 1
 
@@ -233,8 +250,8 @@ def generate_patterns(
     else:
         real_weights = True
         # Scale down the weights as per the depolarization maximum:
-        scaled_weights = (weights_mat_pc * depol_vals.max()) / \
-                          weights_mat_pc.max()
+        scaled_weights = (weights_mat_pc / weights_mat_pc.max()) * \
+        depol_bins.max()
         scaled_weights = connectivity_mat_pc.astype(int) * scaled_weights
         depol_bin_mat_pc = np.ceil(scaled_weights)
 
@@ -245,18 +262,18 @@ def generate_patterns(
             if connectivity_mat_pc[m, n]:
                 query_bin = int(depol_bin_mat_pc[m, n])
                 # sample the depol values:
-                subdf_idx, *_ = np.where(depol_vals == query_bin)
+                subdf_idx, *_ = np.where(depol_bins == query_bin)
                 if subdf_idx.size == 0:
                     # Logically this will be some border case. Print the
                     # query bin, just in case, to see what's happening.
                     print(f"No depol val for query bin: {query_bin}")
-                    if np.abs(query_bin - depol_vals.min()) < np.abs(query_bin -
-                                                         depol_vals.max()):
-                        query_bin = depol_vals.min()
+                    if np.abs(query_bin - depol_bins.min()) < np.abs(query_bin -
+                                                         depol_bins.max()):
+                        query_bin = depol_bins.min()
                     else:
-                        query_bin = depol_vals.max()
+                        query_bin = depol_bins.max()
                     print(f'\t replaced with {query_bin}')
-                    subdf_idx, *_ = np.where(depol_vals == query_bin)
+                    subdf_idx, *_ = np.where(depol_bins == query_bin)
                 max_ind = subdf_idx.size -1
                 if max_ind == 0:
                     print(f"Single pattern meets criteria! {m},{n}, "
@@ -293,7 +310,7 @@ def generate_patterns(
             f"sp_synloc_{synapse_location}_syncl_"
             f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
             f"dendno_{dendno}_dendlen_{dendlen}_"
-            f"wr_{int(weights_realization)}_LC{learning_condition}_old.hoc"
+            f"wr_{int(weights_realization)}_LC{learning_condition}_norm.hoc"
         )
 
     with open(filename, 'w') as f:
@@ -348,9 +365,9 @@ if __name__ == '__main__':
     #I will keep the same weights matrix instantiation as this is a different
     # level of inhomogeneity
     # I will keep this 1 for now:
-    for weights_realization in range(4, 5):
+    for weights_realization in range(1, 2):
         # This is the synaptic pattern learning condition.
-        for learning_condition in range(1, 11):
+        for learning_condition in range(1, 2):
 
             gp = partial(
                 generate_patterns,
@@ -358,7 +375,13 @@ if __name__ == '__main__':
                     weights_realization=weights_realization
                 ),
                 learning_condition=learning_condition,
-                weights_realization = weights_realization
+                weights_realization = weights_realization,
+                min_w=-10,
+                max_w=10,
+                iters=100000,
+                dendlen=30,
+                dendno=1,
+                max_depol_val=5
             )
 
             params = {
@@ -366,7 +389,7 @@ if __name__ == '__main__':
                 'synapse_clustering': [True],
                 'dendritic_clustering': [True],
                 'dendlen': [30],
-                'dendno': [1,2,3]
+                'dendno': [1]
             }
             '''
             # Inhomogeneous patterns!

@@ -79,24 +79,24 @@ if True:
                     excitation_bias=1.75,
                     nmda_bias=6.0,
                     sim_duration=5,
-                    prefix='sp',
+                    prefix='spold',
                     template_postfix='_sp_ri',
                     connectivity_type='structured',
                     ri=50,
-                    ntrials=200,
+                    ntrials=500,
                     reload_raw=False
             )
         )
 
     params = {
         'inhibition_bias': [2.0], #np.arange(1.0, 3.5, 0.5).tolist(),
-        'wr': [4], #np.arange(1,10,1).tolist(),
+        'wr': [1], #np.arange(1,10,1).tolist(),
         'dendlen':['small'],
-        'dendno': [2,3],
+        'dendno': [1],
         'sploc': ['proximal'],
         'spcl': [ 1],
         'spdcl': [ 1],
-        'learning_condition': [1,2,3,4,5],
+        'learning_condition': [1],
     }
 
     analysis.run_for_all_parameters(
@@ -172,7 +172,7 @@ if True:
                         f"IB{inhibition_bias}_"
                         f"PA{PA}_LC_{LC}_rw.png")
             '''
-            plt.savefig(f"SP_Attr_{dendno}{dendlen}dend_spcl{int(spcl)}"
+            plt.savefig(f"SPold_Attr_{dendno}{dendlen}dend_spcl{int(spcl)}"
                         f"_sploc{sploc}_IB{inhibition_bias}_"
                         f"PA{PA}_LC_{LC}_WR{WR}.png")
     sys.exit(0)
