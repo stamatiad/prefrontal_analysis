@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import sys
-from scipy.stats import invgamma
+from scipy.stats import invgamma, lognorm
 from pathlib import Path
 import pandas as pd
 import network_tools as nt
@@ -18,7 +18,7 @@ sys.path.append("pydevd-pycharm.egg")
 DEBUG = True
 if DEBUG:
     pydevd_pycharm.settrace(
-        '79.167.48.178',
+        '79.167.89.118',
         port=12345,
         stdoutToServer=True,
         stderrToServer=True
@@ -78,7 +78,7 @@ def create_weights(**kwargs):
     # THis is optional and more of a verbose error:
     weights_realization = kwargs.get('weights_realization', None)
     if not weights_realization:
-        raise ValueError('You have not provided serial_no for RNG '
+        raise ValueError('You have not provided weights_realization for RNG '
                      'reproducibility!')
 
     max_weight = 5 #mV
@@ -88,37 +88,52 @@ def create_weights(**kwargs):
     ncn = tmpnet.common_neighbors(connectivity_mat_pc)
 
     b = 1.0
-    a_step = 2.0 / (ncn.max() + 1)
+    a_step = 10.0 / (ncn.max() + 1.0)
     invg_array = []
     for i in range(int(ncn.max() + 1)):
-        print(f"alpha = {2.0 - (i * a_step)}")
-        invg_array.append(invgamma(2.0 - (i * a_step), scale=b))
+        print(f"alpha = {10.0 - (i * a_step)}")
+        #invg_array.append(invgamma(2.0 - (i * a_step), scale=b))
+        # Replace with lognormal and check resulting overall distribution:
+        invg_array.append(lognorm(10.0 - (i * a_step)))
+    '''
+    fig, ax = plt.subplots(1, 1)
+    for k in range(int(ncn.max() + 1)):
+        x = np.linspace(0, max_weight, num=1000)
+        ax.plot(x, invg_array[k].pdf(x), 'k-', lw=1)
+    fig.savefig(f"WR{weights_realization}_validation_alldists.png")
+    '''
 
     weights_mat_pc = np.zeros(ncn.shape)
     for i in range(250):
         for j in range(250):
-            weights_mat_pc[i, j] = invg_array[int(ncn[i, j])].rvs()
+            if connectivity_mat_pc[i,j]:
+                tmp = invg_array[int(ncn[i, j])].rvs()
+                while tmp > max_weight:
+                    tmp = invg_array[int(ncn[i, j])].rvs()
+                weights_mat_pc[i, j] = tmp
 
-    # Clip larger weights (I saw some):
-    hist, *_ = np.histogram(weights_mat_pc,
-                            np.arange(0, 100, 0.1))
-    weights_mat_pc[weights_mat_pc > 10] = 10
 
     #plot the resulting distribution as debugging:
     # Check similarity with Brunel's data (figure 3D).
     ncn_bins = ncn.astype(int)
-    max_somatic_depol = 10
-    hist, *_ = np.histogram(weights_mat_pc,
-                            np.arange(0, max_somatic_depol, 0.1))
-    fig, ax = plt.subplots(1, 1)
-    ax.plot(np.arange(0, hist.size), hist / hist.sum(), 'b-', lw=1)
-    fig.savefig(f"WR{weights_realization}_Brunel_Fig3d.png")
+    #TODO: You are not checking the weights histo correctly! you need only
+    # unique weights (pairs)!
+    # YET: the reciprocal pairs have non symmetric weights! Which is correct,
+    # but I must note that.
+    hist, *_ = np.histogram(np.triu(weights_mat_pc,k=1),
+                            np.arange(0.1, max_weight, 0.1))
+    #hist[0] = hist[0] - (250*250/2 + 250)
+    #fig, ax = plt.subplots(1, 1)
+    #ax.plot(np.arange(0, hist.size), hist / hist.sum(), 'b-', lw=1)
+    #fig.savefig(f"WR{weights_realization}_Brunel_Fig3d_updated.png")
+    blah = np.where(np.triu(weights_mat_pc,k=1))
+    print(f" Mean weight {weights_mat_pc[blah].mean()}")
 
     if False:
         #Plot all distributions from where we sample:
         fig, ax = plt.subplots(1, 1)
         for k in range(int(ncn.max() + 1)):
-            x = np.linspace(0, max_somatic_depol, num=1000)
+            x = np.linspace(0, max_weight, num=1000)
             ax.plot(x, invg_array[k].pdf(x), 'k-', lw=1)
         fig.savefig(f"WR{weights_realization}_validation_alldists.png")
 
@@ -238,21 +253,26 @@ def generate_patterns(
         # filters! So the same patterns file, generates consistent no-real
         # weights across realizations.
         depol_bins_global = patterns_df['somatic_depolarization_bin'].values
+        # I decide the average depolarization that I want by the average
+        # depolarization weight that I get from the weights distribution.
+        average_weight = 2.5
+        '''
         histo, *_ = np.histogram(
             depol_bins_global,
             np.arange(0, int(depol_bins_global.max()) + 1, 1)
         )
         depol_bin = np.argmax(histo) + 1
+        '''
 
         # create a depol matrix, with 'bin' values:
-        depol_bin_mat_pc[connectivity_mat_pc] = depol_bin
+        depol_bin_mat_pc[connectivity_mat_pc] = np.around(average_weight*10)
 
     else:
         real_weights = True
         # Scale down the weights as per the depolarization maximum:
         scaled_weights = (weights_mat_pc / weights_mat_pc.max()) * \
         depol_bins.max()
-        scaled_weights = connectivity_mat_pc.astype(int) * scaled_weights
+        #scaled_weights = connectivity_mat_pc.astype(int) * scaled_weights
         depol_bin_mat_pc = np.ceil(scaled_weights)
 
     # sample the patterns:
@@ -283,13 +303,13 @@ def generate_patterns(
                     # THis is equivalent to a random permutation
                     rnd_idx = np.random.randint(0, max_ind)
                 case_idx = case_df.index.values
-                pair_PID, pair_W, pair_D = case_df.loc[
+                pair_PID, pair_W, pair_D,soma_depol = case_df.loc[
                     case_idx[subdf_idx[rnd_idx]]
-                ][['PID','W', 'D']]
+                ][['PID','W', 'D', 'somatic_depolarization']]
                 # Do a check that no PIDs are border cases 0/1:
                 pair_PID[pair_PID==0] = 0.1
                 pair_PID[pair_PID==1] = 0.99
-                pair_d[(m,n)] = (pair_PID, pair_W, pair_D)
+                pair_d[(m,n)] = (pair_PID, pair_W, pair_D, soma_depol)
 
 
         # create a depol matrix, with 'bin' values:
@@ -303,15 +323,25 @@ def generate_patterns(
     if inhomogeneous:
         filename = export_path.joinpath(
             f"sp_inhomogeneous_dendno_{dendno}_dendlen_{dendlen}_"
-            f"wr_{int(weights_realization)}_LC{learning_condition}.hoc"
+            f"wr_{int(weights_realization)}_LC{learning_condition}_lognorm.hoc"
         )
     else:
-        filename = export_path.joinpath(
-            f"sp_synloc_{synapse_location}_syncl_"
-            f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
-            f"dendno_{dendno}_dendlen_{dendlen}_"
-            f"wr_{int(weights_realization)}_LC{learning_condition}_norm.hoc"
-        )
+        # If no weights mat provided, use the uniform case: normalized
+        # postsynaptic depolarizations for each pair.
+        if weights_mat_pc is None:
+            filename = export_path.joinpath(
+                f"sp_synloc_{synapse_location}_syncl_"
+                f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
+                f"dendno_{dendno}_dendlen_{dendlen}_"
+                f"uniform_LC{learning_condition}_lognorm.hoc"
+            )
+        else:
+            filename = export_path.joinpath(
+                f"sp_synloc_{synapse_location}_syncl_"
+                f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
+                f"dendno_{dendno}_dendlen_{dendlen}_"
+                f"wr_{int(weights_realization)}_LC{learning_condition}_lognorm.hoc"
+            )
 
     with open(filename, 'w') as f:
         f.write(
@@ -338,7 +368,7 @@ def generate_patterns(
                         f'(5)\n'
                     )
 
-                    PID, W, D = pair_d[(afferent,efferent)]
+                    PID, W, D, *_ = pair_d[(afferent,efferent)]
                     for i, (pid, w, d) in enumerate(zip(PID,W, D)):
                         f.write(
                             f'synaptic_patterns[{afferent}][{efferent}].x[{i}]'
@@ -358,24 +388,17 @@ def generate_patterns(
 
 if __name__ == '__main__':
     # test weights matrix RNG:
-    #weights_mat_pc = create_weights(serial_no=1)
-    #weights_mat_pc2 = create_weights(serial_no=1)
-    #print('done')
 
-    #I will keep the same weights matrix instantiation as this is a different
-    # level of inhomogeneity
-    # I will keep this 1 for now:
-    for weights_realization in range(1, 2):
+    if True:
+        # This is the uniform case:
+        # I will keep the same weights matrix instantiation as this is a different
+        # level of inhomogeneity
         # This is the synaptic pattern learning condition.
-        for learning_condition in range(1, 2):
-
+        for learning_condition in range(1, 6):
             gp = partial(
                 generate_patterns,
-                weights_mat_pc=create_weights(
-                    weights_realization=weights_realization
-                ),
+                weights_mat_pc=None,
                 learning_condition=learning_condition,
-                weights_realization = weights_realization,
                 min_w=-10,
                 max_w=10,
                 iters=100000,
@@ -385,21 +408,57 @@ if __name__ == '__main__':
             )
 
             params = {
-                'synapse_location': ['proximal'],
-                'synapse_clustering': [True],
-                'dendritic_clustering': [True],
-                'dendlen': [30],
-                'dendno': [1]
+                'synapse_location': ['distal'],
+                'synapse_clustering': [False],
+                'dendritic_clustering': [False],
+                'dendlen': [150],
+                'dendno': [3]
             }
-            '''
-            # Inhomogeneous patterns!
-            params = {
-                'dendlen': [30, 150],
-                'dendno': [2,3]
-            }
-            '''
 
             analysis.run_for_all_parameters(
                 gp,
                 **{'auto_param_array': params}
             )
+
+    else:
+        #I will keep the same weights matrix instantiation as this is a different
+        # level of inhomogeneity
+        # I will keep this 1 for now:
+        for weights_realization in range(1, 2):
+            # This is the synaptic pattern learning condition.
+            for learning_condition in range(1, 6):
+
+                gp = partial(
+                    generate_patterns,
+                    weights_mat_pc=create_weights(
+                        weights_realization=weights_realization
+                    ),
+                    learning_condition=learning_condition,
+                    weights_realization = weights_realization,
+                    min_w=-10,
+                    max_w=10,
+                    iters=100000,
+                    dendlen=30,
+                    dendno=1,
+                    max_depol_val=5
+                )
+
+                params = {
+                    'synapse_location': ['proximal', 'distal'],
+                    'synapse_clustering': [True, False],
+                    'dendritic_clustering': [True, False],
+                    'dendlen': [150],
+                    'dendno': [2,3]
+                }
+                '''
+                # Inhomogeneous patterns!
+                params = {
+                    'dendlen': [30, 150],
+                    'dendno': [2,3]
+                }
+                '''
+
+                analysis.run_for_all_parameters(
+                    gp,
+                    **{'auto_param_array': params}
+                )

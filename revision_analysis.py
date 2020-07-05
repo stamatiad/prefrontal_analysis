@@ -31,10 +31,10 @@ from sklearn import linear_model
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
 sys.path.append("pydevd-pycharm.egg")
-DEBUG = False
+DEBUG = True
 if DEBUG:
     pydevd_pycharm.settrace(
-        '79.167.48.178',
+        '79.167.89.118',
         port=12345,
         stdoutToServer=True,
         stderrToServer=True
@@ -70,44 +70,46 @@ data = []
 dcp_array = [25, 50, 75, 100]
 dcs_array = [0, 2, 4]
 
-# LOAD Homogeneous data:runs
+# Fast load the uniform (normalized effective weight) runs:
 if True:
-    homogeneous_analysis = \
+    homogeneous_analysis_u = \
         analysis.append_results_to_array(array=data)(
             partial(analysis.load_nwb_from_neuron,
                     glia_dir,
                     excitation_bias=1.75,
                     nmda_bias=6.0,
                     sim_duration=5,
-                    prefix='spold',
-                    template_postfix='_sp_ri',
+                    prefix='splogn',
+                    template_postfix='_spu_ri',
                     connectivity_type='structured',
                     ri=50,
                     ntrials=500,
                     reload_raw=False
-            )
+                    )
         )
 
     params = {
-        'inhibition_bias': [2.0], #np.arange(1.0, 3.5, 0.5).tolist(),
-        'wr': [1], #np.arange(1,10,1).tolist(),
-        'dendlen':['small'],
-        'dendno': [1],
-        'sploc': ['proximal'],
-        'spcl': [ 1],
-        'spdcl': [ 1],
-        'learning_condition': [1],
+        'inhibition_bias': [ 1.5,2.0],#np.arange(1.0, 3.5, 0.5).tolist(),
+        'dendlen':['original'],
+        'dendno': [2,3],
+        'sploc': ['distal','proximal'],
+        'spcl': [ 0,1],
+        'spdcl': [ 0,1],
+        'learning_condition': [1,2],
     }
 
     analysis.run_for_all_parameters(
-        homogeneous_analysis,
+        homogeneous_analysis_u,
         **{'auto_param_array': params}
     )
 
     df = pd.DataFrame(data)
+    #valid_sims = np.where(df.NWBfile.values)[0].tolist()
+    #df = df.iloc[valid_sims,:]
     df['PA'] = [-1.0] * len(df.index)
     df['sparsness'] = [-1.0] * len(df.index)
     df['attractors_len'] = [-1.0] * len(df.index)
+
     analysis.run_for_all_parameters(
         analysis.query_and_add_pa_column,
         df,
@@ -118,8 +120,173 @@ if True:
         df,
         **{'auto_param_array': params}
     )
+    with pd.option_context('display.max_rows', None, 'display.max_columns',
+                           None):  # more options can be specified also
+        print(df)
+    #sys.exit(0)
+
+    # Plot:
+    for index in range(df.shape[0]):
+        NWBfile = df.loc[index, 'NWBfile']
+        if NWBfile:
+            print(f'Index is: {index}')
+            dendlen = df.loc[index, 'dendlen']
+            dendno = df.loc[index, 'dendno']
+            inhibition_bias = df.loc[index, 'inhibition_bias']
+            spcl = df.loc[index, 'spcl']
+            spdcl = df.loc[index, 'spdcl']
+            sploc = df.loc[index, 'sploc']
+            PA = df.loc[index, 'PA']
+            LC = df.loc[index, 'learning_condition']
+            trial_len = analysis.get_acquisition_parameters(
+                input_NWBfile=NWBfile,
+                requested_parameters=['trial_len']
+            )
+            delay_range = (20, int(trial_len / 50))
+            try:
+                K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+                    NWBfile_array=[NWBfile],
+                    max_clusters=20,
+                    custom_range=delay_range
+                )
+            except ValueError:
+                K_labels = None
+            try:
+                fig = plt.figure()
+                plot_axes = fig.add_subplot(111)
+                analysis.pcaL2(
+                    NWBfile_array=[NWBfile],
+                    custom_range=delay_range,
+                    klabels=K_labels,
+                    smooth=True,
+                    plot_2d=True,
+                    plot_stim_color=True,
+                    plot_axes=plot_axes,
+                )
+            except ValueError:
+                pass
+
+            plt.savefig(f"SPlogn_Attr_{dendno}{dendlen}dend_spcl{int(spcl)}"
+                        f"_sploc{sploc}_IB{inhibition_bias}_"
+                        f"PA{PA}_LC_{LC}_U.png")
+
+
+#Fast load the Weights realization effect only (distribution):
+if False:
+    homogeneous_analysis_wr = \
+        analysis.append_results_to_array(array=data)(
+            partial(analysis.load_nwb_from_neuron,
+                    glia_dir,
+                    excitation_bias=1.75,
+                    nmda_bias=6.0,
+                    sim_duration=5,
+                    prefix='splogn',
+                    template_postfix='_sp_ri',
+                    connectivity_type='structured',
+                    ri=50,
+                    ntrials=300,
+                    reload_raw=False
+                    )
+        )
+
+    params2 = {
+        'inhibition_bias': [1.5],#np.arange(1.0, 3.5, 0.5).tolist(),
+        'wr': np.arange(1,10,1).tolist(),
+        'dendlen':['small'],
+        'dendno': [1],
+        'sploc': ['proximal'],
+        'spcl': [ 1],
+        'spdcl': [ 1],
+        'learning_condition': [1],
+    }
+
+    analysis.run_for_all_parameters(
+        homogeneous_analysis_wr,
+        **{'auto_param_array': params2}
+    )
+
+    df = pd.DataFrame(data)
+    df['PA'] = [-1.0] * len(df.index)
+    df['sparsness'] = [-1.0] * len(df.index)
+    df['attractors_len'] = [-1.0] * len(df.index)
+
+
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_pa_column,
+        df,
+        **{'auto_param_array': params2}
+    )
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_sparsness_column,
+        df,
+        **{'auto_param_array': params2}
+    )
     analysis.run_for_all_parameters(
         analysis.query_and_add_attractors_len_column,
+        df,
+        **{'auto_param_array': params2}
+    )
+    with pd.option_context('display.max_rows', None, 'display.max_columns',
+                           None):  # more options can be specified also
+        print(df)
+
+    # Create a boxplot for all the WR:
+    fig1, ax1 = plt.subplots()
+    ax1.set_title('Basic Plot')
+    ax1.boxplot(df.attractors_len.values)
+    plt.savefig(f"All_WR_attractors.png")
+
+    sys.exit(0)
+
+
+# LOAD Homogeneous data:runs
+if False:
+    homogeneous_analysis = \
+        analysis.append_results_to_array(array=data)(
+            partial(analysis.load_nwb_from_neuron,
+                    glia_dir,
+                    excitation_bias=1.75,
+                    nmda_bias=6.0,
+                    sim_duration=5,
+                    prefix='splogn',
+                    template_postfix='_sp_ri',
+                    connectivity_type='structured',
+                    ri=50,
+                    ntrials=500,
+                    reload_raw=False
+            )
+        )
+
+    params = {
+        'inhibition_bias': [1.5],#np.arange(1.0, 3.5, 0.5).tolist(),
+        'wr': [9],#np.arange(1,10,1).tolist(),
+        'dendlen':['original'],
+        'dendno': [2,3],
+        'sploc': ['proximal','distal'],
+        'spcl': [ 0,1],
+        'spdcl': [ 0,1],
+        'learning_condition': [1,2,3,4,5],
+    }
+
+    analysis.run_for_all_parameters(
+        homogeneous_analysis,
+        **{'auto_param_array': params}
+    )
+
+    df = pd.DataFrame(data)
+    #valid_sims = np.where(df.NWBfile.values)[0].tolist()
+    #df = df.iloc[valid_sims,:]
+    df['PA'] = [-1.0] * len(df.index)
+    df['sparsness'] = [-1.0] * len(df.index)
+    df['attractors_len'] = [-1.0] * len(df.index)
+
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_pa_column,
+        df,
+        **{'auto_param_array': params}
+    )
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_sparsness_column,
         df,
         **{'auto_param_array': params}
     )
@@ -128,6 +295,27 @@ if True:
         print(df)
 
     #sys.exit(0)
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_attractors_len_column,
+        df,
+        **{'auto_param_array': params}
+    )
+
+    #Check if there are missing trials:
+    trials = []
+    for index in range(df.shape[0]):
+        NWBfile = df.loc[index, 'NWBfile']
+        if NWBfile:
+            trials_arr = list(analysis.nwb_iter(NWBfile.trials))
+            tmp = [
+                tup[2]/5000.0
+                for tup in trials_arr
+            ]
+            trials.append(tmp)
+        else:
+            trials.append([])
+
+    trials_df = pd.DataFrame({ 'trials': trials })
 
     # Plot:
     for index in range(df.shape[0]):
@@ -172,7 +360,7 @@ if True:
                         f"IB{inhibition_bias}_"
                         f"PA{PA}_LC_{LC}_rw.png")
             '''
-            plt.savefig(f"SPold_Attr_{dendno}{dendlen}dend_spcl{int(spcl)}"
+            plt.savefig(f"SPlogn_Attr_{dendno}{dendlen}dend_spcl{int(spcl)}"
                         f"_sploc{sploc}_IB{inhibition_bias}_"
                         f"PA{PA}_LC_{LC}_WR{WR}.png")
     sys.exit(0)
@@ -205,6 +393,71 @@ if True:
     plot_axes.set_xticklabels(case_label, rotation=45, fontsize=8)
     fig.tight_layout()
     plt.savefig(f"TEST_small_cases.png")
+
+    # THis is the detailed/individual cases
+    case_l = [
+        [
+            {'dendlen': 'original', 'dendno': 2, 'inhibition_bias': 1.5,
+             'spcl': 0, 'spdcl': 0, 'sploc': 'proximal'},
+            {'dendlen': 'original', 'dendno': 3, 'inhibition_bias': 1.5,
+             'spcl': 0, 'spdcl': 0, 'sploc': 'proximal'},
+        ],
+        [
+            {'dendlen': 'original', 'dendno': 2, 'inhibition_bias': 1.5,
+             'spcl': 0, 'spdcl': 0, 'sploc': 'distal'},
+            {'dendlen': 'original', 'dendno': 3, 'inhibition_bias': 1.5,
+             'spcl': 0, 'spdcl': 0, 'sploc': 'distal'},
+        ],
+        [
+            {'dendlen': 'original', 'dendno': 2, 'inhibition_bias': 1.5,
+             'spcl': 1, 'spdcl': 1, 'sploc': 'proximal'},
+            {'dendlen': 'original', 'dendno': 3, 'inhibition_bias': 1.5,
+             'spcl': 1, 'spdcl': 1, 'sploc': 'proximal'},
+            # That was inhibias 2.0 for the WR4 case
+        ],
+        [
+            {'dendlen': 'original', 'dendno': 2, 'inhibition_bias': 1.5,
+             'spcl': 1, 'spdcl': 1, 'sploc': 'distal'},
+            {'dendlen': 'original', 'dendno': 3, 'inhibition_bias': 1.5,
+             'spcl': 1, 'spdcl': 1, 'sploc': 'distal'},
+        ],
+    ]
+    case_data = []
+    for i, subcases in enumerate(case_l):
+        case_data.append([])
+        for case in subcases:
+            nwb_index = (df[list(case)] == pd.Series(case)).all(axis=1)
+            attr_len = df.loc[nwb_index, 'attractors_len'].values.tolist()
+            case_data[i].append(attr_len[0])
+
+    fig = plt.figure()
+    plot_axes = fig.add_subplot(111)
+
+    x_labels = ['original, 2dend','original, 3dend']
+    bar_labels = ['proximal, no cluster', 'distal, no cluster',
+                  'proximal, cluster', 'distal, cluster']
+    fill_arr = [False, False, True, True]
+    x = np.arange(len(x_labels))  # the label locations
+    width = 0.5  # the width of the bars
+
+    color_map = cm.get_cmap('Set1')
+    colors = color_map(np.linspace(0,1,9))
+    for i in range(4):
+        _ = plot_axes.bar(x + i*(width / 4), case_data[i], width/4,
+                          label=bar_labels[i], fill=fill_arr[i],
+                          edgecolor=colors[i%2], facecolor=colors[i%2])
+
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    plot_axes.set_ylabel('# of attractors')
+    plot_axes.set_title('Attractors by dendritic configuration')
+    plot_axes.set_xticks(x)
+    plot_axes.set_xticklabels(x_labels, rotation=45, fontsize=14)
+    plot_axes.legend()
+    fig.tight_layout()
+    plt.savefig(f"Logn_semifinal_WR9_data.png")
+    #plt.savefig(f"Logn_2den_only.png")
+    # This is just the 2 dend case:
+
 
     # THis is the detailed/individual cases
     case_l = [

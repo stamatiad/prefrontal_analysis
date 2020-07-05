@@ -502,6 +502,69 @@ def simulation_template_save_sp_ri(**kwargs):
              f"{kwargs['postfix']}")
     return mystr
 
+def simulation_template_load_spu_ri(**kwargs):
+    # One must either provide the full experiment config string OR the
+    # individual parameters:
+    experiment_config = kwargs.get('experiment_config', None)
+    if not experiment_config:
+        try:
+            dendlen = kwargs['dendlen']
+            dendno = kwargs['dendno']
+            connectivity_type = kwargs['connectivity_type']
+            experiment_config = f'{connectivity_type}_{dendno}{dendlen}dend'
+        except KeyError:
+            print(f'You forgot to provide experiment configuration parameters!')
+    mystr = (f"{kwargs['prefix']}"
+             f"SN{kwargs['animal_model']}"
+             f"LC{kwargs['learning_condition']}"
+             f"TR{kwargs['trial']}"
+             f"_EB{kwargs['excitation_bias']:.3f}"
+             f"_IB{kwargs['inhibition_bias']:.3f}"
+             f"_GBF2.000"
+             f"_NMDAb{kwargs['nmda_bias']:.3f}"
+             f"_AMPAb{kwargs['ampa_bias']:.3f}"
+             f"_RI{kwargs['ri']}"
+             f"_{experiment_config}"
+             f"_SPLOC{kwargs['sploc']}"
+             f"_SPCL{kwargs['spcl']}"
+             f"_SPDCL{kwargs['spdcl']}"
+             f"_U"
+             f"_simdur{kwargs['sim_duration']}"
+             f"{kwargs['postfix']}")
+    return mystr
+
+def simulation_template_save_spu_ri(**kwargs):
+    # One must either provide the full experiment config string OR the
+    # individual parameters:
+    experiment_config = kwargs.get('experiment_config', None)
+    if not experiment_config:
+        try:
+            dendlen = kwargs['dendlen']
+            dendno = kwargs['dendno']
+            connectivity_type = kwargs['connectivity_type']
+            experiment_config = f'{connectivity_type}_{dendno}{dendlen}dend'
+        except KeyError:
+            print(f'You forgot to provide experiment configuration parameters!')
+    mystr = (f"{kwargs['prefix']}"
+             f"SN{kwargs['animal_model']}"
+             f"LC{kwargs['learning_condition']}"
+             f"TR{kwargs['trial_first']}-{kwargs['trial_last']}"
+             f"_EB{kwargs['excitation_bias']:.3f}"
+             f"_IB{kwargs['inhibition_bias']:.3f}"
+             f"_GBF2.000"
+             f"_NMDAb{kwargs['nmda_bias']:.3f}"
+             f"_AMPAb{kwargs['ampa_bias']:.3f}"
+             f"_RI{kwargs['ri']}"
+             f"_{experiment_config}"
+             f"_SPLOC{kwargs['sploc']}"
+             f"_SPCL{kwargs['spcl']}"
+             f"_SPDCL{kwargs['spdcl']}"
+             f"_U"
+             f"_simdur{kwargs['sim_duration']}"
+             f"{kwargs['postfix']}")
+    return mystr
+
+
 def simulation_template_load_spi_ri(**kwargs):
     # One must either provide the full experiment config string OR the
     # individual parameters:
@@ -576,6 +639,8 @@ simulation_templates = {
     "save_iid_ri": simulation_template_save_iid_ri,
     "load_sp_ri": simulation_template_load_sp_ri,
     "save_sp_ri": simulation_template_save_sp_ri,
+    "load_spu_ri": simulation_template_load_spu_ri,
+    "save_spu_ri": simulation_template_save_spu_ri,
     "load_spi_ri": simulation_template_load_spi_ri,
     "save_spi_ri": simulation_template_save_spi_ri,
 }
@@ -2839,6 +2904,13 @@ def pcaL2(
     #eigenval_diff = np.abs(np.diff(norm_eigenvals))
     #L = np.nonzero(np.greater(eigenval_diff, 0.02))[0].size
     L = np.nonzero(np.greater(latent, 1.0))[0].size
+    if L == 0:
+        if plot_2d or plot_3d:
+            # assuming that user wants a plot only, continue:
+            L = 2
+            print('No eigenvalue larger that 1! Plotting with L=2.')
+        else:
+            raise ValueError('No eigenvalue larger that 1!')
 
     print(f'L found to be: {L}')
     # Reshape PCA results into separate trials for plotting.
@@ -4933,17 +5005,20 @@ def query_and_add_pa_column(dataframe, **kwargs):
         except ValueError:
             print('Multiple dataframe rows correspond to this query! PA '
                   'values will be wrong! Exiting...')
-    df_index = nwb_index.values.astype(int).nonzero()[0][0]
-    # Get the corresponding NWB file:
-    NWBfile_array = dataframe[
-        nwb_index
-    ]['NWBfile'].values.tolist()
-    if NWBfile_array[0] is not None:
-        # Get NWB's trials PA:
-        trials_pa = list(nwb_iter(NWBfile_array[0].trials[
-                                               'persistent_activity']))
-        # Save back to dataframe the PA percentage:
-        dataframe.at[df_index, 'PA'] = np.array(trials_pa).astype(int).mean()
+    try:
+        df_index = nwb_index.values.astype(int).nonzero()[0][0]
+        # Get the corresponding NWB file:
+        NWBfile_array = dataframe[
+            nwb_index
+        ]['NWBfile'].values.tolist()
+        if NWBfile_array[0] is not None:
+            # Get NWB's trials PA:
+            trials_pa = list(nwb_iter(NWBfile_array[0].trials[
+                                                   'persistent_activity']))
+            # Save back to dataframe the PA percentage:
+            dataframe.at[df_index, 'PA'] = np.array(trials_pa).astype(int).mean()
+    except Exception:
+        print(f'Parameters were not found on dataframe! \n \t {kwargs}')
 
 def query_and_add_attractors_len_column(dataframe, **kwargs):
     '''
@@ -4961,33 +5036,36 @@ def query_and_add_attractors_len_column(dataframe, **kwargs):
 
     # Get the index of the NWB files that equal the given parameters:
     nwb_index = (dataframe[list(kwargs)] == pd.Series(kwargs)).all(axis=1)
-    df_index = nwb_index.values.astype(int).nonzero()[0]
+    try:
+        df_index = nwb_index.values.astype(int).nonzero()[0]
 
-    # If entries in the dataframe exist:
-    if df_index.size == 1:
-        # Get the corresponding NWB file:
-        NWBfile = dataframe[
-            nwb_index
-        ]['NWBfile'].values[0]
+        # If entries in the dataframe exist:
+        if df_index.size == 1:
+            # Get the corresponding NWB file:
+            NWBfile = dataframe[
+                nwb_index
+            ]['NWBfile'].values[0]
 
-        try:
-            # Calculate for the grouped NWB files their number of attractors:
-            trial_len = get_acquisition_parameters(
-                input_NWBfile=NWBfile,
-                requested_parameters=['trial_len']
-            )
-            delay_range = (20, int(trial_len / 50))
+            try:
+                # Calculate for the grouped NWB files their number of attractors:
+                trial_len = get_acquisition_parameters(
+                    input_NWBfile=NWBfile,
+                    requested_parameters=['trial_len']
+                )
+                delay_range = (20, int(trial_len / 50))
 
-            K_star, * _ = determine_number_of_clusters(
-                NWBfile_array=[NWBfile],
-                max_clusters=20,
-                custom_range=delay_range
-            )
+                K_star, * _ = determine_number_of_clusters(
+                    NWBfile_array=[NWBfile],
+                    max_clusters=20,
+                    custom_range=delay_range
+                )
 
-            # Now Write the number of attractors on 'attractors_len' on the dataframe.
-            dataframe.loc[df_index, 'attractors_len'] = K_star
-        except Exception:
-            print("Skipping NWBfile with no valid trials.")
+                # Now Write the number of attractors on 'attractors_len' on the dataframe.
+                dataframe.loc[df_index, 'attractors_len'] = K_star
+            except Exception:
+                print("Skipping NWBfile with no valid trials.")
+    except Exception:
+        print(f'Parameters were not found on dataframe! \n \t {kwargs}')
 
 
 def query_and_add_sparsness_column(dataframe, **kwargs):
@@ -4999,33 +5077,36 @@ def query_and_add_sparsness_column(dataframe, **kwargs):
 
     # Get the index of the NWB files that equal the given parameters:
     nwb_index = (dataframe[list(kwargs)] == pd.Series(kwargs)).all(axis=1)
-    df_index = nwb_index.values.astype(int).nonzero()[0]
+    try:
+        df_index = nwb_index.values.astype(int).nonzero()[0]
 
-    # If entries in the dataframe exist:
-    if df_index.size == 1:
-        # Get the corresponding NWB file:
-        NWBfile = dataframe[
-            nwb_index
-        ]['NWBfile'].values[0]
+        # If entries in the dataframe exist:
+        if df_index.size == 1:
+            # Get the corresponding NWB file:
+            NWBfile = dataframe[
+                nwb_index
+            ]['NWBfile'].values[0]
 
-        overall_sparsness = -1.0
-        try:
-            # Calculate for the grouped NWB files their number of attractors:
-            trial_len = get_acquisition_parameters(
-                input_NWBfile=NWBfile,
-                requested_parameters=['trial_len']
-            )
-            delay_range = (20, int(trial_len / 50))
+            overall_sparsness = -1.0
+            try:
+                # Calculate for the grouped NWB files their number of attractors:
+                trial_len = get_acquisition_parameters(
+                    input_NWBfile=NWBfile,
+                    requested_parameters=['trial_len']
+                )
+                delay_range = (20, int(trial_len / 50))
 
-            overall_sparsness = sparsness(
-                NWBfile=NWBfile,
-                custom_range=delay_range
-            )
+                overall_sparsness = sparsness(
+                    NWBfile=NWBfile,
+                    custom_range=delay_range
+                )
 
-            # Now Write the number of attractors on 'attractors_len' on the dataframe.
-            dataframe.loc[df_index, 'sparsness'] = overall_sparsness
-        except Exception as e:
-            print(f"Skipping NWBfile with no valid trials. ({str(e)})")
+                # Now Write the number of attractors on 'attractors_len' on the dataframe.
+                dataframe.loc[df_index, 'sparsness'] = overall_sparsness
+            except Exception as e:
+                print(f"Skipping NWBfile with no valid trials. ({str(e)})")
+    except Exception:
+        print(f'Parameters were not found on dataframe! \n \t {kwargs}')
 
 if __name__ == "__main__":
 
