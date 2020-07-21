@@ -177,7 +177,7 @@ def create_weights(**kwargs):
 @reproducible_learning_condition_rng
 def generate_patterns(
         export_path=Path.cwd(), weights_mat_pc=None,
-        inhomogeneous=False, **kwargs
+        inhomogeneous=False, export2file=True, **kwargs
 ):
     # THis is optional and more of a verbose error:
     learning_condition = kwargs.get('learning_condition', None)
@@ -197,8 +197,10 @@ def generate_patterns(
     max_depol_val = kwargs.get('max_depol_val',5)
     min_w = kwargs.get('min_w', -10)
     max_w = kwargs.get('max_w',10)
+    postfix = kwargs.get('postfix','')
     patterns_df = load_synaptic_patterns(
         patterns_path,
+        new_methodology=True,
         dendlen=dendlen,
         dendno=dendno,
         nseg=nseg,
@@ -206,7 +208,8 @@ def generate_patterns(
         max_depol_val=max_depol_val,
         min_w=min_w,
         max_w=max_w,
-        iters=iters
+        iters=iters,
+        postfix=postfix
     )
 
     # Change to inhomogeneous patterns if not found!
@@ -228,6 +231,21 @@ def generate_patterns(
     else:
         inhomogeneous = True
         case_df = patterns_df
+
+    # OTHER DEBUG CODE:
+    #TODO: make sure that it works!
+    W = case_df['W']
+    blah = []
+    for i in range(W.shape[0]):
+        if np.where(W[i])[0].size > 3:
+            blah.append(i)
+    #histo, *_ = np.histogram(blah, np.arange(0, 7))
+    #histo = histo / histo.sum()
+    #Keep only the synaptic patterns with 4 or 5 synapses in total:
+    case_df2 = case_df.iloc[blah]
+    histo, *_ = np.histogram(case_df2['somatic_depolarization_bin'].values,
+                             np.arange(0, 51))
+    histo = histo / histo.sum()
 
     # Generate NEURON arrays for each PC cell containing PID and W of each synapse:
     # This file will be addressible/identifiable by the filters above and used
@@ -277,6 +295,10 @@ def generate_patterns(
 
     # sample the patterns:
     pair_d = {}
+    sampled_indices = []
+    # For the dataframe, if you choose to export it:
+    SRCs=[]
+    TRGs=[]
     for m in range(250):
         for n in range(250):
             if connectivity_mat_pc[m, n]:
@@ -303,85 +325,122 @@ def generate_patterns(
                     # THis is equivalent to a random permutation
                     rnd_idx = np.random.randint(0, max_ind)
                 case_idx = case_df.index.values
+                sampled_indices.append(case_idx[subdf_idx[rnd_idx]])
                 pair_PID, pair_W, pair_D,soma_depol = case_df.loc[
                     case_idx[subdf_idx[rnd_idx]]
                 ][['PID','W', 'D', 'somatic_depolarization']]
                 # Do a check that no PIDs are border cases 0/1:
+                #THIS IS DONE ON load_synaptic_patterns():
                 pair_PID[pair_PID==0] = 0.1
                 pair_PID[pair_PID==1] = 0.99
                 pair_d[(m,n)] = (pair_PID, pair_W, pair_D, soma_depol)
+                # for the dataframe:
+                SRCs.append(m)
+                TRGs.append(n)
 
 
         # create a depol matrix, with 'bin' values:
 
         #depol_bin_mat_pc[connectivity_mat_pc] = 1
 
-    #TODO: There is no serial number here: only learning condition i.e.
-    # different reshuffling of the synapses. But I use serial_no, in order to
-    # reuse the RNG wrapper. The SN is defined from the network I read/import.
-    #CORRECTED I consideer the RW case as the only one
-    if inhomogeneous:
-        filename = export_path.joinpath(
-            f"sp_inhomogeneous_dendno_{dendno}_dendlen_{dendlen}_"
-            f"wr_{int(weights_realization)}_LC{learning_condition}_lognorm.hoc"
+    if DEBUG:
+        #DEBUG: mine the statistics of the dend attributes to see which of them
+        # produces what no of atractors.
+        # 1) distal proximal (real, not what I report).
+        new_patterns_df = load_synaptic_patterns(
+            patterns_path,
+            dendlen=dendlen,
+            dendno=dendno,
+            nseg=nseg,
+            nsyn=5,
+            max_depol_val=max_depol_val,
+            min_w=min_w,
+            max_w=max_w,
+            iters=iters,
+            new_methodology=True
         )
-    else:
-        # If no weights mat provided, use the uniform case: normalized
-        # postsynaptic depolarizations for each pair.
-        if weights_mat_pc is None:
+        dendpatt_df = case_df.loc[sampled_indices]
+        new_dendpatt_df = new_patterns_df.loc[sampled_indices]
+
+        # 2) Is there any dendritic clustering, and if yes, how much
+
+        # 3) What happens in the network.
+
+
+    if export2file:
+        #TODO: There is no serial number here: only learning condition i.e.
+        # different reshuffling of the synapses. But I use serial_no, in order to
+        # reuse the RNG wrapper. The SN is defined from the network I read/import.
+        #CORRECTED I consideer the RW case as the only one
+        if inhomogeneous:
             filename = export_path.joinpath(
-                f"sp_synloc_{synapse_location}_syncl_"
-                f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
-                f"dendno_{dendno}_dendlen_{dendlen}_"
-                f"uniform_LC{learning_condition}_lognorm.hoc"
-            )
-        else:
-            filename = export_path.joinpath(
-                f"sp_synloc_{synapse_location}_syncl_"
-                f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
-                f"dendno_{dendno}_dendlen_{dendlen}_"
+                f"sp_inhomogeneous_dendno_{dendno}_dendlen_{dendlen}_"
                 f"wr_{int(weights_realization)}_LC{learning_condition}_lognorm.hoc"
             )
+        else:
+            # If no weights mat provided, use the uniform case: normalized
+            # postsynaptic depolarizations for each pair.
+            if weights_mat_pc is None:
+                filename = export_path.joinpath(
+                    f"sp_synloc_{synapse_location}_syncl_"
+                    f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
+                    f"dendno_{dendno}_dendlen_{dendlen}_"
+                    f"uniform_LC{learning_condition}_lognorm2.hoc"
+                )
+            else:
+                filename = export_path.joinpath(
+                    f"sp_synloc_{synapse_location}_syncl_"
+                    f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
+                    f"dendno_{dendno}_dendlen_{dendlen}_"
+                    f"wr_{int(weights_realization)}_LC"
+                    f"{learning_condition}_lognorm2.hoc"
+                )
 
-    with open(filename, 'w') as f:
-        f.write(
-            f'// This HOC file was generated with generate_patterns python '
-            f'module.\n')
-        f.write(f'objref synaptic_patterns[250][250]\n')
-        f.write(f'objref synaptic_weights[250][250]\n')
-        f.write(f'objref synaptic_dends[250][250]\n')
+        with open(filename, 'w') as f:
+            f.write(
+                f'// This HOC file was generated with generate_patterns python '
+                f'module.\n')
+            f.write(f'objref synaptic_patterns[250][250]\n')
+            f.write(f'objref synaptic_weights[250][250]\n')
+            f.write(f'objref synaptic_dends[250][250]\n')
 
-        #in each obj location that conn mat has a connection, create a vector:
-        for afferent in range(250):
-            for efferent in range(250):
-                if connectivity_mat_pc[afferent, efferent]:
-                    f.write(
-                        f'synaptic_patterns[{afferent}][{efferent}]=new Vector'
-                        f'(5)\n'
-                    )
-                    f.write(
-                        f'synaptic_weights[{afferent}][{efferent}]=new Vector'
-                        f'(5)\n'
-                    )
-                    f.write(
-                        f'synaptic_dends[{afferent}][{efferent}]=new Vector'
-                        f'(5)\n'
-                    )
-
-                    PID, W, D, *_ = pair_d[(afferent,efferent)]
-                    for i, (pid, w, d) in enumerate(zip(PID,W, D)):
+            #in each obj location that conn mat has a connection, create a vector:
+            for afferent in range(250):
+                for efferent in range(250):
+                    if connectivity_mat_pc[afferent, efferent]:
                         f.write(
-                            f'synaptic_patterns[{afferent}][{efferent}].x[{i}]'
-                            f'={pid}\n')
+                            f'synaptic_patterns[{afferent}][{efferent}]=new Vector'
+                            f'(5)\n'
+                        )
                         f.write(
-                            f'synaptic_weights[{afferent}][{efferent}].x[{i}]'
-                            f'={w}\n')
+                            f'synaptic_weights[{afferent}][{efferent}]=new Vector'
+                            f'(5)\n'
+                        )
                         f.write(
-                            f'synaptic_dends[{afferent}][{efferent}].x[{i}]'
-                            f'={d}\n')
+                            f'synaptic_dends[{afferent}][{efferent}]=new Vector'
+                            f'(5)\n'
+                        )
 
-        # Network connectivity:
-        f.write('//EOF\n')
+                        PID, W, D, *_ = pair_d[(afferent,efferent)]
+                        for i, (pid, w, d) in enumerate(zip(PID,W, D)):
+                            f.write(
+                                f'synaptic_patterns[{afferent}][{efferent}].x[{i}]'
+                                f'={pid}\n')
+                            f.write(
+                                f'synaptic_weights[{afferent}][{efferent}].x[{i}]'
+                                f'={w}\n')
+                            f.write(
+                                f'synaptic_dends[{afferent}][{efferent}].x[{i}]'
+                                f'={d}\n')
+
+            # Network connectivity:
+            f.write('//EOF\n')
+    else:
+        # Combine into a dataframe:
+        export_df = case_df.loc[sampled_indices]
+        export_df['SRC'] = SRCs
+        export_df['TRG'] = TRGs
+        return export_df
 
     # Make changes in NEURON to run the new simulations:
     print("Pronto!")
@@ -389,30 +448,30 @@ def generate_patterns(
 if __name__ == '__main__':
     # test weights matrix RNG:
 
-    if True:
+    if False:
         # This is the uniform case:
         # I will keep the same weights matrix instantiation as this is a different
         # level of inhomogeneity
         # This is the synaptic pattern learning condition.
-        for learning_condition in range(1, 6):
+        for learning_condition in range(2, 3):
             gp = partial(
                 generate_patterns,
                 weights_mat_pc=None,
                 learning_condition=learning_condition,
-                min_w=-10,
-                max_w=10,
-                iters=100000,
+                min_w=0,#-10,
+                max_w=3,#10,
+                iters=10000,
                 dendlen=30,
                 dendno=1,
                 max_depol_val=5
             )
 
             params = {
-                'synapse_location': ['distal'],
-                'synapse_clustering': [False],
-                'dendritic_clustering': [False],
+                'synapse_location': ['proximal','distal'],
+                'synapse_clustering': [False,True],
+                'dendritic_clustering': [False,True],
                 'dendlen': [150],
-                'dendno': [3]
+                'dendno': [2,3]
             }
 
             analysis.run_for_all_parameters(
@@ -426,7 +485,7 @@ if __name__ == '__main__':
         # I will keep this 1 for now:
         for weights_realization in range(1, 2):
             # This is the synaptic pattern learning condition.
-            for learning_condition in range(1, 6):
+            for learning_condition in range(1, 2):
 
                 gp = partial(
                     generate_patterns,
@@ -440,7 +499,8 @@ if __name__ == '__main__':
                     iters=100000,
                     dendlen=30,
                     dendno=1,
-                    max_depol_val=5
+                    max_depol_val=5,
+                    export2file=False
                 )
 
                 params = {

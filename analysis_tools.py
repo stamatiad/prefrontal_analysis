@@ -2904,7 +2904,7 @@ def pcaL2(
     #eigenval_diff = np.abs(np.diff(norm_eigenvals))
     #L = np.nonzero(np.greater(eigenval_diff, 0.02))[0].size
     L = np.nonzero(np.greater(latent, 1.0))[0].size
-    if L == 0:
+    if L < 2:
         if plot_2d or plot_3d:
             # assuming that user wants a plot only, continue:
             L = 2
