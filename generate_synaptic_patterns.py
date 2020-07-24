@@ -15,7 +15,7 @@ from functools import partial, wraps
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
 sys.path.append("pydevd-pycharm.egg")
-DEBUG = True
+DEBUG = False
 if DEBUG:
     pydevd_pycharm.settrace(
         '79.167.89.118',
@@ -232,20 +232,26 @@ def generate_patterns(
         inhomogeneous = True
         case_df = patterns_df
 
+    # if is a case we don't want, return None:
+    if case_df.shape[0] == 0:
+        return None
+
+
     # OTHER DEBUG CODE:
-    #TODO: make sure that it works!
-    W = case_df['W']
-    blah = []
-    for i in range(W.shape[0]):
-        if np.where(W[i])[0].size > 3:
-            blah.append(i)
-    #histo, *_ = np.histogram(blah, np.arange(0, 7))
-    #histo = histo / histo.sum()
-    #Keep only the synaptic patterns with 4 or 5 synapses in total:
-    case_df2 = case_df.iloc[blah]
-    histo, *_ = np.histogram(case_df2['somatic_depolarization_bin'].values,
-                             np.arange(0, 51))
-    histo = histo / histo.sum()
+    if False:
+        #TODO: make sure that it works!
+        W = case_df['W']
+        blah = []
+        for i in range(W.shape[0]):
+            if np.where(W[i])[0].size > 3:
+                blah.append(i)
+        #histo, *_ = np.histogram(blah, np.arange(0, 7))
+        #histo = histo / histo.sum()
+        #Keep only the synaptic patterns with 4 or 5 synapses in total:
+        case_df2 = case_df.iloc[blah]
+        histo, *_ = np.histogram(case_df2['somatic_depolarization_bin'].values,
+                                 np.arange(0, 51))
+        histo = histo / histo.sum()
 
     # Generate NEURON arrays for each PC cell containing PID and W of each synapse:
     # This file will be addressible/identifiable by the filters above and used
@@ -261,7 +267,8 @@ def generate_patterns(
 
     # TODO: compute the histogram to be sure that there are enough
     #  patterns for each depolarization bin:
-    histo = np.histogram(depol_bins, np.arange(0,80,1))
+    histo, *_ = np.histogram(depol_bins, np.arange(0,50,1))
+    histo =histo / histo.sum()
 
     connectivity_mat_pc = get_connectivity_matrix_pc()
     depol_bin_mat_pc = np.zeros(connectivity_mat_pc.shape)
@@ -306,14 +313,9 @@ def generate_patterns(
                 # sample the depol values:
                 subdf_idx, *_ = np.where(depol_bins == query_bin)
                 if subdf_idx.size == 0:
-                    # Logically this will be some border case. Print the
-                    # query bin, just in case, to see what's happening.
-                    print(f"No depol val for query bin: {query_bin}")
-                    if np.abs(query_bin - depol_bins.min()) < np.abs(query_bin -
-                                                         depol_bins.max()):
-                        query_bin = depol_bins.min()
-                    else:
-                        query_bin = depol_bins.max()
+                    #TODO: Get the closest one, not the min/max one!!
+                    bin_diff = np.absolute(depol_bins - query_bin)
+                    query_bin = depol_bins[np.argmin(bin_diff)]
                     print(f'\t replaced with {query_bin}')
                     subdf_idx, *_ = np.where(depol_bins == query_bin)
                 max_ind = subdf_idx.size -1
@@ -385,7 +387,7 @@ def generate_patterns(
                     f"sp_synloc_{synapse_location}_syncl_"
                     f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
                     f"dendno_{dendno}_dendlen_{dendlen}_"
-                    f"uniform_LC{learning_condition}_lognorm2.hoc"
+                    f"uniform_LC{learning_condition}_lognorm3.hoc"
                 )
             else:
                 filename = export_path.joinpath(
@@ -393,7 +395,7 @@ def generate_patterns(
                     f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
                     f"dendno_{dendno}_dendlen_{dendlen}_"
                     f"wr_{int(weights_realization)}_LC"
-                    f"{learning_condition}_lognorm2.hoc"
+                    f"{learning_condition}_lognorm3.hoc"
                 )
 
         with open(filename, 'w') as f:
@@ -448,7 +450,7 @@ def generate_patterns(
 if __name__ == '__main__':
     # test weights matrix RNG:
 
-    if False:
+    if True:
         # This is the uniform case:
         # I will keep the same weights matrix instantiation as this is a different
         # level of inhomogeneity
@@ -458,18 +460,19 @@ if __name__ == '__main__':
                 generate_patterns,
                 weights_mat_pc=None,
                 learning_condition=learning_condition,
-                min_w=0,#-10,
-                max_w=3,#10,
-                iters=10000,
+                min_w=-10,
+                max_w=10,
+                iters=100000,
                 dendlen=30,
                 dendno=1,
-                max_depol_val=5
+                max_depol_val=5,
+                #postfix='_corr'
             )
 
             params = {
-                'synapse_location': ['proximal','distal'],
-                'synapse_clustering': [False,True],
-                'dendritic_clustering': [False,True],
+                'synapse_location': ['distal'],
+                'synapse_clustering': [True],
+                'dendritic_clustering': [True],
                 'dendlen': [150],
                 'dendno': [2,3]
             }
