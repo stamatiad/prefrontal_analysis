@@ -228,109 +228,75 @@ def load_synaptic_patterns(
     locations = []
     clusterings = []
     dend_clusterings = []
-    locations2 = []
-    clusterings2 = []
-    dend_clusterings2 = []
     for PID_vals, W_vals, D_vals, depol_val, bin_val in zip(
             pid_mat, w_mat, dend_mat, patterns[:, 15], depol_bins):
 
         if depol_val > max_depol_val:
             continue
 
-        PID_vals[PID_vals == 0] = 0.1
-        PID_vals[PID_vals == 1] = 0.99
         PIDs.append(PID_vals)
         Ws.append(W_vals)
         Ds.append(D_vals)
         depols.append(depol_val)
         bins.append(bin_val)
 
-        # Compute dend patterns sybtypes:
-        nseg_step = 1/nseg
+        step = 1/nseg
 
-        # Only get synapses with non zero weight:
-        real_syns = W_vals != 0.0
-        histo, *_ = np.histogram(PID_vals[real_syns],
-                                 np.arange(0,1.0+nseg_step,nseg_step))
+        histo, *_ = np.histogram(PID_vals, np.arange(0,1.0+step,step))
         #syn_idx = np.digitize(PID_vals, np.arange(0,1.0+step,step)) - 1
 
         median_val = int(np.floor(nseg/2))
         # calculate location bias (proximal, medial distal):
         # If only one segment this is close to the soma: thus proximal
-        #Recompute with better/stricter criteria.
         if nseg == 1:
             location ='proximal'
         else:
-            if histo[:median_val].sum() == histo.sum():
+            if histo[:median_val].sum() > histo[median_val+1:].sum():
                 location = 'proximal'
-            elif histo[median_val:].sum() == histo.sum():
+            elif histo[:median_val].sum() < histo[median_val+1:].sum():
                 location = 'distal'
             else:
-                location = 'uniform'
+                location = 'medial'
         locations.append(location)
-
 
         if nseg == 1:
             clustering = True
-        elif 'corr' in kwargs.get('postfix', ''):
-            clustering = False
         else:
             # calculate clustering bias (clustering or dispersed):
-            # Only get synapses with non zero weight:
-            real_syns = W_vals != 0.0
-            dend_pid_vals = PID_vals[real_syns] + D_vals[real_syns]
-            dend_w_vals = W_vals[real_syns]
+            dend_pid_vals = PID_vals + D_vals
             histo_dend_pid,*_ = np.histogram(
                 dend_pid_vals, np.arange(0,dendno+nseg_step,nseg_step)
             )
-            #TODO: This is a segment id (different for each synapse/dend):
             syn_idx = np.digitize(
                 dend_pid_vals, np.arange(0,dendno+nseg_step,nseg_step)
             ) - 1
+            # TODO: use expected value to calculate clustering.
             # Definition of clustering: synapses stacked on same segment.
             # The location where histo is > 2 (on syn_idx) must also have
             # max weights per segment greater than expected value
             max_w_per_seg = 0
             for seg in range(nseg*dendno):
-                tmp_w = dend_w_vals[np.where(syn_idx == seg)].sum()
+                tmp_w = W_vals[np.where(syn_idx == seg)].sum()
                 if tmp_w > max_w_per_seg:
                     max_w_per_seg = tmp_w
 
-            #TODO:Ti ginetai edw: ti einai  clustering
-            # Ousiastika 8a diaforopoieitai MONO ean oi perissoteres synapses
-            # exoun advantaeg sto non-linearity, pou den nomizw oti exoun.
-            #Recompute with better/stricter criteria, on a different column.
-            if max_w_per_seg > E_W:
+            if histo_dend_pid.max() > E_syns and max_w_per_seg > E_W:
                 clustering = True
             else:
                 clustering = False
-
         clusterings.append(clustering)
 
-
-        # TODO: I must check that ny corr (by chance) clustered are not that
-        #  many/ not that clustered as in the clustered case, to maintain
-        #  disjoint sets.
+        # TODO: use expected value to calculate dendritic clustering.
         # Definition of dend clustering: synapses existent on same dendrite:
         if dendno == 1:
             dend_clust = True
-        elif 'corr' in kwargs.get('postfix', ''):
-            dend_clust = False
         else:
-            real_syns = W_vals != 0.0
-            histo, *_ = np.histogram(D_vals[real_syns], dend_bins)
-            max_w_per_dend = 0
-            for dend in range(dendno):
-                tmp_w = W_vals[D_vals == dend].sum()
-                if tmp_w > max_w_per_dend:
-                    max_w_per_dend = tmp_w
-            #Recompute with better/stricter criteria, on a different column.
-            if (max_w_per_dend > Ew_dends):
+            histo, *_ = np.histogram(D_vals, dend_bins)
+            if histo.max() > E_dends:
                 dend_clust = True
             else:
                 dend_clust = False
         dend_clusterings.append(dend_clust)
-
 
     # Combine into a dataframe:
     df = pd.DataFrame({
