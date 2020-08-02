@@ -387,7 +387,7 @@ def generate_patterns(
                     f"sp_synloc_{synapse_location}_syncl_"
                     f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
                     f"dendno_{dendno}_dendlen_{dendlen}_"
-                    f"uniform_LC{learning_condition}_lognorm_replicate1.hoc"
+                    f"uniform_LC{learning_condition}_lognorm_rev4.hoc"
                 )
             else:
                 filename = export_path.joinpath(
@@ -395,7 +395,7 @@ def generate_patterns(
                     f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
                     f"dendno_{dendno}_dendlen_{dendlen}_"
                     f"wr_{int(weights_realization)}_LC"
-                    f"{learning_condition}_lognorm_replicate1.hoc"
+                    f"{learning_condition}_lognorm_rev4.hoc"
                 )
 
         with open(filename, 'w') as f:
@@ -452,7 +452,7 @@ if __name__ == '__main__':
 
     if True:
         # This is the uniform case (No weight matrix):
-        for learning_condition in range(1, 2):
+        for learning_condition in range(2, 3):
             gp = partial(
                 generate_patterns,
                 weights_mat_pc=None,
@@ -467,11 +467,11 @@ if __name__ == '__main__':
             )
 
             params = {
-                'synapse_location': ['proximal'],
+                'synapse_location': ['distal'],
                 'synapse_clustering': [True],
                 'dendritic_clustering': [True],
                 'dendlen': [150],
-                'dendno': [2]
+                'dendno': [3]
             }
 
             analysis.run_for_all_parameters(

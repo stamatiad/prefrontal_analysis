@@ -280,7 +280,7 @@ def load_synaptic_patterns(
                 if tmp_w > max_w_per_seg:
                     max_w_per_seg = tmp_w
 
-            if histo_dend_pid.max() > E_syns and max_w_per_seg > E_W:
+            if max_w_per_seg > E_W:
                 clustering = True
             else:
                 clustering = False
