@@ -84,7 +84,7 @@ if True:
                     excitation_bias=1.75,
                     nmda_bias=6.0,
                     sim_duration=5,
-                    prefix='splogn5',
+                    prefix='splogn6',
                     template_postfix='_spu_ri',
                     connectivity_type='structured',
                     ri=50,
@@ -312,7 +312,7 @@ if True:
             except ValueError:
                 pass
 
-            plt.savefig(f"SPlogn5_Attr_{dendno}{dendlen}dend_spcl{int(spcl)}"
+            plt.savefig(f"SPlogn6_Attr_{dendno}{dendlen}dend_spcl{int(spcl)}"
                         f"_sploc{sploc}_IB{inhibition_bias}_"
                         f"PA{PA}_LC_{LC}_U.png")
 

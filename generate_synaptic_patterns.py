@@ -387,7 +387,7 @@ def generate_patterns(
                     f"sp_synloc_{synapse_location}_syncl_"
                     f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
                     f"dendno_{dendno}_dendlen_{dendlen}_"
-                    f"uniform_LC{learning_condition}_lognorm_rev5.hoc"
+                    f"uniform_LC{learning_condition}_lognorm_rev6.hoc"
                 )
             else:
                 filename = export_path.joinpath(
@@ -395,7 +395,7 @@ def generate_patterns(
                     f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
                     f"dendno_{dendno}_dendlen_{dendlen}_"
                     f"wr_{int(weights_realization)}_LC"
-                    f"{learning_condition}_lognorm_rev5.hoc"
+                    f"{learning_condition}_lognorm_rev6.hoc"
                 )
 
         with open(filename, 'w') as f:
