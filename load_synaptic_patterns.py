@@ -280,7 +280,7 @@ def load_synaptic_patterns(
                 if tmp_w > max_w_per_seg:
                     max_w_per_seg = tmp_w
 
-            if max_w_per_seg > E_W:
+            if histo_dend_pid.max() > E_syns and max_w_per_seg > E_W:
                 clustering = True
             else:
                 clustering = False
@@ -290,9 +290,18 @@ def load_synaptic_patterns(
         # Definition of dend clustering: synapses existent on same dendrite:
         if dendno == 1:
             dend_clust = True
+        elif 'corr' in kwargs.get('postfix', ''):
+            dend_clust = False
         else:
-            histo, *_ = np.histogram(D_vals, dend_bins)
-            if histo.max() > E_dends:
+            real_syns = W_vals != 0.0
+            histo, *_ = np.histogram(D_vals[real_syns], dend_bins)
+            max_w_per_dend = 0
+            for dend in range(dendno):
+                tmp_w = W_vals[D_vals == dend].sum()
+                if tmp_w > max_w_per_dend:
+                    max_w_per_dend = tmp_w
+            #Recompute with better/stricter criteria, on a different column.
+            if (max_w_per_dend > Ew_dends):
                 dend_clust = True
             else:
                 dend_clust = False

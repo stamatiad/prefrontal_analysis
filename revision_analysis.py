@@ -84,7 +84,7 @@ if True:
                     excitation_bias=1.75,
                     nmda_bias=6.0,
                     sim_duration=5,
-                    prefix='splogn4',
+                    prefix='splogn5',
                     template_postfix='_spu_ri',
                     connectivity_type='structured',
                     ri=50,
@@ -128,7 +128,7 @@ if True:
     with pd.option_context('display.max_rows', None, 'display.max_columns',
                            None):  # more options can be specified also
         print(df)
-    #sys.exit(0)
+    sys.exit(0)
 
     #TODO: Affinity Propagation Network analysis:
     # Calculate dendritic statistics for each cluster.
@@ -312,7 +312,7 @@ if True:
             except ValueError:
                 pass
 
-            plt.savefig(f"SPlogn4_Attr_{dendno}{dendlen}dend_spcl{int(spcl)}"
+            plt.savefig(f"SPlogn5_Attr_{dendno}{dendlen}dend_spcl{int(spcl)}"
                         f"_sploc{sploc}_IB{inhibition_bias}_"
                         f"PA{PA}_LC_{LC}_U.png")
 
