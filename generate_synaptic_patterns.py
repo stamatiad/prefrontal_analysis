@@ -15,7 +15,7 @@ from functools import partial, wraps
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
 sys.path.append("pydevd-pycharm.egg")
-DEBUG = False
+DEBUG = True
 if DEBUG:
     pydevd_pycharm.settrace(
         '79.167.89.118',
@@ -346,14 +346,85 @@ def generate_patterns(
         #depol_bin_mat_pc[connectivity_mat_pc] = 1
 
     if DEBUG:
+        nseg_step = 1/nseg
         #DEBUG: mine the statistics of the dend attributes to see which of them
         # produces what no of atractors.
         # 1) distal proximal (real, not what I report).
-        new_patterns_df = load_synaptic_patterns(
-            patterns_path,
-            dendlen=dendlen,
-            dendno=dendno,
-            nseg=nseg,
+        dendpatt_df = case_df.loc[sampled_indices]
+        # plot in 3d the synapses in each dend compartment:
+        synpatt_arr = np.zeros((dendpatt_df.shape[0],nseg*dendno), dtype=float)
+        for index in range(dendpatt_df.shape[0]):
+            entry = dendpatt_df.iloc[index]
+            #sort_idx = np.argsort(entry.PID)
+            #W = entry.W[sort_idx]
+            #D = entry.D[sort_idx]
+            syn_seg = np.digitize(entry.PID + entry.D, np.arange(0, dendno +
+                                                                 nseg_step,
+                                                                 nseg_step)) - 1
+            for seg_id in range(nseg * dendno):
+                synpatt_arr[index,seg_id] = entry.W[np.where(seg_id ==
+                                                        syn_seg)].sum()
+        patterns_covar = np.cov(synpatt_arr, rowvar=False)
+        fig = plt.figure()
+        plot_axes = fig.add_subplot(111)
+        plt.matshow(patterns_covar)
+        cb = plt.colorbar()
+        plt.savefig(f"splogn_rev_6_corr.png")
+
+        patt_average = synpatt_arr.mean(axis=0)
+        fig = plt.figure()
+        plot_axes = fig.add_subplot(111)
+        plt.plot(patt_average)
+        plt.savefig(f"splogn_rev_6_average.png")
+
+        syn_seg = np.zeros((dendpatt_df.shape[0],nseg), dtype=float)
+        for index in range(dendpatt_df.shape[0]):
+            entry = dendpatt_df.iloc[index]
+            syn_seg[index,:] = np.digitize(
+                entry.PID + entry.D,
+                np.arange(0, dendno + nseg_step, nseg_step)
+            ) - 1
+
+        histo_array = np.empty((synpatt_arr.shape[0],nseg*dendno))
+        histo_array[:] = np.nan
+        for i in range(synpatt_arr.shape[0]):
+            tmp_histo = \
+                np.histogram(
+                    syn_seg[i,:],
+                    bins=np.arange(0, nseg*dendno+1, 1)
+                )[0]
+            histo_array[i,:] = tmp_histo
+
+        syn_perc = np.full((5+1,nseg*dendno),0)
+        for seg in range(nseg*dendno):
+            for syn in range(5+1):
+                syn_perc[syn, seg] = np.sum(histo_array[:, seg] == syn)
+
+        syn_perc_cumsum = np.cumsum(syn_perc, axis=0)
+
+
+        # 5 segment case:
+        labels = ['1', '2', '3', '4', '5','6','7','8','9','10','11','12',
+                  '13','14','15']
+        width = 0.35  # the width of the bars: can also be len(x) sequence
+
+        fig, ax = plt.subplots()
+
+        ax.bar(labels, syn_perc[0, :].tolist(), width, label=f'syn#0')
+        for i in range(1,5+1):
+            ax.bar(labels, syn_perc[i,:].tolist(), width, label=f'syn#{i}',
+                   bottom=syn_perc_cumsum[i-1,:].tolist())
+
+        ax.set_ylabel('# synapses')
+        ax.set_title('Synapse distribution per segment')
+        ax.legend()
+        plt.savefig(f'syn_dist_rev_6.png')
+
+new_patterns_df = load_synaptic_patterns(
+    patterns_path,
+    dendlen=dendlen,
+    dendno=dendno,
+    nseg=nseg,
             nsyn=5,
             max_depol_val=max_depol_val,
             min_w=min_w,
@@ -361,7 +432,6 @@ def generate_patterns(
             iters=iters,
             new_methodology=True
         )
-        dendpatt_df = case_df.loc[sampled_indices]
         new_dendpatt_df = new_patterns_df.loc[sampled_indices]
 
         # 2) Is there any dendritic clustering, and if yes, how much
