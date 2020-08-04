@@ -240,7 +240,7 @@ def load_synaptic_patterns(
         depols.append(depol_val)
         bins.append(bin_val)
 
-        if True:
+        if False:
             #Revision 4
             step = 1/nseg
 
@@ -299,7 +299,7 @@ def load_synaptic_patterns(
                 else:
                     dend_clust = False
             dend_clusterings.append(dend_clust)
-        elif False:
+        elif True:
             #Revision 5
             step = 1/nseg
 

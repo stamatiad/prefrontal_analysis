@@ -345,13 +345,12 @@ def generate_patterns(
 
         #depol_bin_mat_pc[connectivity_mat_pc] = 1
 
-    if DEBUG:
+    if False: #if DEBUG:
         nseg_step = 1/nseg
         #DEBUG: mine the statistics of the dend attributes to see which of them
         # produces what no of atractors.
         # 1) distal proximal (real, not what I report).
         dendpatt_df = case_df.loc[sampled_indices]
-        # plot in 3d the synapses in each dend compartment:
         synpatt_arr = np.zeros((dendpatt_df.shape[0],nseg*dendno), dtype=float)
         for index in range(dendpatt_df.shape[0]):
             entry = dendpatt_df.iloc[index]
@@ -363,19 +362,7 @@ def generate_patterns(
                                                                  nseg_step)) - 1
             for seg_id in range(nseg * dendno):
                 synpatt_arr[index,seg_id] = entry.W[np.where(seg_id ==
-                                                        syn_seg)].sum()
-        patterns_covar = np.cov(synpatt_arr, rowvar=False)
-        fig = plt.figure()
-        plot_axes = fig.add_subplot(111)
-        plt.matshow(patterns_covar)
-        cb = plt.colorbar()
-        plt.savefig(f"splogn_rev_6_corr.png")
-
-        patt_average = synpatt_arr.mean(axis=0)
-        fig = plt.figure()
-        plot_axes = fig.add_subplot(111)
-        plt.plot(patt_average)
-        plt.savefig(f"splogn_rev_6_average.png")
+                                                             syn_seg)].sum()
 
         syn_seg = np.zeros((dendpatt_df.shape[0],nseg), dtype=float)
         for index in range(dendpatt_df.shape[0]):
@@ -418,13 +405,28 @@ def generate_patterns(
         ax.set_ylabel('# synapses')
         ax.set_title('Synapse distribution per segment')
         ax.legend()
-        plt.savefig(f'syn_dist_rev_6.png')
+        plt.savefig(f'syn_dist_rev_5.png')
 
-new_patterns_df = load_synaptic_patterns(
-    patterns_path,
-    dendlen=dendlen,
-    dendno=dendno,
-    nseg=nseg,
+        # plot in 3d the synapses in each dend compartment:
+        patterns_covar = np.cov(synpatt_arr, rowvar=False)
+        fig = plt.figure()
+        plot_axes = fig.add_subplot(111)
+        plt.matshow(patterns_covar)
+        cb = plt.colorbar()
+        plt.savefig(f"splogn_rev_6_corr.png")
+
+        patt_average = synpatt_arr.mean(axis=0)
+        fig = plt.figure()
+        plot_axes = fig.add_subplot(111)
+        plt.plot(patt_average)
+        plt.savefig(f"splogn_rev_6_average.png")
+
+
+        new_patterns_df = load_synaptic_patterns(
+            patterns_path,
+            dendlen=dendlen,
+            dendno=dendno,
+            nseg=nseg,
             nsyn=5,
             max_depol_val=max_depol_val,
             min_w=min_w,
