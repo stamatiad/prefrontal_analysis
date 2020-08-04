@@ -240,7 +240,67 @@ def load_synaptic_patterns(
         depols.append(depol_val)
         bins.append(bin_val)
 
-        if False:
+        if True:
+            # Revision 1:
+            step = 1/nseg
+
+            histo, *_ = np.histogram(PID_vals, np.arange(0,1.0+step,step))
+            #syn_idx = np.digitize(PID_vals, np.arange(0,1.0+step,step)) - 1
+
+            median_val = int(np.floor(nseg/2))
+            # calculate location bias (proximal, medial distal):
+            # If only one segment this is close to the soma: thus proximal
+            if nseg == 1:
+                location ='proximal'
+            else:
+                if histo[:median_val].sum() > histo[median_val+1:].sum():
+                    location = 'proximal'
+                elif histo[:median_val].sum() < histo[median_val+1:].sum():
+                    location = 'distal'
+                else:
+                    location = 'medial'
+            locations.append(location)
+
+            if nseg == 1:
+                clustering = True
+            else:
+                # calculate clustering bias (clustering or dispersed):
+                dend_pid_vals = PID_vals + D_vals
+                histo_dend_pid,*_ = np.histogram(
+                    dend_pid_vals, np.arange(0,dendno+nseg_step,nseg_step)
+                )
+                syn_idx = np.digitize(
+                    dend_pid_vals, np.arange(0,dendno+nseg_step,nseg_step)
+                ) - 1
+                # TODO: use expected value to calculate clustering.
+                # Definition of clustering: synapses stacked on same segment.
+                # The location where histo is > 2 (on syn_idx) must also have
+                # max weights per segment greater than expected value
+                max_w_per_seg = 0
+                for seg in range(nseg*dendno):
+                    tmp_w = W_vals[np.where(syn_idx == seg)].sum()
+                    if tmp_w > max_w_per_seg:
+                        max_w_per_seg = tmp_w
+
+                if histo_dend_pid.max() > E_syns and max_w_per_seg > E_W:
+                    clustering = True
+                else:
+                    clustering = False
+            clusterings.append(clustering)
+
+            # TODO: use expected value to calculate dendritic clustering.
+            # Definition of dend clustering: synapses existent on same dendrite:
+            if dendno == 1:
+                dend_clust = True
+            else:
+                histo, *_ = np.histogram(D_vals, dend_bins)
+                if histo.max() > E_dends:
+                    dend_clust = True
+                else:
+                    dend_clust = False
+            dend_clusterings.append(dend_clust)
+
+        elif False:
             #Revision 4
             step = 1/nseg
 
