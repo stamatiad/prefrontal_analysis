@@ -15,7 +15,7 @@ from functools import partial, wraps
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
 sys.path.append("pydevd-pycharm.egg")
-DEBUG = True
+DEBUG = False
 if DEBUG:
     pydevd_pycharm.settrace(
         '79.167.89.118',
