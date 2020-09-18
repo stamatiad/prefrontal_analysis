@@ -18,7 +18,7 @@ sys.path.append("pydevd-pycharm.egg")
 DEBUG = False
 if DEBUG:
     pydevd_pycharm.settrace(
-        '79.167.89.118',
+        '79.167.87.207',
         port=12345,
         stdoutToServer=True,
         stderrToServer=True
@@ -186,6 +186,8 @@ def generate_patterns(
         raise ValueError('You have not provided serial_no for RNG '
                      'reproducibility!')
 
+    synaptic_inhomogeneity = kwargs.get('synaptic_inhomogeneity', None)
+    dendritic_inhomogeneity = kwargs.get('dendritic_inhomogeneity', None)
     # Read NEURON pattern data and classify it in a dataframe:
     patterns_path = Path(r'/home/cluster/stefanos/Documents/GitHub/prefrontal-micro'
                          r'/experiment/network/synaptic_patterns')
@@ -197,7 +199,13 @@ def generate_patterns(
     max_depol_val = kwargs.get('max_depol_val',5)
     min_w = kwargs.get('min_w', -10)
     max_w = kwargs.get('max_w',10)
-    postfix = kwargs.get('postfix','')
+    # The synapses are correlated ONLY in the synaptic homogeneous case:
+    if synaptic_inhomogeneity is 0:
+        postfix='_corr'
+        min_w = 0
+        max_w = 3
+    else:
+        postfix = ''
     patterns_df = load_synaptic_patterns(
         patterns_path,
         new_methodology=True,
@@ -212,17 +220,69 @@ def generate_patterns(
         postfix=postfix
     )
 
+    #TODO: I need to generate different filters, one for each inhomogeneity
+    # case.
+    # Label patterns based on their synaptic inhomogeneity:
+    case_w_idx = np.array([
+        len(np.where(i)[0])
+        for i in patterns_df['W']
+    ])
+    syn_inhomo_idx = [[],[],[]]
+    syn_inhomo_idx[0] = np.full(patterns_df.shape[0],True,dtype=bool)
+    # No easier way?
+    syn_inhomo_idx[1] = \
+        np.where(
+            case_w_idx == 3,
+            np.ones((1,case_w_idx.size),dtype=bool),
+            np.zeros((1,case_w_idx.size),dtype=bool),
+            )[0]
+    syn_inhomo_idx[2] = \
+        np.where(
+            case_w_idx == 1,
+            np.ones((1,case_w_idx.size),dtype=bool),
+            np.zeros((1,case_w_idx.size),dtype=bool),
+            )[0]
+
+    # Label patterns based on their dendritic inhomogeneity:
+    case_d_idx = np.array([
+        len(np.unique(i))
+        for i in patterns_df['D']
+    ])
+    dend_inhomo_idx = [[],[],[]]
+    # No easier way?
+    dend_inhomo_idx[0] = \
+        np.where(
+            case_d_idx == 3,
+            np.ones((1,case_d_idx.size),dtype=bool),
+            np.zeros((1,case_d_idx.size),dtype=bool),
+            )[0]
+    dend_inhomo_idx[1] = \
+        np.where(
+            case_d_idx == 2,
+            np.ones((1,case_d_idx.size),dtype=bool),
+            np.zeros((1,case_d_idx.size),dtype=bool),
+            )[0]
+    dend_inhomo_idx[2] = \
+        np.where(
+            case_d_idx == 1,
+            np.ones((1,case_d_idx.size),dtype=bool),
+            np.zeros((1,case_d_idx.size),dtype=bool),
+            )[0]
+
+
     # Change to inhomogeneous patterns if not found!
-    synapse_location = kwargs.get('synapse_location', None)
-    synapse_clustering = kwargs.get('synapse_clustering', None)
-    dendritic_clustering = kwargs.get('dendritic_clustering', None)
-    if (synapse_location is not None) and \
-        (synapse_clustering is not None) and \
-        (dendritic_clustering is not None):
+    if (synaptic_inhomogeneity is not None) and \
+        (dendritic_inhomogeneity is not None):
+
+        # Include the pattern labels into the dataframe:
+        patterns_df['synaptic_inhomogeneity'] = \
+            syn_inhomo_idx[synaptic_inhomogeneity]
+        patterns_df['dendritic_inhomogeneity'] = \
+            dend_inhomo_idx[dendritic_inhomogeneity]
+
         filters = {
-            'synapse_location':synapse_location,
-            'synapse_clustering': synapse_clustering,
-            'dendritic_clustering': dendritic_clustering
+            'synaptic_inhomogeneity': True,
+            'dendritic_inhomogeneity': True,
         }
 
         # Provide the boilerplate to select class preset (e.g. distal)
@@ -313,7 +373,7 @@ def generate_patterns(
                 # sample the depol values:
                 subdf_idx, *_ = np.where(depol_bins == query_bin)
                 if subdf_idx.size == 0:
-                    #TODO: Get the closest one, not the min/max one!!
+                    # Get the closest one, not the min/max one!!
                     bin_diff = np.absolute(depol_bins - query_bin)
                     query_bin = depol_bins[np.argmin(bin_diff)]
                     print(f'\t replaced with {query_bin}')
@@ -456,10 +516,11 @@ def generate_patterns(
             # postsynaptic depolarizations for each pair.
             if weights_mat_pc is None:
                 filename = export_path.joinpath(
-                    f"sp_synloc_{synapse_location}_syncl_"
-                    f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
+                    f"sp_syninh_"
+                    f"{int(synaptic_inhomogeneity)}_dendinh"
+                    f"_{int(dendritic_inhomogeneity)}_"
                     f"dendno_{dendno}_dendlen_{dendlen}_"
-                    f"uniform_LC{learning_condition}_lognorm_rev6.hoc"
+                    f"LC{learning_condition}_singleweight_rev1.hoc"
                 )
             else:
                 filename = export_path.joinpath(
@@ -521,8 +582,41 @@ def generate_patterns(
 
 if __name__ == '__main__':
     # test weights matrix RNG:
+    #TODO: let me choose the different levels of projection clustering/dendritic
+    # inhomogeneity. So clustering is determined by that amount. Also
+    # proximal/distal will not be a parameter here, since I want max
+    # inhomogeneity each time (later I can constrain some of the more
+    # inhomogenous runs only on the proximal/distal part and see what happens).
 
     if True:
+        # This is the uniform case (No weight matrix) with the inhomogeneity
+        # slider parameter only:
+        for learning_condition in range(1, 6):
+            gp = partial(
+                generate_patterns,
+                weights_mat_pc=None,
+                learning_condition=learning_condition,
+                min_w=-10,
+                max_w=10,
+                iters=100000,
+                dendlen=150,
+                dendno=3,
+                max_depol_val=5,
+            )
+
+            params = {
+                # These are the inhomogeneity sliders. In this example span
+                # from 0 to 2.
+                'synaptic_inhomogeneity': [0,1,2],
+                'dendritic_inhomogeneity': [0,1,2],
+            }
+
+            analysis.run_for_all_parameters(
+                gp,
+                **{'auto_param_array': params}
+            )
+
+    elif False:
         # This is the uniform case (No weight matrix):
         for learning_condition in range(2, 3):
             gp = partial(

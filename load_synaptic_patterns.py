@@ -359,7 +359,7 @@ def load_synaptic_patterns(
                 else:
                     dend_clust = False
             dend_clusterings.append(dend_clust)
-        elif True:
+        elif False:
             #Revision 5
             step = 1/nseg
 
