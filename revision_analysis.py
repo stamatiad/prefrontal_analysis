@@ -36,10 +36,10 @@ from generate_synaptic_patterns import generate_patterns
 # ===%% Pycharm debug: %%===
 import pydevd_pycharm
 sys.path.append("pydevd-pycharm.egg")
-DEBUG = True
+DEBUG = False
 if DEBUG:
     pydevd_pycharm.settrace(
-        '79.167.89.118',
+        '141.237.51.80',
         port=12345,
         stdoutToServer=True,
         stderrToServer=True
@@ -74,6 +74,121 @@ data = []
 
 dcp_array = [25, 50, 75, 100]
 dcs_array = [0, 2, 4]
+
+# Fast load the single inhomogeneity parameter runs (calibration):
+if True:
+    homogeneous_analysis_u = \
+        analysis.append_results_to_array(array=data)(
+            partial(analysis.load_nwb_from_neuron,
+                    glia_dir,
+                    excitation_bias=1.75,
+                    nmda_bias=6.0,
+                    sim_duration=5,
+                    prefix='spinh1',
+                    template_postfix='_spinh_wr_ri',
+                    connectivity_type='structured',
+                    ri=50,
+                    ntrials=200,
+                    reload_raw=False
+                    )
+        )
+
+    params = {
+        'inhibition_bias': [1.5],#np.arange(1.0, 3.5, 0.5).tolist(),
+        'dendlen':['original'],
+        'dendno': [3],
+        'syninh': np.arange(0,3).tolist(),
+        'dendinh': np.arange(0,3).tolist(),
+        'learning_condition': [4,5],
+        'weights_realization': [3]
+    }
+
+    analysis.run_for_all_parameters(
+        homogeneous_analysis_u,
+        **{'auto_param_array': params}
+    )
+
+    df = pd.DataFrame(data)
+    #valid_sims = np.where(df.NWBfile.values)[0].tolist()
+    #df = df.iloc[valid_sims,:]
+    df['PA'] = [-1.0] * len(df.index)
+    df['sparsness'] = [-1.0] * len(df.index)
+    df['attractors_len'] = [-1.0] * len(df.index)
+
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_pa_column,
+        df,
+        **{'auto_param_array': params}
+    )
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_sparsness_column,
+        df,
+        **{'auto_param_array': params}
+    )
+    analysis.run_for_all_parameters(
+        analysis.query_and_add_attractors_len_column,
+        df,
+        **{'auto_param_array': params}
+    )
+    with pd.option_context('display.max_rows', None, 'display.max_columns',
+                           None):  # more options can be specified also
+        print(df)
+    sys.exit(0)
+
+    inhomo_mat = np.zeros((3,3), dtype=float)
+    for index in range(df.shape[0]):
+        loc = df.loc[index, ['dendinh', 'syninh', 'attractors_len']]
+        inhomo_mat[loc.dendinh,loc.syninh] += loc.attractors_len
+
+    inhomo_mat = inhomo_mat / 10
+
+    # Plot:
+    for index in range(df.shape[0]):
+        NWBfile = df.loc[index, 'NWBfile']
+        if NWBfile:
+            print(f'Index is: {index}')
+            dendlen = df.loc[index, 'dendlen']
+            dendno = df.loc[index, 'dendno']
+            inhibition_bias = df.loc[index, 'inhibition_bias']
+            PA = df.loc[index, 'PA']
+            LC = df.loc[index, 'learning_condition']
+            syninh = df.loc[index, 'syninh']
+            dendinh = df.loc[index, 'dendinh']
+            WR = 1#df.loc[index, 'weight_realization']
+            trial_len = analysis.get_acquisition_parameters(
+                input_NWBfile=NWBfile,
+                requested_parameters=['trial_len']
+            )
+            delay_range = (20, int(trial_len / 50))
+            try:
+                K_star, K_labels, *_ = analysis.determine_number_of_clusters(
+                    NWBfile_array=[NWBfile],
+                    max_clusters=20,
+                    custom_range=delay_range
+                )
+            except ValueError:
+                K_labels = None
+            try:
+                fig = plt.figure()
+                plot_axes = fig.add_subplot(111)
+                analysis.pcaL2(
+                    NWBfile_array=[NWBfile],
+                    custom_range=delay_range,
+                    klabels=K_labels,
+                    smooth=True,
+                    plot_2d=True,
+                    plot_stim_color=True,
+                    plot_axes=plot_axes,
+                )
+            except ValueError:
+                pass
+
+            plt.savefig(f"SPinh1_Attr_{dendno}{dendlen}dend_syninh{syninh}"
+                        f"_dendinh{dendinh}_IB{inhibition_bias}_"
+                        f"PA{PA}_LC_{LC}_WR{WR}.png")
+
+
+
 
 # Fast load the uniform (normalized effective weight) runs:
 if True:

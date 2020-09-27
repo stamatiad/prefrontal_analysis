@@ -359,6 +359,8 @@ def generate_patterns(
         depol_bins.max()
         #scaled_weights = connectivity_mat_pc.astype(int) * scaled_weights
         depol_bin_mat_pc = np.ceil(scaled_weights)
+        print(f'\n\tGenerating synaptic patterns for WR '
+              f'{weights_realization}\n')
 
     # sample the patterns:
     pair_d = {}
@@ -366,6 +368,8 @@ def generate_patterns(
     # For the dataframe, if you choose to export it:
     SRCs=[]
     TRGs=[]
+    # Track the minimum distance between the queried and the existing bin:
+    max_dist = 0
     for m in range(250):
         for n in range(250):
             if connectivity_mat_pc[m, n]:
@@ -376,7 +380,10 @@ def generate_patterns(
                     # Get the closest one, not the min/max one!!
                     bin_diff = np.absolute(depol_bins - query_bin)
                     query_bin = depol_bins[np.argmin(bin_diff)]
-                    print(f'\t replaced with {query_bin}')
+                    if np.amin(bin_diff) > max_dist:
+                        max_dist = np.amin(bin_diff)
+                    #print(f'\t replaced with {query_bin}, dist '
+                          #f'{np.amin(bin_diff)}')
                     subdf_idx, *_ = np.where(depol_bins == query_bin)
                 max_ind = subdf_idx.size -1
                 if max_ind == 0:
@@ -400,6 +407,7 @@ def generate_patterns(
                 SRCs.append(m)
                 TRGs.append(n)
 
+    print(f'Maximum distance of non-found query bin: {max_dist}')
 
         # create a depol matrix, with 'bin' values:
 
@@ -524,11 +532,12 @@ def generate_patterns(
                 )
             else:
                 filename = export_path.joinpath(
-                    f"sp_synloc_{synapse_location}_syncl_"
-                    f"{int(synapse_clustering)}_dendcl_{int(dendritic_clustering)}_"
+                    f"sp_syninh_"
+                    f"{int(synaptic_inhomogeneity)}_dendinh"
+                    f"_{int(dendritic_inhomogeneity)}_"
                     f"dendno_{dendno}_dendlen_{dendlen}_"
-                    f"wr_{int(weights_realization)}_LC"
-                    f"{learning_condition}_lognorm_rev6.hoc"
+                    f"WR{weights_realization}_"
+                    f"LC{learning_condition}_lognorm_rev1.hoc"
                 )
 
         with open(filename, 'w') as f:
@@ -588,7 +597,7 @@ if __name__ == '__main__':
     # inhomogeneity each time (later I can constrain some of the more
     # inhomogenous runs only on the proximal/distal part and see what happens).
 
-    if True:
+    if False:
         # This is the uniform case (No weight matrix) with the inhomogeneity
         # slider parameter only:
         for learning_condition in range(1, 6):
@@ -615,6 +624,38 @@ if __name__ == '__main__':
                 gp,
                 **{'auto_param_array': params}
             )
+
+    elif True:
+        for weights_realization in range(3, 5):
+            # This is the synaptic pattern learning condition.
+            for learning_condition in range(1, 6):
+
+                gp = partial(
+                    generate_patterns,
+                    weights_mat_pc=create_weights(
+                        weights_realization=weights_realization
+                    ),
+                    learning_condition=learning_condition,
+                    weights_realization = weights_realization,
+                    min_w=-10,
+                    max_w=10,
+                    iters=100000,
+                    dendlen=150,
+                    dendno=3,
+                    max_depol_val=5,
+                )
+
+                params = {
+                    # These are the inhomogeneity sliders. In this example span
+                    # from 0 to 2.
+                    'synaptic_inhomogeneity': [0,1,2],
+                    'dendritic_inhomogeneity': [0,1,2],
+                }
+
+                analysis.run_for_all_parameters(
+                    gp,
+                    **{'auto_param_array': params}
+                )
 
     elif False:
         # This is the uniform case (No weight matrix):

@@ -621,6 +621,126 @@ def simulation_template_save_spi_ri(**kwargs):
              f"{kwargs['postfix']}")
     return mystr
 
+def simulation_template_load_spinh_ri(**kwargs):
+    # One must either provide the full experiment config string OR the
+    # individual parameters:
+    experiment_config = kwargs.get('experiment_config', None)
+    if not experiment_config:
+        try:
+            dendlen = kwargs['dendlen']
+            dendno = kwargs['dendno']
+            connectivity_type = kwargs['connectivity_type']
+            experiment_config = f'{connectivity_type}_{dendno}{dendlen}dend'
+        except KeyError:
+            print(f'You forgot to provide experiment configuration parameters!')
+    mystr = (f"{kwargs['prefix']}"
+             f"SN{kwargs['animal_model']}"
+             f"LC{kwargs['learning_condition']}"
+             f"TR{kwargs['trial']}"
+             f"_EB{kwargs['excitation_bias']:.3f}"
+             f"_IB{kwargs['inhibition_bias']:.3f}"
+             f"_GBF2.000"
+             f"_NMDAb{kwargs['nmda_bias']:.3f}"
+             f"_AMPAb{kwargs['ampa_bias']:.3f}"
+             f"_RI{kwargs['ri']}"
+             f"_{experiment_config}"
+             f"_syninh{kwargs['syninh']}"
+             f"_dendinh{kwargs['dendinh']}"
+             f"sw"
+             f"_simdur{kwargs['sim_duration']}"
+             f"{kwargs['postfix']}")
+    return mystr
+
+def simulation_template_save_spinh_ri(**kwargs):
+    # One must either provide the full experiment config string OR the
+    # individual parameters:
+    experiment_config = kwargs.get('experiment_config', None)
+    if not experiment_config:
+        try:
+            dendlen = kwargs['dendlen']
+            dendno = kwargs['dendno']
+            connectivity_type = kwargs['connectivity_type']
+            experiment_config = f'{connectivity_type}_{dendno}{dendlen}dend'
+        except KeyError:
+            print(f'You forgot to provide experiment configuration parameters!')
+    mystr = (f"{kwargs['prefix']}"
+             f"SN{kwargs['animal_model']}"
+             f"LC{kwargs['learning_condition']}"
+             f"TR{kwargs['trial_first']}-{kwargs['trial_last']}"
+             f"_EB{kwargs['excitation_bias']:.3f}"
+             f"_IB{kwargs['inhibition_bias']:.3f}"
+             f"_GBF2.000"
+             f"_NMDAb{kwargs['nmda_bias']:.3f}"
+             f"_AMPAb{kwargs['ampa_bias']:.3f}"
+             f"_RI{kwargs['ri']}"
+             f"_{experiment_config}"
+             f"_syninh{kwargs['syninh']}"
+             f"_dendinh{kwargs['dendinh']}"
+             f"sw"
+             f"_simdur{kwargs['sim_duration']}"
+             f"{kwargs['postfix']}")
+    return mystr
+
+def simulation_template_load_spinh_wr_ri(**kwargs):
+    # One must either provide the full experiment config string OR the
+    # individual parameters:
+    experiment_config = kwargs.get('experiment_config', None)
+    if not experiment_config:
+        try:
+            dendlen = kwargs['dendlen']
+            dendno = kwargs['dendno']
+            connectivity_type = kwargs['connectivity_type']
+            experiment_config = f'{connectivity_type}_{dendno}{dendlen}dend'
+        except KeyError:
+            print(f'You forgot to provide experiment configuration parameters!')
+    mystr = (f"{kwargs['prefix']}"
+             f"SN{kwargs['animal_model']}"
+             f"LC{kwargs['learning_condition']}"
+             f"TR{kwargs['trial']}"
+             f"_EB{kwargs['excitation_bias']:.3f}"
+             f"_IB{kwargs['inhibition_bias']:.3f}"
+             f"_GBF2.000"
+             f"_NMDAb{kwargs['nmda_bias']:.3f}"
+             f"_AMPAb{kwargs['ampa_bias']:.3f}"
+             f"_RI{kwargs['ri']}"
+             f"_{experiment_config}"
+             f"_syninh{kwargs['syninh']}"
+             f"_dendinh{kwargs['dendinh']}"
+             f"_WR{kwargs['weights_realization']}"
+             f"_simdur{kwargs['sim_duration']}"
+             f"{kwargs['postfix']}")
+    return mystr
+
+def simulation_template_save_spinh_wr_ri(**kwargs):
+    # One must either provide the full experiment config string OR the
+    # individual parameters:
+    experiment_config = kwargs.get('experiment_config', None)
+    if not experiment_config:
+        try:
+            dendlen = kwargs['dendlen']
+            dendno = kwargs['dendno']
+            connectivity_type = kwargs['connectivity_type']
+            experiment_config = f'{connectivity_type}_{dendno}{dendlen}dend'
+        except KeyError:
+            print(f'You forgot to provide experiment configuration parameters!')
+    mystr = (f"{kwargs['prefix']}"
+             f"SN{kwargs['animal_model']}"
+             f"LC{kwargs['learning_condition']}"
+             f"TR{kwargs['trial_first']}-{kwargs['trial_last']}"
+             f"_EB{kwargs['excitation_bias']:.3f}"
+             f"_IB{kwargs['inhibition_bias']:.3f}"
+             f"_GBF2.000"
+             f"_NMDAb{kwargs['nmda_bias']:.3f}"
+             f"_AMPAb{kwargs['ampa_bias']:.3f}"
+             f"_RI{kwargs['ri']}"
+             f"_{experiment_config}"
+             f"_syninh{kwargs['syninh']}"
+             f"_dendinh{kwargs['dendinh']}"
+             f"_WR{kwargs['weights_realization']}"
+             f"_simdur{kwargs['sim_duration']}"
+             f"{kwargs['postfix']}")
+    return mystr
+
 
 # These are the different templates I use when simulating in NEURON.
 # To avoid confusion, since these change based on sim parameters (checking them,
@@ -643,6 +763,10 @@ simulation_templates = {
     "save_spu_ri": simulation_template_save_spu_ri,
     "load_spi_ri": simulation_template_load_spi_ri,
     "save_spi_ri": simulation_template_save_spi_ri,
+    "load_spinh_ri": simulation_template_load_spinh_ri,
+    "save_spinh_ri": simulation_template_save_spinh_ri,
+    "load_spinh_wr_ri": simulation_template_load_spinh_wr_ri,
+    "save_spinh_wr_ri": simulation_template_save_spinh_wr_ri,
 }
 
 #TODO: name them correctly:
